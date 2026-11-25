@@ -1,5 +1,5 @@
 """Local read-only email archive. No network access except explicit sync."""
-import argparse, hashlib, imaplib, sqlite3, ssl, json, os, tempfile
+import shutil, argparse, hashlib, imaplib, sqlite3, ssl, json, os, tempfile
 from pathlib import Path
 from email import policy
 from email.parser import BytesParser
@@ -23,6 +23,7 @@ class Archive:
             return payload.decode('utf-8','replace') if isinstance(payload,bytes) else str(payload)
         return content.decode('utf-8','replace') if isinstance(content,bytes) else content
     def ingest(self, raw, origin=None):
+        if len(raw) > 64 * 1024 * 1024: raise ValueError('Message exceeds 64 MiB limit')
         digest = hashlib.sha256(raw).hexdigest(); target = self.raw / (digest+'.eml')
         if not target.exists():
             with tempfile.NamedTemporaryFile(dir=self.raw, delete=False) as f:
@@ -52,15 +53,38 @@ class Archive:
     def verify(self):
         return [h for (h,) in self.db.execute('SELECT hash FROM messages') if not (p:=self.raw/(h+'.eml')).is_file() or hashlib.sha256(p.read_bytes()).hexdigest()!=h]
     def export(self, hashes, destination):
-        dest=Path(destination); dest.mkdir(mode=0o700,parents=True,exist_ok=False); manifest=[]
-        for h in dict.fromkeys(hashes):
-            if not self.db.execute('SELECT 1 FROM messages WHERE hash=?',(h,)).fetchone(): raise ValueError('Unknown message')
-            raw=(self.raw/(h+'.eml')).read_bytes()
-            if hashlib.sha256(raw).hexdigest()!=h: raise ValueError('Integrity mismatch')
-            (dest/(h+'.eml')).write_bytes(raw)
-            origins=self.db.execute('SELECT account,folder,validity,uid FROM origins WHERE hash=?',(h,)).fetchall()
-            manifest.append({'sha256':h,'file':h+'.eml','origins':origins})
-        (dest/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
+        dest=Path(destination)
+        hashes=list(dict.fromkeys(hashes))
+        if not hashes: raise ValueError('Select at least one message')
+        for h in hashes:
+            if not isinstance(h,str) or len(h)!=64 or any(x not in '0123456789abcdef' for x in h):
+                raise ValueError('Invalid message hash')
+            if not self.db.execute('SELECT 1 FROM messages WHERE hash=?',(h,)).fetchone():
+                raise ValueError('Unknown message')
+        dest.mkdir(mode=0o700,parents=True,exist_ok=False)
+        try:
+            manifest=[]
+            for h in hashes:
+                raw=(self.raw/(h+'.eml')).read_bytes()
+                if hashlib.sha256(raw).hexdigest()!=h: raise ValueError('Integrity mismatch')
+                with os.fdopen(os.open(dest/(h+'.eml'),os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'wb') as output:
+                    output.write(raw)
+                origins=self.db.execute('SELECT account,folder,validity,uid FROM origins WHERE hash=? ORDER BY account,folder,validity,uid',(h,)).fetchall()
+                manifest.append({'sha256':h,'file':h+'.eml','origins':origins})
+            with os.fdopen(os.open(dest/'manifest.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'w',encoding='utf-8') as output:
+                json.dump(manifest,output,indent=2)
+        except Exception:
+            shutil.rmtree(dest)
+            raise
+    def details(self, digest):
+        row=self.db.execute('SELECT subject,sender,date,message_id,reply_to,body FROM messages WHERE hash=?',(digest,)).fetchone()
+        if row is None: raise ValueError('Unknown message')
+        return dict(zip(('subject','sender','date','message_id','reply_to','body'),row))
+    def recent(self, limit=100):
+        return self.db.execute('SELECT hash,subject,sender FROM messages ORDER BY rowid DESC LIMIT ?', (max(1,min(int(limit),1000)),)).fetchall()
+    def stats(self):
+        return {'messages':self.db.execute('SELECT count(*) FROM messages').fetchone()[0],
+                'origins':self.db.execute('SELECT count(*) FROM origins').fetchone()[0]}
     def sync(self, host, user, password, folder='INBOX'):
         with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(), timeout=30) as m:
             m.login(user,password)
