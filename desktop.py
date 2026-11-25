@@ -56,6 +56,25 @@ def launch(archive):
             header='\n'.join(f"{k}: {data[k]}" for k in ('subject','sender','date','message_id','reply_to'))
             display(header+'\nSHA-256: '+h+'\n\n'+data['body'])
         except Exception as e: messagebox.showerror('Message',str(e))
+    def show_thread():
+        selected=rows.selection()
+        if not selected: return messagebox.showinfo('Conversation','Select a message first.')
+        try:
+            messages=archive.thread(selected[0])
+            display('\n\n'.join(
+                f"{m['date']} | {m['sender']}\n{m['subject']}\nSHA-256: {m['sha256']}\n\n{m['body']}"
+                for m in messages))
+        except Exception as e: messagebox.showerror('Conversation',str(e))
+    def show_timeline():
+        try:
+            hits=archive.timeline()
+            display('\n\n'.join(f"{date or 'Unknown date'} | {sender}\n{subject}\nSHA-256: {h}" for h,subject,sender,date in hits))
+            status.set(f'{len(hits)} messages in timeline; dates are sender-declared.')
+        except Exception as e: messagebox.showerror('Timeline',str(e))
+    def show_correspondents():
+        try:
+            display('\n'.join(f'{count:>6}  {sender or "(unknown sender)"}' for sender,count in archive.correspondents()))
+        except Exception as e: messagebox.showerror('Correspondents',str(e))
     def import_files():
         try:
             for f in filedialog.askopenfilenames(filetypes=[('Email','*.eml')]):
@@ -83,6 +102,10 @@ def launch(archive):
         except Exception as e: messagebox.showerror('Export',str(e))
     for label,fn in [('Search',search),('Import EML',import_files),('Verify',verify),('Export selected',export)]:
         ttk.Button(toolbar,text=label,command=fn).pack(side='left',padx=3)
+    analysis_bar=ttk.Frame(root,padding=(10,0))
+    analysis_bar.pack(fill='x',before=pane)
+    for label,fn in [('Conversation',show_thread),('Timeline',show_timeline),('Correspondents',show_correspondents)]:
+        ttk.Button(analysis_bar,text=label,command=fn).pack(side='left',padx=3)
     query.bind('<Return>',search)
     root.bind('<Control-f>',lambda _:query.focus_set())
     rows.bind('<<TreeviewSelect>>',select)
