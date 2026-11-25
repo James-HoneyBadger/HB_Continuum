@@ -29,4 +29,30 @@ class Tests(unittest.TestCase):
             self.assertRaises(RuntimeError,self.a.sync,'host','user','pw')
     def test_foreign_keys_enforced(self):
         self.assertRaises(sqlite3.IntegrityError,self.a.db.execute,'INSERT INTO origins VALUES(?,?,?,?,?)',('a','f','1','2','0'*64))
+    def test_failed_export_cleanup(self):
+        h=self.a.ingest(RAW)
+        dest=Path(self.tmp.name)/'failed-export'
+        (self.a.raw/(h+'.eml')).write_bytes(b'changed')
+        with self.assertRaises(ValueError):
+            self.a.export([h],dest)
+        self.assertFalse(dest.exists())
+    def test_unknown_export_does_not_create_destination(self):
+        dest=Path(self.tmp.name)/'unknown-export'
+        with self.assertRaises(ValueError):
+            self.a.export(['0'*64],dest)
+        self.assertFalse(dest.exists())
+    def test_workspace_queries(self):
+        h=self.a.ingest(RAW,('test','INBOX','1','2'))
+        self.assertEqual(self.a.stats(),{'messages':1,'origins':1})
+        self.assertEqual(self.a.recent()[0][0],h)
+        self.assertEqual(self.a.details(h)['subject'],'Synthetic invoice')
+    def test_existing_export_is_not_modified(self):
+        h=self.a.ingest(RAW)
+        dest=Path(self.tmp.name)/'existing'
+        dest.mkdir()
+        sentinel=dest/'keep.txt'
+        sentinel.write_text('keep')
+        with self.assertRaises(FileExistsError):
+            self.a.export([h],dest)
+        self.assertEqual(sentinel.read_text(),'keep')
 if __name__=='__main__': unittest.main()
