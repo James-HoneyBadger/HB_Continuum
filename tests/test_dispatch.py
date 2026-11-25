@@ -55,4 +55,12 @@ class Tests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             self.a.export([h],dest)
         self.assertEqual(sentinel.read_text(),'keep')
+    def test_thread_reconstruction(self):
+        parent=self.a.ingest(RAW)
+        reply=self.a.ingest(b'From: other@example.invalid\r\nMessage-ID: <reply@example.invalid>\r\nIn-Reply-To: <test@example.invalid>\r\n\r\nReply.\r\n')
+        unrelated=self.a.ingest(b'Subject: Synthetic invoice\r\n\r\nUnrelated.\r\n')
+        for h in (parent,reply):
+            self.assertEqual({m['sha256'] for m in self.a.thread(h)},{parent,reply})
+        self.assertEqual(len(self.a.thread(unrelated)),1)
+        self.assertEqual(dict(self.a.correspondents())['other@example.invalid'],1)
 if __name__=='__main__': unittest.main()
