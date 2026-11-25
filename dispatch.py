@@ -12,6 +12,8 @@ class Archive:
         self.db.execute('PRAGMA foreign_keys=ON')
         self.db.executescript('''CREATE TABLE IF NOT EXISTS messages(hash TEXT PRIMARY KEY, subject TEXT, sender TEXT, date TEXT, message_id TEXT, reply_to TEXT, body TEXT);
         CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(hash UNINDEXED, subject, sender, body);
+        CREATE INDEX IF NOT EXISTS messages_message_id ON messages(message_id);
+        CREATE INDEX IF NOT EXISTS messages_reply_to ON messages(reply_to);
         CREATE TABLE IF NOT EXISTS origins(account TEXT, folder TEXT, validity TEXT, uid TEXT, hash TEXT NOT NULL REFERENCES messages(hash), PRIMARY KEY(account,folder,validity,uid));''')
     @staticmethod
     def _part_text(part):
@@ -82,6 +84,26 @@ class Archive:
         return dict(zip(('subject','sender','date','message_id','reply_to','body'),row))
     def recent(self, limit=100):
         return self.db.execute('SELECT hash,subject,sender FROM messages ORDER BY rowid DESC LIMIT ?', (max(1,min(int(limit),1000)),)).fetchall()
+    def correspondents(self, limit=100):
+        return self.db.execute(
+            "SELECT sender, count(*) FROM messages GROUP BY sender ORDER BY count(*) DESC, sender LIMIT ?",
+            (max(1,min(int(limit),1000)),)).fetchall()
+    def thread(self, digest):
+        """Return linked messages using Message-ID and In-Reply-To, not subject guesses."""
+        row=self.db.execute('SELECT message_id,reply_to FROM messages WHERE hash=?',(digest,)).fetchone()
+        if row is None: raise ValueError('Unknown message')
+        visited={digest}
+        frontier={value for value in row if value}
+        identifiers=set()
+        while frontier:
+            value=frontier.pop()
+            if value in identifiers: continue
+            identifiers.add(value)
+            for h,mid,parent in self.db.execute(
+                'SELECT hash,message_id,reply_to FROM messages WHERE message_id=? OR reply_to=?',(value,value)):
+                visited.add(h)
+                frontier.update(v for v in (mid,parent) if v and v not in identifiers)
+        return [self.details(h) | {'sha256':h} for h in sorted(visited)]
     def stats(self):
         return {'messages':self.db.execute('SELECT count(*) FROM messages').fetchone()[0],
                 'origins':self.db.execute('SELECT count(*) FROM origins').fetchone()[0]}
