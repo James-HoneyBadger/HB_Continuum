@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+*.sqlite3*
+*.eml
+.env
+.env.*
+raw/
+archive/
+evidence/
+*.mbox
+config.local.*
+.DS_Store

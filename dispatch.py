@@ -1,0 +1,100 @@
+"""Local read-only email archive. No network access except explicit sync."""
+import argparse, hashlib, imaplib, sqlite3, ssl, json, os, tempfile
+from pathlib import Path
+from email import policy
+from email.parser import BytesParser
+
+class Archive:
+    def __init__(self, root):
+        self.root = Path(root).expanduser(); self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self.raw = self.root / 'raw'; self.raw.mkdir(mode=0o700, exist_ok=True)
+        self.db = sqlite3.connect(self.root / 'archive.sqlite3', timeout=30)
+        self.db.execute('PRAGMA foreign_keys=ON')
+        self.db.executescript('''CREATE TABLE IF NOT EXISTS messages(hash TEXT PRIMARY KEY, subject TEXT, sender TEXT, date TEXT, message_id TEXT, reply_to TEXT, body TEXT);
+        CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(hash UNINDEXED, subject, sender, body);
+        CREATE TABLE IF NOT EXISTS origins(account TEXT, folder TEXT, validity TEXT, uid TEXT, hash TEXT NOT NULL REFERENCES messages(hash), PRIMARY KEY(account,folder,validity,uid));''')
+    @staticmethod
+    def _part_text(part):
+        try:
+            content=part.get_content()
+        except (LookupError,UnicodeError,ValueError,TypeError):
+            try: payload=part.get_payload(decode=True) or b''
+            except Exception: return ''
+            return payload.decode('utf-8','replace') if isinstance(payload,bytes) else str(payload)
+        return content.decode('utf-8','replace') if isinstance(content,bytes) else content
+    def ingest(self, raw, origin=None):
+        digest = hashlib.sha256(raw).hexdigest(); target = self.raw / (digest+'.eml')
+        if not target.exists():
+            with tempfile.NamedTemporaryFile(dir=self.raw, delete=False) as f:
+                f.write(raw); f.flush(); os.fsync(f.fileno()); tmp=f.name
+            os.replace(tmp,target)
+        if hashlib.sha256(target.read_bytes()).hexdigest()!=digest: raise ValueError('Raw integrity mismatch')
+        msg=BytesParser(policy=policy.default).parsebytes(raw)
+        body='\n'.join(self._part_text(p) for p in msg.walk() if p.get_content_type()=='text/plain' and p.get_content_disposition()!='attachment')
+        fields=[str(msg.get(k,'')) for k in ('Subject','From','Date','Message-ID','In-Reply-To')]
+        with self.db:
+            cur=self.db.execute('INSERT OR IGNORE INTO messages VALUES(?,?,?,?,?,?,?)',(digest,*fields,body))
+            if cur.rowcount: self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(digest,fields[0],fields[1],body))
+            if origin:
+                self.db.execute('INSERT OR IGNORE INTO origins VALUES(?,?,?,?,?)',(*origin,digest))
+                if self.db.execute('SELECT hash FROM origins WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone()[0]!=digest: raise ValueError('Origin conflict')
+        return digest
+    def find(self, query, limit=100):
+        limit=max(1,min(int(limit),100))
+        try:
+            return self.db.execute('SELECT hash,subject,sender FROM search WHERE search MATCH ? LIMIT ?', (query,limit)).fetchall()
+        except sqlite3.OperationalError:
+            phrase='"'+query.replace('"','""')+'"'
+            try:
+                return self.db.execute('SELECT hash,subject,sender FROM search WHERE search MATCH ? LIMIT ?', (phrase,limit)).fetchall()
+            except sqlite3.OperationalError:
+                return []
+    def verify(self):
+        return [h for (h,) in self.db.execute('SELECT hash FROM messages') if not (p:=self.raw/(h+'.eml')).is_file() or hashlib.sha256(p.read_bytes()).hexdigest()!=h]
+    def export(self, hashes, destination):
+        dest=Path(destination); dest.mkdir(mode=0o700,parents=True,exist_ok=False); manifest=[]
+        for h in dict.fromkeys(hashes):
+            if not self.db.execute('SELECT 1 FROM messages WHERE hash=?',(h,)).fetchone(): raise ValueError('Unknown message')
+            raw=(self.raw/(h+'.eml')).read_bytes()
+            if hashlib.sha256(raw).hexdigest()!=h: raise ValueError('Integrity mismatch')
+            (dest/(h+'.eml')).write_bytes(raw)
+            origins=self.db.execute('SELECT account,folder,validity,uid FROM origins WHERE hash=?',(h,)).fetchall()
+            manifest.append({'sha256':h,'file':h+'.eml','origins':origins})
+        (dest/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
+    def sync(self, host, user, password, folder='INBOX'):
+        with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(), timeout=30) as m:
+            m.login(user,password)
+            if m.select(folder,readonly=True)[0]!='OK': raise RuntimeError('Select failed')
+            resp=m.response('UIDVALIDITY')[1]
+            if not resp or resp[0] is None or not resp[0].decode().isdigit(): raise RuntimeError('Missing UIDVALIDITY')
+            validity=resp[0].decode()
+            status,data=m.uid('search',None,'ALL')
+            if status!='OK': raise RuntimeError('Search failed')
+            count=0
+            for uid in data[0].split():
+                origin=(host+'|'+user,folder,validity,uid.decode())
+                if self.db.execute('SELECT 1 FROM origins WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone(): continue
+                status,parts=m.uid('fetch',uid,'(BODY.PEEK[])')
+                if status!='OK': raise RuntimeError('Fetch failed')
+                payload=[p[1] for p in parts if isinstance(p,tuple)]
+                if len(payload)!=1: raise RuntimeError('Unexpected fetch response')
+                self.ingest(payload[0],origin); count+=1
+            return count
+
+def main():
+    import getpass
+    p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); sub=p.add_subparsers(dest='cmd',required=True)
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
+    a=p.parse_args(); ar=Archive(a.archive)
+    if a.cmd=='import':
+        for f in a.files: print(ar.ingest(Path(f).read_bytes()))
+    elif a.cmd=='search': print(json.dumps(ar.find(a.query),indent=2))
+    elif a.cmd=='verify':
+        bad=ar.verify(); print(json.dumps(bad)); return int(bool(bad))
+    elif a.cmd=='export': ar.export(a.hashes,a.destination)
+    elif a.cmd=='sync': print(ar.sync(a.host,a.user,getpass.getpass(),a.folder))
+    elif a.cmd=='gui':
+        from desktop import launch
+        launch(ar)
+    return 0
+if __name__=='__main__': raise SystemExit(main())
