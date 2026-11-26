@@ -1,6 +1,23 @@
 # HB_Dispatch
 
-Experimental local-first email archive and evidence research workstation. Early-stage release — read the limitations below.
+**Operational local-first email archive and personal historical research workstation.**
+
+HB Dispatch is in active real-world use. It has moved beyond a proof of concept: live mailbox retrieval, searchable local preservation and source-backed historical research have been demonstrated with more than 20,000 unique archived messages across two mail providers. Development continues, but the core archival workflow is working software today.
+
+## Demonstrated in real-world use
+
+As of November 26, 2026, a live deployment had indexed 20,185 unique messages, with a second mailbox import still underway. The SQLite message count and full-text index count reconciled at that snapshot. An earlier completed 12,798-message import also passed SQLite integrity checks and reconciled against its original EML file count.
+
+Practical investigations have included:
+
+- Reconstructing consumer billing disputes, cancellation notices and correspondence timelines.
+- Cross-referencing transaction confirmations against independently obtained financial records.
+- Rebuilding a precious-metals purchase ledger from orders, shipment notices and cancellations.
+- Exploring historical correspondence, recurring topics and account activity across providers.
+
+These are actual research outcomes, not hypothetical feature claims. Some investigations used authorized external analysis of the local archive; HB Dispatch itself supplies the searchable evidence foundation, not an automated financial or legal adviser. Private correspondence and underlying records are not published.
+
+**Status:** the core archive is operational; newer scheduling, configuration and research-workbench enhancements are under active development. This is a project status statement, not a new formal release or a claim of comprehensive security certification.
 
 ## Your mail. Your archive. Your choice.
 
@@ -8,7 +25,7 @@ Experimental local-first email archive and evidence research workstation. Early-
 
 HB Dispatch is built around personal digital sovereignty: keep your own searchable, locally controlled copy of your email history, independent of any hosting provider, subscription tier or cloud archive. Changing providers should not mean leaving years of correspondence behind.
 
-The intended workflow is simple: retrieve messages, preserve their original EML data, index them locally, verify their integrity, and maintain independent backups. Once archival and recovery have been verified, you can manage server storage separately from your long-term retention needs.
+The working archival workflow is simple: retrieve messages, preserve their original EML data, index them locally, verify their integrity, and maintain independent backups. Once archival and recovery have been verified, you can manage server storage separately from your long-term retention needs.
 
 - Your correspondence, stored on hardware you control.
 - Your search index, without a mandatory cloud service.
@@ -17,11 +34,11 @@ The intended workflow is simple: retrieve messages, preserve their original EML 
 
 HB Dispatch is free and open-source software. No telemetry, advertising, mandatory online account or subscription. It complements existing mail clients rather than requiring you to replace them.
 
-**Important:** the current implementation is experimental and uses read-only IMAP retrieval; it does not automatically delete server mail. Verified restoration, comprehensive multi-account management and safe retention workflows are development goals, not finished features. Keep independent backups and do not remove server copies solely on the strength of this experimental archive.
+**Important:** HB Dispatch uses read-only IMAP retrieval and does not delete server mail. Keep independent backups and test restoration before removing any server copies. Comprehensive mailbox coverage and restoration testing remain essential; a successful import alone does not establish completeness.
 
 ## Learn by doing
 
-**[Read the complete practical tutorial](docs/TUTORIAL.md).** Start with a fictional email, learn how the archive works, connect multiple providers, reconstruct historical correspondence, and build an independent backup routine. The guide distinguishes current capabilities from alpha and planned features.
+**[Read the complete practical tutorial](docs/TUTORIAL.md).** Start with a fictional email, learn how the archive works, connect multiple providers, reconstruct historical correspondence, and build an independent backup routine. The guide distinguishes working capabilities from planned enhancements.
 
 ## A practical use case
 
@@ -45,4 +62,4 @@ Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, rea
 
 ## Privacy and limitations
 
-Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Back up the entire archive with the app closed. Failed imports may leave unindexed raw files; failed exports may be partial. Live IMAP and GUI are unverified. Resource limits, atomic exports, attachment and thread UI, and broader hostile-MIME hardening remain future work. Do not use as the sole evidence archive or for untrusted bulk imports yet.
+Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Back up the entire archive with the app closed. Failed imports may leave unindexed raw files; failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS and Gmail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search currently indexes plain-text message content rather than all HTML or attachments. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Dispatch as the sole evidence archive.
