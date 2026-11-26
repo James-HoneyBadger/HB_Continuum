@@ -29,6 +29,14 @@ FIELDS={
     'verify_on_start':('Integrity','Verify hashes on GUI startup',False,None),
     'network_timeout':('Synchronization','IMAP timeout (seconds)',30,(10,300)),
     'batch_limit':('Synchronization','Maximum new messages per folder per run (0 = unlimited)',0,(0,50000)),
+    'ai_enabled':('AI','Enable local AI',False,None),
+    'ai_backend':('AI','AI backend','none',('none','ollama')),
+    'ai_endpoint':('AI','Ollama endpoint','http://localhost:11434',None),
+    'ai_model':('AI','Ollama model','llama3.2',None),
+    'ai_timeout':('AI','AI timeout (seconds)',120,(10,600)),
+    'ai_batch_size':('AI','AI batch size',8,(1,100)),
+    'ai_max_input_chars':('AI','Maximum input characters per request',12000,(500,100000)),
+    'ai_prompt_version':('AI','Summarization prompt version','1',None),
 }
 DEFAULTS={k:v[2] for k,v in FIELDS.items()}
 
@@ -46,6 +54,10 @@ def validate(data):
         elif isinstance(v,str) and (len(v)>4096 or '\x00' in v):raise ValueError(label+': invalid text')
         result[k]=v
     if result['startup_view']=='Saved query' and not result['startup_query'].strip():raise ValueError('Startup saved query cannot be empty')
+    if result['ai_backend']!='none':
+        if not result['ai_model'].strip():raise ValueError('AI model cannot be empty')
+        if not result['ai_endpoint'].strip().lower().startswith(('http://','https://')):raise ValueError('Ollama endpoint must be an http(s) URL')
+    if not result['ai_prompt_version'].strip():raise ValueError('Prompt version cannot be empty')
     return result
 
 def decode(doc):

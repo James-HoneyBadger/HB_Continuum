@@ -163,15 +163,47 @@ class Archive:
             return count
 
 def main():
-    import getpass
+    import getpass, sys
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version')
     a=p.parse_args(); ar=Archive(a.archive)
     if a.cmd=='import':
         for f in a.files: print(ar.ingest(Path(f).read_bytes()))
     elif a.cmd=='search': print(json.dumps(ar.find(a.query),indent=2))
     elif a.cmd=='verify':
         bad=ar.verify(); print(json.dumps(bad)); return int(bool(bad))
+    elif a.cmd=='facebook':
+        from facebook import preview, import_files
+        if a.fcmd=='preview': print(json.dumps(preview(a.paths,ar.root),indent=2))
+        elif a.fcmd=='import': print(json.dumps(import_files(a.paths,ar.root),indent=2))
+        else:
+            from catalog import Catalog
+            c=Catalog(ar.root)
+            try:
+                rows=c.list_records('facebook',a.kind,a.actor,a.limit) if a.fcmd=='list' else c.search_records(a.query,'facebook',a.limit)
+            finally:
+                c.close()
+            print(json.dumps([dict(zip(('record_id','source_key','record_kind','actor','occurred_at','body'),r)) for r in rows],indent=2))
+    elif a.cmd=='summarize':
+        from summarize import Summarizer, OllamaError
+        s=Summarizer(ar.root)
+        try:
+            if a.scmd=='run':
+                if not s.enabled(): print('summarize: AI is disabled; set ai.enabled and ai.backend=ollama in preferences', file=sys.stderr); return 1
+                def progress(done,total,digest,status): print(f'[{done}/{total}] {digest[:12]} {status}', file=sys.stderr)
+                try:
+                    if a.all:
+                        result=s.summarize_all(a.type, model=a.model, prompt_version=a.prompt_version, force=a.force, progress=progress)
+                    else:
+                        if not a.hashes: print('summarize: specify message hashes or --all', file=sys.stderr); return 2
+                        result=s.summarize_batch(a.hashes, a.type, model=a.model, prompt_version=a.prompt_version, force=a.force, progress=progress)
+                except OllamaError as e:
+                    print(f'summarize: Ollama error: {e} (is Ollama running at {s.prefs["ai_endpoint"]}?)', file=sys.stderr); return 2
+                print(json.dumps(result,indent=2))
+            elif a.scmd=='list': print(json.dumps(s.list_summaries(a.hash),indent=2))
+            elif a.scmd=='delete': print(json.dumps(s.delete(a.hash, a.type, a.model, a.prompt_version),indent=2))
+        finally:
+            s.close()
     elif a.cmd=='export': ar.export(a.hashes,a.destination)
     elif a.cmd=='sync': print(ar.sync(a.host,a.user,getpass.getpass(),a.folder))
     elif a.cmd=='gui':

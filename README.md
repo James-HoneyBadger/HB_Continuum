@@ -77,6 +77,26 @@ Customize the workstation per archive with validated, portable settings for appe
 
 Create workspaces, saved queries, classification rules, tags, custom metadata and reusable CSV reports without changing original correspondence. See [Research workbench](docs/RESEARCH.md).
 
+## Beyond email (new)
+
+HB Continuum is growing from an email archive into a source-independent historical record. These capabilities are opt-in and still evolving.
+
+**Facebook import** — import posts, comments, group posts, messages, events, photos/videos, and reactions from a user-obtained Facebook JSON export. Original files are never uploaded or modified. See [Facebook import](docs/FACEBOOK_IMPORT.md).
+
+```sh
+python3 dispatch.py facebook preview ~/facebook-export
+python3 dispatch.py facebook import ~/facebook-export
+python3 dispatch.py facebook search "receipt"
+python3 dispatch.py facebook list --kind event
+```
+
+**Local AI summaries** — generate message and conversation summaries with a locally running Ollama instance. Disabled by default; requires `ai.enabled` and `ai.backend=ollama` in preferences. Summaries are derived text, never evidence. See [AI summarization](docs/AI_SUMMARIZATION.md).
+
+```sh
+python3 dispatch.py summarize run HASH
+python3 dispatch.py summarize run --all --type thread
+```
+
 ## License and community
 
 Copyright (c) 2026 Honey Badger Universe.
