@@ -19,6 +19,10 @@ HB Dispatch is free and open-source software. No telemetry, advertising, mandato
 
 **Important:** the current implementation is experimental and uses read-only IMAP retrieval; it does not automatically delete server mail. Verified restoration, comprehensive multi-account management and safe retention workflows are development goals, not finished features. Keep independent backups and do not remove server copies solely on the strength of this experimental archive.
 
+## Learn by doing
+
+**[Read the complete practical tutorial](docs/TUTORIAL.md).** Start with a fictional email, learn how the archive works, connect multiple providers, reconstruct historical correspondence, and build an independent backup routine. The guide distinguishes current capabilities from alpha and planned features.
+
 ## Quick start
 
 Python 3.12+ with SQLite FTS5 and optional Tkinter.
