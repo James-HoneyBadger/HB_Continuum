@@ -91,3 +91,34 @@ class Hardening(unittest.TestCase):
         self.assertEqual(self.a.recover_orphans(),[])
         self.assertEqual(self.a.health()['raw_unindexed'],[])
         self.assertEqual(self.a.stats(),{'messages':1,'origins':0})
+
+    def test_mixed_inline_and_alternative(self):
+        m=EmailMessage();m.set_content('firstinline')
+        m.make_mixed()
+        alternative=EmailMessage();alternative.set_content('secondinline')
+        alternative.add_alternative('<p>duplicatedhtml</p>',subtype='html')
+        m.attach(alternative)
+        h=self.a.ingest(m.as_bytes())
+        self.assertEqual(self.a.find('firstinline')[0][0],h)
+        self.assertEqual(self.a.find('secondinline')[0][0],h)
+        self.assertEqual(self.a.find('duplicatedhtml'),[])
+
+    def test_snapshot_wal_and_unexpected_directory(self):
+        self.a.db.execute('PRAGMA journal_mode=WAL')
+        self.a.ingest(b'Subject: wal test')
+        snap=self.root/'snapshot'
+        self.assertTrue(backup(self.a.root,snap)['verified'])
+        self.assertFalse((snap/'archive.sqlite3-wal').exists())
+        (snap/'unexpected').mkdir()
+        with self.assertRaises(ValueError):validate_snapshot(snap)
+
+    def test_reindex_duplicate_and_missing_search_rows(self):
+        a=self.a.ingest(b'Subject: first\r\n\r\nfirstword')
+        b=self.a.ingest(b'Subject: second\r\n\r\nsecondword')
+        with self.a.db:
+            self.a.db.execute('DELETE FROM extraction_versions')
+            self.a.db.execute('INSERT INTO search SELECT hash,subject,sender,body FROM search WHERE hash=?',(a,))
+            self.a.db.execute('DELETE FROM search WHERE hash=?',(b,))
+        self.assertEqual(self.a.reindex(),2)
+        self.assertEqual(self.a.health()['index_duplicate_rows'],0)
+        self.assertEqual(self.a.health()['index_missing'],[])

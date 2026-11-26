@@ -59,7 +59,7 @@ class Archive:
             if cur.rowcount:
                 self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(digest,fields[0],fields[1],index_text(body,attachments)))
                 self.db.executemany('INSERT INTO attachment_index VALUES(?,?,?,?,?)',[(digest,*a) for a in attachments])
-                self.db.execute('INSERT INTO extraction_versions VALUES(?,1)',(digest,))
+                self.db.execute('INSERT INTO extraction_versions VALUES(?,2)',(digest,))
             if origin:
                 self.db.execute('INSERT OR IGNORE INTO origins VALUES(?,?,?,?,?)',(*origin,digest))
                 if self.db.execute('SELECT hash FROM origins WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone()[0]!=digest: raise ValueError('Origin conflict')
@@ -70,7 +70,10 @@ class Archive:
         from sync_lock import sync_lock
         count=0
         with sync_lock(self.root):
-            pending=self.db.execute("SELECT hash,subject,sender FROM messages WHERE hash NOT IN (SELECT hash FROM extraction_versions WHERE version=1)").fetchall()
+            pending=self.db.execute("SELECT hash,subject,sender FROM messages WHERE hash NOT IN (SELECT hash FROM extraction_versions WHERE version=2)").fetchall()
+            rowids={}
+            for rowid,h in self.db.execute('SELECT rowid,hash FROM search'):
+                rowids.setdefault(h,[]).append(rowid)
             for h,subject,sender in pending:
                 if not valid_hash(h):raise ValueError('Invalid stored message hash')
                 source=self.raw/(h+'.eml')
@@ -80,11 +83,11 @@ class Archive:
                 _,body,attachments=extract(raw)
                 with self.db:
                     self.db.execute('UPDATE messages SET body=? WHERE hash=?',(body,h))
-                    self.db.execute('DELETE FROM search WHERE hash=?',(h,))
+                    self.db.executemany('DELETE FROM search WHERE rowid=?',[(rid,) for rid in rowids.get(h,[])])
                     self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(h,subject,sender,index_text(body,attachments)))
                     self.db.execute('DELETE FROM attachment_index WHERE hash=?',(h,))
                     self.db.executemany('INSERT INTO attachment_index VALUES(?,?,?,?,?)',[(h,*a) for a in attachments])
-                    self.db.execute('INSERT OR REPLACE INTO extraction_versions VALUES(?,1)',(h,))
+                    self.db.execute('INSERT OR REPLACE INTO extraction_versions VALUES(?,2)',(h,))
                 count+=1
         return count
     def attachments(self,h):

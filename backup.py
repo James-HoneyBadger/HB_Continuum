@@ -11,7 +11,9 @@ def digest(path):
 def connect(path):
     return sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True)
 def copydb(source,target):
-    with closing(connect(source)) as src,closing(sqlite3.connect(target)) as dst:src.backup(dst)
+    with closing(connect(source)) as src,closing(sqlite3.connect(target)) as dst:
+        src.backup(dst)
+        if dst.execute("PRAGMA journal_mode=DELETE").fetchone()[0].lower()!="delete":raise ValueError("Cannot normalize snapshot journal mode")
 def validate_snapshot(root):
     root=Path(root)
     if (root/'backup-manifest.json').is_symlink():raise ValueError('Unsafe manifest')
@@ -20,6 +22,7 @@ def validate_snapshot(root):
     expected=manifest['files']
     entries=list(root.rglob('*'))
     if any(p.is_symlink() or not (p.is_dir() or p.is_file()) for p in entries):raise ValueError('Unsafe snapshot entry')
+    if any(p.is_dir() and p.relative_to(root).as_posix()!='raw' for p in entries):raise ValueError('Unexpected snapshot directory')
     actual={p.relative_to(root).as_posix() for p in entries if p.is_file() and p!=root/'backup-manifest.json'}
     allowed=set(DATABASES+CONFIG)
     if any(name not in allowed and not (name.startswith('raw/') and len(name)==72 and name.endswith('.eml') and all(c in '0123456789abcdef' for c in name[4:-4])) for name in actual):raise ValueError('Unexpected snapshot file')

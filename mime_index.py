@@ -36,16 +36,38 @@ def part_text(part,limit=TEXT_LIMIT):
     try:return payload[:limit].decode(charset,'replace')[:limit]
     except (LookupError,UnicodeError):return payload[:limit].decode('utf-8','replace')
 
+def body_parts(part):
+    """Prefer one alternative, retain inline mixed parts, skip attachments."""
+    if part.get_filename() or part.get_content_disposition()=='attachment':
+        return
+    kind=part.get_content_type()
+    if kind=='multipart/alternative':
+        preferred=part.get_body(preferencelist=('plain','html'))
+        if preferred is not None:
+            value=part_text(preferred)
+            if preferred.get_content_type()=='text/html':value=html_text(value)
+            if not value.strip():
+                alternative=part.get_body(preferencelist=('html',))
+                if alternative is not None:value=html_text(part_text(alternative))
+            if value.strip():yield value
+    elif kind=='multipart/related':
+        preferred=part.get_body(preferencelist=('plain','html'))
+        if preferred is not None:yield from body_parts(preferred)
+    elif kind.startswith('multipart/'):
+        for child in part.iter_parts():yield from body_parts(child)
+    elif kind in ('text/plain','text/html'):
+        value=part_text(part)
+        yield html_text(value) if kind=='text/html' else value
+
 def extract(raw):
     msg=BytesParser(policy=policy.default).parsebytes(raw)
-    preferred=msg.get_body(preferencelist=('plain','html'))
-    body=''
-    if preferred is not None:
-        body=part_text(preferred)
-        if preferred.get_content_type()=='text/html':body=html_text(body)
-    if not body.strip():
-        alternative=msg.get_body(preferencelist=('html',))
-        if alternative is not None:body=html_text(part_text(alternative))
+    chunks=[];remaining_body=TEXT_LIMIT
+    for i,value in enumerate(body_parts(msg)):
+        if i>=PART_LIMIT or remaining_body<=0:break
+        value=value[:remaining_body]
+        chunks.append(value)
+        remaining_body-=len(value)+1
+    body='\n'.join(chunks)[:TEXT_LIMIT]
     attachments=[];remaining=ATTACHMENT_LIMIT
     for i,part in enumerate(msg.walk()):
         if i>=PART_LIMIT:break
