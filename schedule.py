@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 Honey Badger Universe
 """Local per-account schedules with macOS Keychain and launchd."""
 import argparse, hashlib, json, os, plistlib, re, subprocess, sys, tempfile
 from datetime import datetime, timezone

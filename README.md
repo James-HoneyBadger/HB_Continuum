@@ -32,7 +32,7 @@ The working archival workflow is simple: retrieve messages, preserve their origi
 - Your retention decisions, rather than a provider's storage quota.
 - Your backups, independent of the mailbox host.
 
-HB Dispatch is free and open-source software. No telemetry, advertising, mandatory online account or subscription. It complements existing mail clients rather than requiring you to replace them.
+HB Dispatch is free and open-source software, licensed under the [GNU General Public License version 3 (GPL-3.0-only)](LICENSE). No telemetry, advertising, mandatory online account or subscription. It complements existing mail clients rather than requiring you to replace them.
 
 **Important:** HB Dispatch uses read-only IMAP retrieval and does not delete server mail. Keep independent backups and test restoration before removing any server copies. Comprehensive mailbox coverage and restoration testing remain essential; a successful import alone does not establish completeness.
 
@@ -76,3 +76,9 @@ Customize the workstation per archive with validated, portable settings for appe
 ## Research workbench
 
 Create workspaces, saved queries, classification rules, tags, custom metadata and reusable CSV reports without changing original correspondence. See [Research workbench](docs/RESEARCH.md).
+
+## License and community
+
+Copyright (c) 2026 Honey Badger Universe.
+
+Current and future distributions of this source tree are licensed under GPL-3.0-only. Commercial use is permitted under the license, including its source-distribution and copyleft requirements. The project itself is a community-oriented FOSS undertaking, without paid support or service commitments. Prior distributions released under MIT retain their original license rights. See [LICENSE](LICENSE) for the complete terms.

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 Honey Badger Universe
 """Cooperative IMAP synchronization lock on POSIX."""
 from contextlib import contextmanager
 import os

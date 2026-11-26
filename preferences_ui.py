@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 Honey Badger Universe
 """Schema-driven graphical preferences editor."""
 def launch(root,parent,on_save=None):
     import tkinter as tk
