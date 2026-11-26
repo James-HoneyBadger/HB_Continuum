@@ -198,11 +198,11 @@ class Summarizer:
         return self._store(key, 'thread', model, prompt_version, summary, input_digest, json.dumps(members))
 
     def summarize_batch(self, hashes, summary_type='message', model=None, prompt_version=None,
-                        force=False, progress=None):
+                        force=False, progress=None, cancel_event=None):
         hashes = list(dict.fromkeys(hashes))
         counts = {'total': len(hashes), 'summarized': 0, 'regenerated': 0, 'skipped': 0, 'cancelled': 0}
         for i, digest in enumerate(hashes):
-            if self._cancelled.is_set():
+            if self._cancelled.is_set() or (cancel_event is not None and cancel_event.is_set()):
                 counts['cancelled'] = len(hashes) - i
                 if progress:
                     progress(i, len(hashes), digest, 'cancelled')
@@ -223,13 +223,13 @@ class Summarizer:
         return counts
 
     def summarize_all(self, summary_type='message', model=None, prompt_version=None,
-                      force=False, progress=None):
+                      force=False, progress=None, cancel_event=None):
         conn = _ro_connect(self.root)
         try:
             hashes = [h for h, in conn.execute('SELECT hash FROM messages ORDER BY rowid DESC')]
         finally:
             conn.close()
-        return self.summarize_batch(hashes, summary_type, model, prompt_version, force, progress)
+        return self.summarize_batch(hashes, summary_type, model, prompt_version, force, progress, cancel_event)
 
     def list_summaries(self, digest):
         rows = self.db.execute(
