@@ -23,6 +23,10 @@ HB Dispatch is free and open-source software. No telemetry, advertising, mandato
 
 **[Read the complete practical tutorial](docs/TUTORIAL.md).** Start with a fictional email, learn how the archive works, connect multiple providers, reconstruct historical correspondence, and build an independent backup routine. The guide distinguishes current capabilities from alpha and planned features.
 
+## A practical use case
+
+**[From scattered inboxes to a personal historical intelligence archive](docs/USE_CASE_PERSONAL_HISTORY.md).** Follow a fictional user who combines years of correspondence across multiple providers, reconstructs forgotten events, prepares source-backed reports and explores an optional personal knowledge assistant. The scenario separates current archival capabilities from external analysis and future integrations.
+
 ## Quick start
 
 Python 3.12+ with SQLite FTS5 and optional Tkinter.
