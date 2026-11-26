@@ -50,3 +50,7 @@ Original EML files are preserved by SHA-256 with SQLite search and mailbox prove
 ## Scheduled synchronization (macOS)
 
 Maintain multiple mailboxes automatically with the local synchronization center, configurable interval or daily schedules, macOS Keychain credentials and a per-user LaunchAgent. See [Scheduled synchronization](docs/SCHEDULED_SYNC.md). Finish any older manual import before enabling the service.
+
+## Configuration center
+
+Customize the workstation per archive with validated, portable settings for appearance, research, file locations, integrity checks and synchronization. Open **Configuration center** in the desktop application. See [Configuration reference](docs/CONFIGURATION.md).

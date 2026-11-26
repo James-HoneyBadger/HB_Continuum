@@ -43,7 +43,7 @@ class Archive:
                 if self.db.execute('SELECT hash FROM origins WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone()[0]!=digest: raise ValueError('Origin conflict')
         return digest
     def find(self, query, limit=100):
-        limit=max(1,min(int(limit),100))
+        limit=max(1,min(int(limit),5000))
         try:
             return self.db.execute('SELECT hash,subject,sender FROM search WHERE search MATCH ? LIMIT ?', (query,limit)).fetchall()
         except sqlite3.OperationalError:
@@ -83,7 +83,7 @@ class Archive:
         if row is None: raise ValueError('Unknown message')
         return dict(zip(('subject','sender','date','message_id','reply_to','body'),row))
     def recent(self, limit=100):
-        return self.db.execute('SELECT hash,subject,sender FROM messages ORDER BY rowid DESC LIMIT ?', (max(1,min(int(limit),1000)),)).fetchall()
+        return self.db.execute('SELECT hash,subject,sender FROM messages ORDER BY rowid DESC LIMIT ?', (max(1,min(int(limit),5000)),)).fetchall()
     def timeline(self, sender=None, limit=100):
         """Chronological view of declared message dates; unparseable dates sort last."""
         from email.utils import parsedate_to_datetime
@@ -100,11 +100,11 @@ class Archive:
                 return (0,d.timestamp(),row[0])
             except (ValueError,TypeError,OverflowError,OSError):
                 return (1,0,row[0])
-        return sorted(self.db.execute(sql,params),key=key)[:max(1,min(int(limit),1000))]
+        return sorted(self.db.execute(sql,params),key=key)[:max(1,min(int(limit),5000))]
     def correspondents(self, limit=100):
         return self.db.execute(
             "SELECT sender, count(*) FROM messages GROUP BY sender ORDER BY count(*) DESC, sender LIMIT ?",
-            (max(1,min(int(limit),1000)),)).fetchall()
+            (max(1,min(int(limit),5000)),)).fetchall()
     def thread(self, digest):
         """Return linked messages using Message-ID and In-Reply-To, not subject guesses."""
         row=self.db.execute('SELECT message_id,reply_to FROM messages WHERE hash=?',(digest,)).fetchone()
@@ -136,7 +136,9 @@ class Archive:
         quoted='"'+folder.replace('\\','\\\\').replace('"','\\"')+'"'
         if host.lower()=='imap.gmail.com':
             password=''.join(password.split())
-        with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(), timeout=30) as m:
+        from preferences import load
+        prefs=load(self.root)
+        with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(), timeout=prefs['network_timeout']) as m:
             m.login(user,password)
             if m.select(quoted,readonly=True)[0]!='OK': raise RuntimeError('Select failed')
             resp=m.response('UIDVALIDITY')[1]
@@ -153,6 +155,7 @@ class Archive:
                 payload=[p[1] for p in parts if isinstance(p,tuple)]
                 if len(payload)!=1: raise RuntimeError('Unexpected fetch response')
                 self.ingest(payload[0],origin); count+=1
+                if prefs['batch_limit'] and count>=prefs['batch_limit']: break
             return count
 
 def main():

@@ -3,30 +3,42 @@ def launch(archive):
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
     from pathlib import Path
+    from preferences import load
+    prefs=load(archive.root)
     root=tk.Tk()
     root.title('HB Dispatch — Correspondence Workstation')
-    root.geometry('1150x760')
+    root.geometry(f"{prefs['window_width']}x{prefs['window_height']}")
+    style=ttk.Style(root)
+    if prefs['theme']!='System':
+        style.theme_use('clam')
+        bg,fg=('#24272b','#ededed') if prefs['theme']=='Dark' else ('#f4f5f6','#202124')
+        style.configure('.',background=bg,foreground=fg)
+        style.configure('Treeview',fieldbackground=bg,background=bg,foreground=fg)
+        style.configure('TEntry',fieldbackground=bg,foreground=fg)
+        root.configure(bg=bg)
     root.minsize(720,480)
     toolbar=ttk.Frame(root,padding=10)
     toolbar.pack(fill='x')
     query=ttk.Entry(toolbar)
     query.pack(side='left',fill='x',expand=True)
     status=tk.StringVar()
-    pane=ttk.Panedwindow(root,orient='vertical')
+    pane=ttk.Panedwindow(root,orient=prefs['layout'])
     pane.pack(fill='both',expand=True,padx=10,pady=5)
     listing=ttk.Frame(pane)
     rows=ttk.Treeview(listing,columns=('subject','sender'),show='headings',selectmode='extended')
     rows.heading('subject',text='Subject')
     rows.heading('sender',text='Sender')
-    rows.column('subject',width=550)
-    rows.column('sender',width=260)
+    rows.column('subject',width=prefs['subject_width'])
+    rows.column('sender',width=prefs['sender_width'])
     scroll=ttk.Scrollbar(listing,orient='vertical',command=rows.yview)
     rows.configure(yscrollcommand=scroll.set)
     scroll.pack(side='right',fill='y')
     rows.pack(fill='both',expand=True)
     pane.add(listing,weight=2)
     reader=ttk.Frame(pane)
-    body=tk.Text(reader,wrap='word',state='disabled',padx=12,pady=10)
+    family={'System':'TkDefaultFont','Monospace':'TkFixedFont','Serif':'Times'}[prefs['font_family']]
+    body=tk.Text(reader,wrap=prefs['wrap'],font=(family,prefs['font_size']),state='disabled',padx=12,pady=10)
+    if prefs['theme']!='System':body.configure(background=bg,foreground=fg,insertbackground=fg)
     scroll2=ttk.Scrollbar(reader,orient='vertical',command=body.yview)
     body.configure(yscrollcommand=scroll2.set)
     scroll2.pack(side='right',fill='y')
@@ -40,12 +52,14 @@ def launch(archive):
         body.configure(state='disabled')
     def search(*_):
         try:
-            hits=archive.find(query.get().strip()) if query.get().strip() else archive.recent()
+            term=query.get().strip()
+            if term and prefs['search_mode']=='Exact phrase': term='"'+term.replace('"','""')+'"'
+            hits=archive.find(term,prefs['search_limit']) if term else archive.recent(prefs['recent_limit'])
             rows.delete(*rows.get_children())
             display('')
             for h,s,f in hits: rows.insert('', 'end',iid=h,values=(s,f))
             stats=archive.stats()
-            status.set(f"{len(hits)} shown (up to 100)  |  {stats['messages']} archived messages  |  {stats['origins']} mailbox origins")
+            status.set(f"{len(hits)} shown  |  {stats['messages']} archived messages  |  {stats['origins']} mailbox origins")
         except Exception as e: messagebox.showerror('Search',str(e))
     def select(*_):
         selection=rows.selection()
@@ -53,8 +67,9 @@ def launch(archive):
         try:
             h=selection[0]
             data=archive.details(h)
-            header='\n'.join(f"{k}: {data[k]}" for k in ('subject','sender','date','message_id','reply_to'))
-            display(header+'\nSHA-256: '+h+'\n\n'+data['body'])
+            keys=('subject','sender','date','message_id','reply_to') if prefs['show_message_ids'] else ('subject','sender','date')
+            header='\n'.join(f"{k}: {data[k]}" for k in keys)
+            display(header+('\nSHA-256: '+h if prefs['show_hash'] else '')+'\n\n'+data['body'])
         except Exception as e: messagebox.showerror('Message',str(e))
     def show_thread():
         selected=rows.selection()
@@ -67,17 +82,17 @@ def launch(archive):
         except Exception as e: messagebox.showerror('Conversation',str(e))
     def show_timeline():
         try:
-            hits=archive.timeline()
+            hits=archive.timeline(limit=prefs['timeline_limit'])
             display('\n\n'.join(f"{date or 'Unknown date'} | {sender}\n{subject}\nSHA-256: {h}" for h,subject,sender,date in hits))
             status.set(f'{len(hits)} messages in timeline; dates are sender-declared.')
         except Exception as e: messagebox.showerror('Timeline',str(e))
     def show_correspondents():
         try:
-            display('\n'.join(f'{count:>6}  {sender or "(unknown sender)"}' for sender,count in archive.correspondents()))
+            display('\n'.join(f'{count:>6}  {sender or "(unknown sender)"}' for sender,count in archive.correspondents(prefs['correspondent_limit'])))
         except Exception as e: messagebox.showerror('Correspondents',str(e))
     def import_files():
         try:
-            for f in filedialog.askopenfilenames(filetypes=[('Email','*.eml')]):
+            for f in filedialog.askopenfilenames(initialdir=prefs['import_directory'] or None,filetypes=[('Email','*.eml')]):
                 path=Path(f)
                 if path.stat().st_size>64*1024*1024: raise ValueError('Message exceeds 64 MiB limit')
                 archive.ingest(path.read_bytes())
@@ -92,7 +107,7 @@ def launch(archive):
     def export():
         selected=rows.selection()
         if not selected: return messagebox.showinfo('Export','Select one or more messages first.')
-        parent=filedialog.askdirectory(title='Choose parent folder for evidence package')
+        parent=filedialog.askdirectory(initialdir=prefs['export_directory'] or None,title='Choose parent folder for evidence package')
         if not parent: return
         from datetime import datetime,timezone
         dest=Path(parent)/('evidence-'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ'))
@@ -110,6 +125,12 @@ def launch(archive):
         from schedule_ui import launch as launch_schedule
         launch_schedule(archive.root.resolve(), root)
     ttk.Button(analysis_bar,text='Synchronization center',command=scheduling).pack(side='left',padx=3)
+    def configure():
+        from preferences_ui import launch as launch_preferences
+        launch_preferences(archive.root,root)
+    ttk.Button(analysis_bar,text='Configuration center',command=configure).pack(side='left',padx=3)
+    if prefs['startup_view']=='Saved query':query.insert(0,prefs['startup_query'])
+    if prefs['verify_on_start']:root.after(100,verify)
     query.bind('<Return>',search)
     root.bind('<Control-f>',lambda _:query.focus_set())
     rows.bind('<<TreeviewSelect>>',select)
