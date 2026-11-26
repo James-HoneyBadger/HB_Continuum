@@ -125,9 +125,20 @@ class Archive:
         return {'messages':self.db.execute('SELECT count(*) FROM messages').fetchone()[0],
                 'origins':self.db.execute('SELECT count(*) FROM origins').fetchone()[0]}
     def sync(self, host, user, password, folder='INBOX'):
+        from sync_lock import sync_lock
+        with sync_lock(self.root):
+            return self._sync(host, user, password, folder)
+    def _sync(self, host, user, password, folder):
+        if folder.startswith('"') and folder.endswith('"'):
+            folder=folder[1:-1]
+        if not folder or any(c in folder for c in '\r\n\x00'):
+            raise ValueError('Invalid mailbox name')
+        quoted='"'+folder.replace('\\','\\\\').replace('"','\\"')+'"'
+        if host.lower()=='imap.gmail.com':
+            password=''.join(password.split())
         with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(), timeout=30) as m:
             m.login(user,password)
-            if m.select(folder,readonly=True)[0]!='OK': raise RuntimeError('Select failed')
+            if m.select(quoted,readonly=True)[0]!='OK': raise RuntimeError('Select failed')
             resp=m.response('UIDVALIDITY')[1]
             if not resp or resp[0] is None or not resp[0].decode().isdigit(): raise RuntimeError('Missing UIDVALIDITY')
             validity=resp[0].decode()
@@ -136,7 +147,7 @@ class Archive:
             count=0
             for uid in data[0].split():
                 origin=(host+'|'+user,folder,validity,uid.decode())
-                if self.db.execute('SELECT 1 FROM origins WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone(): continue
+                if self.db.execute('SELECT 1 FROM origins WHERE account=? AND folder IN (?,?) AND validity=? AND uid=?',(origin[0],folder,quoted,validity,uid.decode())).fetchone(): continue
                 status,parts=m.uid('fetch',uid,'(BODY.PEEK[])')
                 if status!='OK': raise RuntimeError('Fetch failed')
                 payload=[p[1] for p in parts if isinstance(p,tuple)]

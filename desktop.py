@@ -106,6 +106,10 @@ def launch(archive):
     analysis_bar.pack(fill='x',before=pane)
     for label,fn in [('Conversation',show_thread),('Timeline',show_timeline),('Correspondents',show_correspondents)]:
         ttk.Button(analysis_bar,text=label,command=fn).pack(side='left',padx=3)
+    def scheduling():
+        from schedule_ui import launch as launch_schedule
+        launch_schedule(archive.root.resolve(), root)
+    ttk.Button(analysis_bar,text='Synchronization center',command=scheduling).pack(side='left',padx=3)
     query.bind('<Return>',search)
     root.bind('<Control-f>',lambda _:query.focus_set())
     rows.bind('<<TreeviewSelect>>',select)

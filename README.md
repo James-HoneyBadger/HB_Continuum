@@ -46,3 +46,7 @@ Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, rea
 ## Privacy and limitations
 
 Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Back up the entire archive with the app closed. Failed imports may leave unindexed raw files; failed exports may be partial. Live IMAP and GUI are unverified. Resource limits, atomic exports, attachment and thread UI, and broader hostile-MIME hardening remain future work. Do not use as the sole evidence archive or for untrusted bulk imports yet.
+
+## Scheduled synchronization (macOS)
+
+Maintain multiple mailboxes automatically with the local synchronization center, configurable interval or daily schedules, macOS Keychain credentials and a per-user LaunchAgent. See [Scheduled synchronization](docs/SCHEDULED_SYNC.md). Finish any older manual import before enabling the service.
