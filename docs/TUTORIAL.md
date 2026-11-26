@@ -34,7 +34,7 @@ python3 -c "import sqlite3; c=sqlite3.connect(':memory:'); c.execute('CREATE VIR
 python3 -m unittest discover -s tests -v
 ```
 
-Examples below use a POSIX shell (Linux/macOS); on Windows use your Python launcher and equivalent paths. Main is the public beta; other public development branches are alpha experiments. A versioned release is a separately approved milestone.
+Examples below use a POSIX shell (Linux/macOS); on Windows use your Python launcher and equivalent paths. Main is the public beta and the source of the [v0.2.0 beta pre-release](https://github.com/James-HoneyBadger/HB_Dispatch/releases/tag/v0.2.0); other public development branches are alpha experiments that are not included in that tag.
 
 Create a synthetic email outside the repository using a plain-text editor, saving it as `~/dispatch-practice.eml` (not .txt):
 
