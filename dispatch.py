@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 Honey Badger Universe
 """Local read-only email archive. No network access except explicit sync."""
 import shutil, argparse, hashlib, imaplib, sqlite3, ssl, json, os, tempfile
 from pathlib import Path

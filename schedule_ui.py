@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 Honey Badger Universe
 """Native Tk account scheduler; never reads or displays passwords."""
 def launch(root, parent=None):
     import tkinter as tk

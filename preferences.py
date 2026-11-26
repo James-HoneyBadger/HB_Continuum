@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 Honey Badger Universe
 """Versioned, validated local preferences. No account credentials."""
 from pathlib import Path
 from schedule import read_json,write_json

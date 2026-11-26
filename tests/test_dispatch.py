@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 Honey Badger Universe
 import unittest,tempfile, json, sqlite3, io, contextlib
 from unittest import mock
 from pathlib import Path

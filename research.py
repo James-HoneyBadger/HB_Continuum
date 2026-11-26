@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 Honey Badger Universe
 """User-defined research overlays; original evidence is never modified."""
 import csv, json, sqlite3, os
 from pathlib import Path

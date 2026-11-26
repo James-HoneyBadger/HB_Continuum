@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 Honey Badger Universe
 """Research workbench for local, user-defined overlays."""
 def launch(archive,parent,selected_hashes):
     import tkinter as tk

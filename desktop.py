@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 Honey Badger Universe
 """Local correspondence workstation. Plain text only; no remote rendering."""
 def launch(archive):
     import tkinter as tk
