@@ -131,6 +131,10 @@ def launch(archive):
     ttk.Button(analysis_bar,text='Configuration center',command=configure).pack(side='left',padx=3)
     if prefs['startup_view']=='Saved query':query.insert(0,prefs['startup_query'])
     if prefs['verify_on_start']:root.after(100,verify)
+    def research_workbench():
+        from research_ui import launch as launch_research
+        launch_research(archive,root,rows.selection)
+    ttk.Button(analysis_bar,text='Research workbench',command=research_workbench).pack(side='left',padx=3)
     query.bind('<Return>',search)
     root.bind('<Control-f>',lambda _:query.focus_set())
     rows.bind('<<TreeviewSelect>>',select)

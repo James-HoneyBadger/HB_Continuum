@@ -54,3 +54,7 @@ Maintain multiple mailboxes automatically with the local synchronization center,
 ## Configuration center
 
 Customize the workstation per archive with validated, portable settings for appearance, research, file locations, integrity checks and synchronization. Open **Configuration center** in the desktop application. See [Configuration reference](docs/CONFIGURATION.md).
+
+## Research workbench
+
+Create workspaces, saved queries, classification rules, tags, custom metadata and reusable CSV reports without changing original correspondence. See [Research workbench](docs/RESEARCH.md).
