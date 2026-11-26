@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .venv/
+.mypy_cache/
 *.sqlite3*
 *.eml
 .env

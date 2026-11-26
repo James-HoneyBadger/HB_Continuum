@@ -20,3 +20,15 @@ jobs:
         run: python -m py_compile dispatch.py desktop.py schedule.py schedule_ui.py sync_lock.py tests/test_dispatch.py tests/test_schedule.py preferences.py preferences_ui.py tests/test_preferences.py research.py research_ui.py tests/test_research.py
       - name: Tests
         run: python -m unittest discover -s tests -v
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install mypy
+        run: pip install mypy==2.4.1
+      - name: Type check
+        run: mypy
