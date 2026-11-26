@@ -4,6 +4,8 @@ from pathlib import Path
 from email import policy
 from email.parser import BytesParser
 
+__version__ = '0.2.0'
+
 class Archive:
     def __init__(self, root):
         self.root = Path(root).expanduser(); self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -146,7 +148,7 @@ class Archive:
 
 def main():
     import getpass
-    p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); sub=p.add_subparsers(dest='cmd',required=True)
+    p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
     q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
     a=p.parse_args(); ar=Archive(a.archive)
     if a.cmd=='import':

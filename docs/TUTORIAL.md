@@ -31,6 +31,7 @@ git clone https://github.com/James-HoneyBadger/HB_Dispatch.git
 cd HB_Dispatch
 python3 --version
 python3 -c "import sqlite3; c=sqlite3.connect(':memory:'); c.execute('CREATE VIRTUAL TABLE t USING fts5(body)'); print('FTS5 available')"
+python3 dispatch.py --version
 python3 -m unittest discover -s tests -v
 ```
 

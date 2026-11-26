@@ -1,7 +1,7 @@
-import unittest,tempfile, json, sqlite3
+import unittest,tempfile, json, sqlite3, io, contextlib
 from unittest import mock
 from pathlib import Path
-from dispatch import Archive
+from dispatch import Archive, __version__, main
 RAW=b'From: sender@example.invalid\r\nSubject: Synthetic invoice\r\nMessage-ID: <test@example.invalid>\r\n\r\nTest evidence only.\r\n'
 class Tests(unittest.TestCase):
     def setUp(self):
@@ -63,4 +63,11 @@ class Tests(unittest.TestCase):
             self.assertEqual({m['sha256'] for m in self.a.thread(h)},{parent,reply})
         self.assertEqual(len(self.a.thread(unrelated)),1)
         self.assertEqual(dict(self.a.correspondents())['other@example.invalid'],1)
+    def test_version_flag(self):
+        out=io.StringIO()
+        with mock.patch('sys.argv',['dispatch.py','--version']), contextlib.redirect_stdout(out):
+            with self.assertRaises(SystemExit) as exit:
+                main()
+        self.assertEqual(exit.exception.code,0)
+        self.assertEqual(out.getvalue().strip(),f'dispatch.py {__version__}')
 if __name__=='__main__': unittest.main()

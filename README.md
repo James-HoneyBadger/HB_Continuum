@@ -49,6 +49,7 @@ HB Dispatch is free and open-source software. No telemetry, advertising, mandato
 Python 3.12+ with SQLite FTS5 and optional Tkinter.
 
 ```sh
+python3 dispatch.py --version
 python3 dispatch.py import sample.eml
 python3 dispatch.py search invoice
 python3 dispatch.py verify
