@@ -17,7 +17,7 @@ Practical investigations have included:
 
 These are actual research outcomes, not hypothetical feature claims. Some investigations used authorized external analysis of the local archive; HB Dispatch itself supplies the searchable evidence foundation, not an automated financial or legal adviser. Private correspondence and underlying records are not published.
 
-**Status:** the core archive is operational and published as the [v0.3.0 beta pre-release](https://github.com/James-HoneyBadger/HB_Dispatch/releases/tag/v0.3.0), which adds local scheduled synchronization, a configuration center and a research workbench to the archival core. The release is a milestone tag, not a claim of comprehensive security certification.
+**Status:** the core archive is operational and published as the [v0.3.0 release](https://github.com/James-HoneyBadger/HB_Dispatch/releases/tag/v0.3.0), which adds local scheduled synchronization, a configuration center and a research workbench to the archival core. The release is a milestone tag, not a claim of comprehensive security certification.
 
 ## Your mail. Your archive. Your choice.
 
