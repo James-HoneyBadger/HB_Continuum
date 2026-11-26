@@ -6,10 +6,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v7
@@ -17,7 +18,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Compile
-        run: python -m py_compile dispatch.py desktop.py schedule.py schedule_ui.py sync_lock.py tests/test_dispatch.py tests/test_schedule.py preferences.py preferences_ui.py tests/test_preferences.py research.py research_ui.py tests/test_research.py
+        run: python -m py_compile dispatch.py desktop.py schedule.py schedule_ui.py sync_lock.py tests/test_dispatch.py tests/test_schedule.py preferences.py preferences_ui.py tests/test_preferences.py research.py research_ui.py tests/test_research.py backup.py mime_index.py tests/test_hardening.py
       - name: Tests
         run: python -m unittest discover -s tests -v
 

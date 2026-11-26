@@ -63,7 +63,7 @@ Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, rea
 
 ## Privacy and limitations
 
-Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Back up the entire archive with the app closed. Failed imports may leave unindexed raw files; failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS and Gmail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search currently indexes plain-text message content rather than all HTML or attachments. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Dispatch as the sole evidence archive.
+Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Back up the entire archive with the app closed. Failed imports may leave unindexed raw files; failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS and Gmail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search indexes plain text, offline text extracted from HTML-only messages, attachment filenames and bounded text attachment contents. Binary PDF, Office and image contents are not indexed. Older archived messages require reindexing. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Dispatch as the sole evidence archive.
 
 ## Scheduled synchronization (macOS)
 
@@ -76,3 +76,7 @@ Customize the workstation per archive with validated, portable settings for appe
 ## Research workbench
 
 Create workspaces, saved queries, classification rules, tags, custom metadata and reusable CSV reports without changing original correspondence. See [Research workbench](docs/RESEARCH.md).
+
+## Archive health and recovery
+
+Development adds archive reconciliation, resumable reindexing, orphan recovery and verified local snapshots/restoration. See [Archive hardening and recovery](docs/ARCHIVE_HARDENING.md) for commands and remaining safety boundaries.

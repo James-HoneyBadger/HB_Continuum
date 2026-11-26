@@ -12,3 +12,11 @@ evidence/
 *.mbox
 config.local.*
 .DS_Store
+
+preferences.json
+schedule.json
+schedule-status.json
+backup-manifest.json
+*.lock
+.hb-backup-*/
+.hb-restore-*/
