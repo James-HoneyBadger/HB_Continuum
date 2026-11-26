@@ -97,6 +97,14 @@ python3 dispatch.py summarize run HASH
 python3 dispatch.py summarize run --all --type thread
 ```
 
+**Unified search** — search archived email and imported records together;
+snippets are excerpts of the stored text, never generated.
+
+```sh
+python3 dispatch.py search-all "receipt"
+python3 dispatch.py search-all "bullion" --sources facebook
+```
+
 ## License and community
 
 Copyright (c) 2026 Honey Badger Universe.

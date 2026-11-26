@@ -34,6 +34,9 @@ Phase A — Stabilization (repository audit in progress).
   summaries with prompt versioning, input-digest staleness detection,
   batch progress/cancellation, and resumability; stored in
   `research.sqlite3` (working tree, uncommitted).
+- Unified search (`unified.py`): keyword search across archived email and
+  Facebook/catalog records via `dispatch search-all`, with source labels
+  and plain-text snippets (working tree, uncommitted).
 
 ## Pending capabilities
 
@@ -60,8 +63,8 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 - Working tree (uncommitted): `desktop.py`, `dispatch.py`, `preferences.py`,
   `research.py`, `mypy.ini`, `.github/workflows/ci.yml` modified;
   `search_worker.py`, `catalog.py`, `facebook.py`, `summarize.py`,
-  `tests/test_search_worker.py`, `tests/test_facebook.py`,
-  `tests/test_summarize.py` added.
+  `unified.py`, `tests/test_search_worker.py`, `tests/test_facebook.py`,
+  `tests/test_summarize.py`, `tests/test_unified.py` added.
 - This session (documentation): `docs/engineering/BASELINE_AUDIT.md`,
   `docs/engineering/IMPLEMENTATION_STATUS.md`, `docs/FACEBOOK_IMPORT.md`,
   `docs/AI_SUMMARIZATION.md` added.
@@ -87,16 +90,17 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 57 tests, all pass (29 baseline
-  + 5 search-worker + 14 Facebook importer + 9 summarization tests).
+- `python3 -m unittest discover -s tests`: 61 tests, all pass (29 baseline
+  + 5 search-worker + 14 Facebook importer + 9 summarization + 4 unified
+  search).
 - End-to-end CLI smoke tests of `dispatch facebook preview/import/search/
-  list` and `dispatch summarize run --all` (against a fake loopback Ollama):
-  pass.
+  list`, `dispatch summarize run --all` (fake loopback Ollama), and
+  `dispatch search-all`: pass.
 - `mypy` not run locally (not installed); CI runs `mypy` on Python 3.13.
 
 ## Test results
 
-57 passed, 0 failed, 0 skipped (Python 3.12, Linux).
+61 passed, 0 failed, 0 skipped (Python 3.12, Linux).
 
 ## CI status
 
@@ -136,6 +140,5 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 2. Desktop framework PoC (Tauri 2, as chosen).
 3. Add versioned migrations to `research.sqlite3`/`archive.sqlite3` before
    further schema evolution (the catalog now demonstrates the pattern).
-4. Commit the tested search-threading, Facebook importer, and AI
-   summarization increments on a focused branch, coordinated with the
-   owner's PR #4/#5 merge order.
+4. Extend unified search with relevance-ranked cross-source fusion and
+   date/kind filtering.
