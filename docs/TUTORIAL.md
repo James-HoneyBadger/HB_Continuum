@@ -123,7 +123,7 @@ python3 dispatch.py --archive ~/dispatch-practice search invoice
 python3 dispatch.py --archive ~/dispatch-practice export ~/dispatch-practice-export REPLACE_WITH_FULL_HASH
 ```
 
-Replace REPLACE_WITH_FULL_HASH with the actual 64-character hash from your search. The destination must not exist. For a multi-message export, supply multiple hashes after the destination. The export contains original EML files and manifest.json with hashes, filenames and recorded IMAP origins (empty for manual imports). Inspect all outputs; on main, a failed export can leave a partial directory.
+Replace REPLACE_WITH_FULL_HASH with the actual 64-character hash from your search. The destination must not exist. For a multi-message export, supply multiple hashes after the destination. The export contains original EML files and manifest.json with hashes, filenames and recorded IMAP origins (empty for manual imports). Inspect all outputs; export prevalidates inputs and cleans up on ordinary export exceptions; interrupted processes may still require manual cleanup.
 
 This is useful for personal records, warranty disputes, research, project history and audit preparation. Hashes detect changes relative to the stored hash, not the truth of message contents, authorship, completeness, receipt time, or a legally certified chain of custody. An export may contain private identifiers and attachments; review it before sharing. Redact derivative copies, never the preserved originals.
 
@@ -158,7 +158,7 @@ Use the actual restored path. Disk encryption and backup access controls are you
 | Explicit read-only IMAP sync, one folder per run | Implemented; live-provider validation pending |
 | Multiple accounts in one archive via separate commands | Implemented; live-provider validation pending |
 | Hash verification and EML/manifest export | Available, with limitations |
-| Correspondent summaries, reply graph and timeline | Alpha branch, not yet on main |
+| Correspondent summaries, reply graph and timeline | Implemented in desktop UI; validation pending |
 | Attachment-content indexing, saved account profiles, OAuth | Planned |
 | Automatic retention, complete recovery workflows | Planned |
 

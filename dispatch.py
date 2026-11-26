@@ -1,5 +1,5 @@
 """Local read-only email archive. No network access except explicit sync."""
-import argparse, hashlib, imaplib, sqlite3, ssl, json, os, tempfile
+import shutil, argparse, hashlib, imaplib, sqlite3, ssl, json, os, tempfile
 from pathlib import Path
 from email import policy
 from email.parser import BytesParser
@@ -12,6 +12,8 @@ class Archive:
         self.db.execute('PRAGMA foreign_keys=ON')
         self.db.executescript('''CREATE TABLE IF NOT EXISTS messages(hash TEXT PRIMARY KEY, subject TEXT, sender TEXT, date TEXT, message_id TEXT, reply_to TEXT, body TEXT);
         CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(hash UNINDEXED, subject, sender, body);
+        CREATE INDEX IF NOT EXISTS messages_message_id ON messages(message_id);
+        CREATE INDEX IF NOT EXISTS messages_reply_to ON messages(reply_to);
         CREATE TABLE IF NOT EXISTS origins(account TEXT, folder TEXT, validity TEXT, uid TEXT, hash TEXT NOT NULL REFERENCES messages(hash), PRIMARY KEY(account,folder,validity,uid));''')
     @staticmethod
     def _part_text(part):
@@ -23,6 +25,7 @@ class Archive:
             return payload.decode('utf-8','replace') if isinstance(payload,bytes) else str(payload)
         return content.decode('utf-8','replace') if isinstance(content,bytes) else content
     def ingest(self, raw, origin=None):
+        if len(raw) > 64 * 1024 * 1024: raise ValueError('Message exceeds 64 MiB limit')
         digest = hashlib.sha256(raw).hexdigest(); target = self.raw / (digest+'.eml')
         if not target.exists():
             with tempfile.NamedTemporaryFile(dir=self.raw, delete=False) as f:
@@ -52,15 +55,75 @@ class Archive:
     def verify(self):
         return [h for (h,) in self.db.execute('SELECT hash FROM messages') if not (p:=self.raw/(h+'.eml')).is_file() or hashlib.sha256(p.read_bytes()).hexdigest()!=h]
     def export(self, hashes, destination):
-        dest=Path(destination); dest.mkdir(mode=0o700,parents=True,exist_ok=False); manifest=[]
-        for h in dict.fromkeys(hashes):
-            if not self.db.execute('SELECT 1 FROM messages WHERE hash=?',(h,)).fetchone(): raise ValueError('Unknown message')
-            raw=(self.raw/(h+'.eml')).read_bytes()
-            if hashlib.sha256(raw).hexdigest()!=h: raise ValueError('Integrity mismatch')
-            (dest/(h+'.eml')).write_bytes(raw)
-            origins=self.db.execute('SELECT account,folder,validity,uid FROM origins WHERE hash=?',(h,)).fetchall()
-            manifest.append({'sha256':h,'file':h+'.eml','origins':origins})
-        (dest/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
+        dest=Path(destination)
+        hashes=list(dict.fromkeys(hashes))
+        if not hashes: raise ValueError('Select at least one message')
+        for h in hashes:
+            if not isinstance(h,str) or len(h)!=64 or any(x not in '0123456789abcdef' for x in h):
+                raise ValueError('Invalid message hash')
+            if not self.db.execute('SELECT 1 FROM messages WHERE hash=?',(h,)).fetchone():
+                raise ValueError('Unknown message')
+        dest.mkdir(mode=0o700,parents=True,exist_ok=False)
+        try:
+            manifest=[]
+            for h in hashes:
+                raw=(self.raw/(h+'.eml')).read_bytes()
+                if hashlib.sha256(raw).hexdigest()!=h: raise ValueError('Integrity mismatch')
+                with os.fdopen(os.open(dest/(h+'.eml'),os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'wb') as output:
+                    output.write(raw)
+                origins=self.db.execute('SELECT account,folder,validity,uid FROM origins WHERE hash=? ORDER BY account,folder,validity,uid',(h,)).fetchall()
+                manifest.append({'sha256':h,'file':h+'.eml','origins':origins})
+            with os.fdopen(os.open(dest/'manifest.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'w',encoding='utf-8') as output:
+                json.dump(manifest,output,indent=2)
+        except Exception:
+            shutil.rmtree(dest)
+            raise
+    def details(self, digest):
+        row=self.db.execute('SELECT subject,sender,date,message_id,reply_to,body FROM messages WHERE hash=?',(digest,)).fetchone()
+        if row is None: raise ValueError('Unknown message')
+        return dict(zip(('subject','sender','date','message_id','reply_to','body'),row))
+    def recent(self, limit=100):
+        return self.db.execute('SELECT hash,subject,sender FROM messages ORDER BY rowid DESC LIMIT ?', (max(1,min(int(limit),1000)),)).fetchall()
+    def timeline(self, sender=None, limit=100):
+        """Chronological view of declared message dates; unparseable dates sort last."""
+        from email.utils import parsedate_to_datetime
+        from datetime import timezone
+        sql='SELECT hash,subject,sender,date FROM messages'
+        params=()
+        if sender is not None:
+            sql+=' WHERE sender=?'
+            params=(sender,)
+        def key(row):
+            try:
+                d=parsedate_to_datetime(row[3])
+                if d.tzinfo is None: d=d.replace(tzinfo=timezone.utc)
+                return (0,d.timestamp(),row[0])
+            except (ValueError,TypeError,OverflowError,OSError):
+                return (1,0,row[0])
+        return sorted(self.db.execute(sql,params),key=key)[:max(1,min(int(limit),1000))]
+    def correspondents(self, limit=100):
+        return self.db.execute(
+            "SELECT sender, count(*) FROM messages GROUP BY sender ORDER BY count(*) DESC, sender LIMIT ?",
+            (max(1,min(int(limit),1000)),)).fetchall()
+    def thread(self, digest):
+        """Return linked messages using Message-ID and In-Reply-To, not subject guesses."""
+        row=self.db.execute('SELECT message_id,reply_to FROM messages WHERE hash=?',(digest,)).fetchone()
+        if row is None: raise ValueError('Unknown message')
+        visited={digest}
+        frontier={value for value in row if value}
+        identifiers=set()
+        while frontier:
+            value=frontier.pop()
+            if value in identifiers: continue
+            identifiers.add(value)
+            for h,mid,parent in self.db.execute(
+                'SELECT hash,message_id,reply_to FROM messages WHERE message_id=? OR reply_to=?',(value,value)):
+                visited.add(h)
+                frontier.update(v for v in (mid,parent) if v and v not in identifiers)
+        return [self.details(h) | {'sha256':h} for h in sorted(visited)]
+    def stats(self):
+        return {'messages':self.db.execute('SELECT count(*) FROM messages').fetchone()[0],
+                'origins':self.db.execute('SELECT count(*) FROM origins').fetchone()[0]}
     def sync(self, host, user, password, folder='INBOX'):
         with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(), timeout=30) as m:
             m.login(user,password)
