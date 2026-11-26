@@ -4,7 +4,7 @@ from pathlib import Path
 from email import policy
 from email.parser import BytesParser
 
-__version__ = '0.2.0'
+__version__ = '0.3.0'
 
 class Archive:
     def __init__(self, root):
@@ -45,7 +45,7 @@ class Archive:
                 if self.db.execute('SELECT hash FROM origins WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone()[0]!=digest: raise ValueError('Origin conflict')
         return digest
     def find(self, query, limit=100):
-        limit=max(1,min(int(limit),100))
+        limit=max(1,min(int(limit),5000))
         try:
             return self.db.execute('SELECT hash,subject,sender FROM search WHERE search MATCH ? LIMIT ?', (query,limit)).fetchall()
         except sqlite3.OperationalError:
@@ -85,7 +85,7 @@ class Archive:
         if row is None: raise ValueError('Unknown message')
         return dict(zip(('subject','sender','date','message_id','reply_to','body'),row))
     def recent(self, limit=100):
-        return self.db.execute('SELECT hash,subject,sender FROM messages ORDER BY rowid DESC LIMIT ?', (max(1,min(int(limit),1000)),)).fetchall()
+        return self.db.execute('SELECT hash,subject,sender FROM messages ORDER BY rowid DESC LIMIT ?', (max(1,min(int(limit),5000)),)).fetchall()
     def timeline(self, sender=None, limit=100):
         """Chronological view of declared message dates; unparseable dates sort last."""
         from email.utils import parsedate_to_datetime
@@ -102,11 +102,11 @@ class Archive:
                 return (0,d.timestamp(),row[0])
             except (ValueError,TypeError,OverflowError,OSError):
                 return (1,0,row[0])
-        return sorted(self.db.execute(sql,params),key=key)[:max(1,min(int(limit),1000))]
+        return sorted(self.db.execute(sql,params),key=key)[:max(1,min(int(limit),5000))]
     def correspondents(self, limit=100):
         return self.db.execute(
             "SELECT sender, count(*) FROM messages GROUP BY sender ORDER BY count(*) DESC, sender LIMIT ?",
-            (max(1,min(int(limit),1000)),)).fetchall()
+            (max(1,min(int(limit),5000)),)).fetchall()
     def thread(self, digest):
         """Return linked messages using Message-ID and In-Reply-To, not subject guesses."""
         row=self.db.execute('SELECT message_id,reply_to FROM messages WHERE hash=?',(digest,)).fetchone()
@@ -127,9 +127,22 @@ class Archive:
         return {'messages':self.db.execute('SELECT count(*) FROM messages').fetchone()[0],
                 'origins':self.db.execute('SELECT count(*) FROM origins').fetchone()[0]}
     def sync(self, host, user, password, folder='INBOX'):
-        with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(), timeout=30) as m:
+        from sync_lock import sync_lock
+        with sync_lock(self.root):
+            return self._sync(host, user, password, folder)
+    def _sync(self, host, user, password, folder):
+        if folder.startswith('"') and folder.endswith('"'):
+            folder=folder[1:-1]
+        if not folder or any(c in folder for c in '\r\n\x00'):
+            raise ValueError('Invalid mailbox name')
+        quoted='"'+folder.replace('\\','\\\\').replace('"','\\"')+'"'
+        if host.lower()=='imap.gmail.com':
+            password=''.join(password.split())
+        from preferences import load
+        prefs=load(self.root)
+        with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(), timeout=prefs['network_timeout']) as m:
             m.login(user,password)
-            if m.select(folder,readonly=True)[0]!='OK': raise RuntimeError('Select failed')
+            if m.select(quoted,readonly=True)[0]!='OK': raise RuntimeError('Select failed')
             resp=m.response('UIDVALIDITY')[1]
             if not resp or resp[0] is None or not resp[0].decode().isdigit(): raise RuntimeError('Missing UIDVALIDITY')
             validity=resp[0].decode()
@@ -138,12 +151,13 @@ class Archive:
             count=0
             for uid in data[0].split():
                 origin=(host+'|'+user,folder,validity,uid.decode())
-                if self.db.execute('SELECT 1 FROM origins WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone(): continue
+                if self.db.execute('SELECT 1 FROM origins WHERE account=? AND folder IN (?,?) AND validity=? AND uid=?',(origin[0],folder,quoted,validity,uid.decode())).fetchone(): continue
                 status,parts=m.uid('fetch',uid,'(BODY.PEEK[])')
                 if status!='OK': raise RuntimeError('Fetch failed')
                 payload=[p[1] for p in parts if isinstance(p,tuple)]
                 if len(payload)!=1: raise RuntimeError('Unexpected fetch response')
                 self.ingest(payload[0],origin); count+=1
+                if prefs['batch_limit'] and count>=prefs['batch_limit']: break
             return count
 
 def main():

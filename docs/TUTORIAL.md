@@ -35,7 +35,7 @@ python3 dispatch.py --version
 python3 -m unittest discover -s tests -v
 ```
 
-Examples below use a POSIX shell (Linux/macOS); on Windows use your Python launcher and equivalent paths. Main is the public beta and the source of the [v0.2.0 beta pre-release](https://github.com/James-HoneyBadger/HB_Dispatch/releases/tag/v0.2.0); other public development branches are alpha experiments that are not included in that tag.
+Examples below use a POSIX shell (Linux/macOS); on Windows use your Python launcher and equivalent paths. Main is the public beta and the source of the [v0.3.0 beta pre-release](https://github.com/James-HoneyBadger/HB_Dispatch/releases/tag/v0.3.0); anything on a public development branch beyond that tag is an alpha experiment that is not part of it.
 
 Create a synthetic email outside the repository using a plain-text editor, saving it as `~/dispatch-practice.eml` (not .txt):
 

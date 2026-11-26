@@ -17,7 +17,7 @@ Practical investigations have included:
 
 These are actual research outcomes, not hypothetical feature claims. Some investigations used authorized external analysis of the local archive; HB Dispatch itself supplies the searchable evidence foundation, not an automated financial or legal adviser. Private correspondence and underlying records are not published.
 
-**Status:** the core archive is operational and published as the [v0.2.0 beta pre-release](https://github.com/James-HoneyBadger/HB_Dispatch/releases/tag/v0.2.0). Scheduling, configuration and research-workbench enhancements remain under active development on a separate branch and are not part of this release. The release is a milestone tag, not a claim of comprehensive security certification.
+**Status:** the core archive is operational and published as the [v0.3.0 beta pre-release](https://github.com/James-HoneyBadger/HB_Dispatch/releases/tag/v0.3.0), which adds local scheduled synchronization, a configuration center and a research workbench to the archival core. The release is a milestone tag, not a claim of comprehensive security certification.
 
 ## Your mail. Your archive. Your choice.
 
@@ -59,8 +59,20 @@ python3 dispatch.py export evidence HASH
 python3 -m unittest discover -s tests -v
 ```
 
-Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, read-only mailbox selection and BODY.PEEK. Passwords are prompted for, never stored by the application. Provider-specific authentication may be required. Gmail OAuth, Keychain and MCP are future work.
+Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, read-only mailbox selection and BODY.PEEK. Passwords are prompted for, never stored by the application. Provider-specific authentication may be required. Gmail OAuth and a native MCP integration remain future work. Manual synchronization prompts for passwords; scheduled synchronization is macOS-only and reads credentials from the login Keychain.
 
 ## Privacy and limitations
 
 Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Back up the entire archive with the app closed. Failed imports may leave unindexed raw files; failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS and Gmail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search currently indexes plain-text message content rather than all HTML or attachments. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Dispatch as the sole evidence archive.
+
+## Scheduled synchronization (macOS)
+
+Maintain multiple mailboxes automatically with the local synchronization center, configurable interval or daily schedules, macOS Keychain credentials and a per-user LaunchAgent. See [Scheduled synchronization](docs/SCHEDULED_SYNC.md). Finish any older manual import before enabling the service.
+
+## Configuration center
+
+Customize the workstation per archive with validated, portable settings for appearance, research, file locations, integrity checks and synchronization. Open **Configuration center** in the desktop application. See [Configuration reference](docs/CONFIGURATION.md).
+
+## Research workbench
+
+Create workspaces, saved queries, classification rules, tags, custom metadata and reusable CSV reports without changing original correspondence. See [Research workbench](docs/RESEARCH.md).

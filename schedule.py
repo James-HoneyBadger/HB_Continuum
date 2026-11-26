@@ -1,0 +1,138 @@
+"""Local per-account schedules with macOS Keychain and launchd."""
+import argparse, hashlib, json, os, plistlib, re, subprocess, sys, tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from dispatch import Archive
+from sync_lock import SyncBusy
+
+def utcnow():
+    return datetime.now(timezone.utc)
+
+def read_json(path, default):
+    try: return json.loads(path.read_text())
+    except FileNotFoundError: return default
+
+def write_json(path, data):
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as f:
+        temp=Path(f.name)
+        try:
+            json.dump(data,f,indent=2); f.flush(); os.fsync(f.fileno())
+            os.replace(temp,path)
+        finally: temp.unlink(missing_ok=True)
+
+def profile(name,host,user,folders,minutes=None,daily=None,enabled=True):
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,40}',name): raise ValueError('Invalid profile name')
+    if not re.fullmatch(r'[A-Za-z0-9.-]+',host) or not user or any(c in user for c in '\r\n\x00'): raise ValueError('Invalid server or username')
+    if not folders or any(not x or any(c in x for c in '\r\n\x00') for x in folders): raise ValueError('Invalid mailbox')
+    if (minutes is None)==(daily is None): raise ValueError('Choose interval OR daily local time')
+    if minutes is not None and (type(minutes) is not int or not 5<=minutes<=10080): raise ValueError('Interval must be 5–10080 minutes')
+    if daily is not None and not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',daily): raise ValueError('Daily time must be HH:MM')
+    return dict(name=name,host=host,user=user,folders=list(dict.fromkeys(folders)),minutes=minutes,daily=daily,enabled=bool(enabled))
+
+def service(p): return 'HB Dispatch IMAP '+p['host'].lower()
+
+def credential(p):
+    if sys.platform!='darwin': raise RuntimeError('Keychain requires macOS')
+    r=subprocess.run(['/usr/bin/security','find-generic-password','-s',service(p),'-a',p['user'],'-w'],capture_output=True,timeout=30)
+    if r.returncode: raise RuntimeError('Keychain credential unavailable')
+    return r.stdout.decode().rstrip('\r\n')
+
+def due(p,state,now):
+    if not p['enabled']: return False
+    last=state.get('last_attempt')
+    if p['minutes'] is not None:
+        return not last or (now-datetime.fromisoformat(last)).total_seconds()>=p['minutes']*60
+    local=now.astimezone()
+    return local.strftime('%H:%M')>=p['daily'] and (not last or datetime.fromisoformat(last).astimezone().date()!=local.date())
+
+def config(root): return read_json(root/'schedule.json',{})
+
+def tick(root,force=None,now=None,get_password=credential):
+    import fcntl
+    root.mkdir(mode=0o700,parents=True,exist_ok=True)
+    fd=os.open(root/'schedule.lock',os.O_CREAT|os.O_RDWR,0o600)
+    try:
+        try: fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError: return {'status':'scheduler already running'}
+        profiles=config(root)
+        if force and force not in profiles: raise ValueError('Unknown profile')
+        states=read_json(root/'schedule-status.json',{})
+        ar=Archive(root)
+        try:
+            for name,p in profiles.items():
+                p=profile(**p); stamp=now or utcnow()
+                if not (name==force or (force is None and due(p,states.get(name,{}),stamp))): continue
+                previous=states.get(name,{}).copy()
+                state=states.setdefault(name,{})
+                state.update(last_attempt=stamp.isoformat(),status='running',imported=0)
+                write_json(root/'schedule-status.json',states)
+                try:
+                    password=get_password(p)
+                    for folder in p['folders']:
+                        state['imported']+=ar.sync(p['host'],p['user'],password,folder)
+                    state.update(status='ok',last_success=(now or utcnow()).isoformat())
+                except SyncBusy:
+                    states[name]=previous
+                    states[name]['status']='deferred: archive busy'
+                except Exception as exc:
+                    state['status']='error: '+type(exc).__name__
+                finally: write_json(root/'schedule-status.json',states)
+        finally: ar.db.close()
+        return states
+    finally: os.close(fd)
+
+def agent(root):
+    label='org.honeybadger.dispatch.'+hashlib.sha256(str(root).encode()).hexdigest()[:16]
+    return label,Path.home()/'Library/LaunchAgents'/(label+'.plist')
+
+def install(root):
+    if sys.platform!='darwin': raise RuntimeError('launchd requires macOS')
+    label,path=agent(root);path.parent.mkdir(parents=True,exist_ok=True)
+    if path.exists():
+        if agent_status(root)=='Loaded': raise RuntimeError('Agent already loaded; schedule changes take effect automatically')
+        raise RuntimeError('Agent file already exists; remove scheduler, then install again')
+    data={'Label':label,'ProgramArguments':[sys.executable,str(Path(__file__).resolve()),'--archive',str(root),'tick'],'StartInterval':60,'RunAtLoad':True,'ProcessType':'Background'}
+    with path.open('xb') as f: plistlib.dump(data,f)
+    try: subprocess.run(['/bin/launchctl','bootstrap','gui/'+str(os.getuid()),str(path)],check=True)
+    except Exception:
+        path.unlink(missing_ok=True);raise
+    return str(path)
+
+def agent_status(root):
+    if sys.platform!='darwin': return 'Not supported on this platform'
+    label,path=agent(root)
+    r=subprocess.run(['/bin/launchctl','print','gui/'+str(os.getuid())+'/'+label],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
+    return 'Loaded' if r.returncode==0 else ('Installed, not loaded' if path.exists() else 'Not installed')
+
+def uninstall(root):
+    if sys.platform!='darwin': raise RuntimeError('launchd requires macOS')
+    label,path=agent(root)
+    if agent_status(root)=='Loaded':
+        subprocess.run(['/bin/launchctl','bootout','gui/'+str(os.getuid())+'/'+label],check=True)
+    path.unlink(missing_ok=True)
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--archive',default='~/.hb-dispatch')
+    sub=p.add_subparsers(dest='cmd',required=True)
+    q=sub.add_parser('add');q.add_argument('name');q.add_argument('host');q.add_argument('user');q.add_argument('--folder',action='append',required=True)
+    g=q.add_mutually_exclusive_group(required=True);g.add_argument('--minutes',type=int);g.add_argument('--daily')
+    for cmd in ('pause','resume','run'):
+        q=sub.add_parser(cmd);q.add_argument('name')
+    for cmd in ('tick','status','install','uninstall','gui'):sub.add_parser(cmd)
+    a=p.parse_args();root=Path(a.archive).expanduser().resolve()
+    if a.cmd=='gui':
+        from schedule_ui import launch
+        launch(root);return
+    profiles=config(root)
+    if a.cmd=='add':
+        item=profile(a.name,a.host,a.user,a.folder,a.minutes,a.daily)
+        profiles[a.name]=item;write_json(root/'schedule.json',profiles)
+        print('Keychain item name:',service(item),'Account:',item['user'])
+    elif a.cmd in ('pause','resume'):
+        profiles[a.name]['enabled']=a.cmd=='resume';write_json(root/'schedule.json',profiles)
+    elif a.cmd in ('run','tick'): print(json.dumps(tick(root,a.name if a.cmd=='run' else None),indent=2))
+    elif a.cmd=='status': print(json.dumps({'agent':agent_status(root),'profiles':profiles,'status':read_json(root/'schedule-status.json',{})},indent=2))
+    elif a.cmd=='install': print(install(root))
+    elif a.cmd=='uninstall': uninstall(root)
+if __name__=='__main__': main()
