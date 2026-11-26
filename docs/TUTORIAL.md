@@ -1,10 +1,10 @@
-# HB Dispatch: Take ownership of your email history
+# HB Continuum: Take ownership of your email history
 
 ## 1. Why an archive is different from an inbox
 
 Imagine changing internet providers, retiring an old domain, reaching a mailbox quota, or needing to find an agreement from five years ago. Your mail provider may be excellent at delivering today's messages, yet your historical correspondence remains dependent on that provider.
 
-HB Dispatch separates **communication** from **record keeping**. Continue using your favorite mail client to send and receive. Use Dispatch to build a searchable, independent collection of original messages on storage you control.
+HB Continuum separates **communication** from **record keeping**. Continue using your favorite mail client to send and receive. Use Dispatch to build a searchable, independent collection of original messages on storage you control.
 
 A useful mental model:
 
@@ -13,7 +13,7 @@ Mail providers and exported EML files
              |
        read-only retrieval / import
              |
-    HB Dispatch local archive
+    HB Continuum local archive
        |                 |
     original EML      SQLite search index
        |

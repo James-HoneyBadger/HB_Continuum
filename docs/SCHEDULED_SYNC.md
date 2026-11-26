@@ -1,6 +1,6 @@
 # Local scheduled synchronization (macOS)
 
-HB Dispatch's synchronization center maintains an existing archive without
+HB Continuum's synchronization center maintains an existing archive without
 a hosted scheduler or a permanent terminal window. It uses a
 per-user macOS LaunchAgent, the login Keychain and the existing read-only
 IMAP importer. Nothing is uploaded except the standard IMAP authentication
@@ -8,7 +8,7 @@ and requests sent to your selected mail provider.
 
 ## First-time setup
 
-1. Finish any import started with an older version of HB Dispatch. This
+1. Finish any import started with an older version of HB Continuum (formerly HB Dispatch). This
    matters because older versions did not participate in the synchronization lock.
 2. Start the correspondence workstation with
    `python3 dispatch.py --archive ~/HB_Mail_Archive gui` and select

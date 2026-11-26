@@ -1,4 +1,4 @@
-# Contributing to HB_Dispatch
+# Contributing to HB Continuum
 
 Public experimental project. Preserve explicit limitations; do not claim verified restoration, certified chain of custody or safe server deletion.
 

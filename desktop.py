@@ -6,7 +6,7 @@ def launch(archive):
     from preferences import load
     prefs=load(archive.root)
     root=tk.Tk()
-    root.title('HB Dispatch — Correspondence Workstation')
+    root.title('HB Continuum — Historical Research Workstation')
     root.geometry(f"{prefs['window_width']}x{prefs['window_height']}")
     style=ttk.Style(root)
     if prefs['theme']!='System':
