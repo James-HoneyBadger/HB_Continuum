@@ -176,6 +176,33 @@ landed (Overview dashboard, design tokens, timeline pagination).
 - Tests cover sender/kind/tag filters, exact counts, inexact tag totals,
   query validation and IPC validation.
 
+### Engine package extraction (2026-11-27)
+
+- The engine now lives in the `hb_engine` package: archive/CLI, IPC, catalog,
+  migrations, research overlay, reporting, unified and advanced search,
+  scheduling, scheduling backends, summarization, backup, preferences,
+  Facebook import, MIME extraction and timestamp handling.
+- `dispatch.py` is the unchanged CLI and PyInstaller entry point: it loads
+  `hb_engine.dispatch`, calls `main()` and leaves `--version`, archive paths,
+  command output and exit codes untouched.
+- Top-level module names are compatibility aliases that replace themselves in
+  `sys.modules` with the package module. Existing imports such as
+  `from catalog import Catalog`, private test hooks and `mock.patch` targets
+  therefore keep working against the same module identity.
+- All engine cross-imports are package-relative, so a module is loaded once.
+  The Tkinter workstation remains a presentation layer outside the package
+  and imports `hb_engine.preferences`, `hb_engine.research` and
+  `hb_engine.schedule`.
+- `scripts/build_engine.py` passes `--collect-submodules hb_engine` so new
+  engine modules are always included in the sidecar. CI compiles the package,
+  root wrappers, tests and scripts, and mypy checks the package plus the Tk
+  UI modules.
+- Verified: 252 tests with no failures, CLI `--version`/`import`/`search`,
+  a subprocess IPC `ping`/`shutdown` session, and `build_engine.py
+  --print-command`. A fresh PyInstaller binary was not built in this
+  environment because PyInstaller is not installed; the CI packaging job
+  remains the build verification.
+
 ### Advanced boolean queries (2026-11-27)
 
 - `search_advanced` accepts a nested tree of groups (`and`, `or`, `not`) and
@@ -335,7 +362,7 @@ landed (Overview dashboard, design tokens, timeline pagination).
 
 See `BASELINE_AUDIT.md` section 9. In brief: local embeddings/hybrid
 search, Second Me, Facebook post revisions and message attachment metadata,
-relationship explorer, and the documentation overhaul
+saved advanced queries, and the documentation overhaul
 (ROADMAP/SECURITY/ARCHITECTURE/CHANGELOG).
 
 Archive hardening, verified backup/restore, desktop health/backup surfaces,
@@ -345,8 +372,10 @@ until the shell's flows are exercised against real archives.
 
 ## Architectural decisions
 
-- Preserve `dispatch.py` as a backward-compatible CLI wrapper and the email
-  engine entry point; adopt "HB Continuum" as the overall product identity.
+- Keep `dispatch.py` as the stable CLI and PyInstaller entry point while the
+  engine implementation lives in `hb_engine`; top-level module names are
+  compatibility aliases with the same module identity. Adopt "HB Continuum"
+  as the overall product identity.
 - Keep SQLite + FTS5 as the storage foundation; evaluate a separate catalog
   database for source-independent records without destabilizing
   `archive.sqlite3`.
@@ -357,6 +386,11 @@ until the shell's flows are exercised against real archives.
 
 ## Files changed
 
+- Engine-package increment (2026-11-27): `hb_engine/` (new package: 17 moved
+  modules plus `__init__.py`), top-level compatibility aliases for every
+  moved module, `dispatch.py`, `desktop.py`, `preferences_ui.py`,
+  `research_ui.py`, `schedule_ui.py`, `scripts/build_engine.py`,
+  `.github/workflows/ci.yml`, `mypy.ini`, `docs/PACKAGING.md`, `README.md`.
 - Advanced-query increment (2026-11-27): `advanced_search.py` (new), `ipc.py`,
   `src-tauri/src/lib.rs`, `frontend/src/App.vue`,
   `frontend/src/components/AdvancedSearchView.vue` (new),
@@ -477,7 +511,8 @@ until the shell's flows are exercised against real archives.
 
 ## Tests executed
 
-- `python3 -m py_compile` on changed files: pass.
+- `compileall` over `hb_engine/`, root wrappers, `tests/` and `scripts/`:
+  pass.
 - `python3 -m unittest discover -s tests`: 252 tests, 0 failures; optional
   credential-backend tests skip when `keyring` or `cryptography` are not
   installed (1 skip on the project Python 3.13 interpreter, 2 on a local
@@ -485,7 +520,9 @@ until the shell's flows are exercised against real archives.
   tests, 5 import-run tests, 6 journal tests, 8 collection/draft tests,
   5 report tests, 11 source management/verification tests, 10 unified-search
   tests, 10 advanced-query tests, 8 relationship tests and 56 IPC tests.
-- `mypy` (2.4.1, matching CI): no issues in 19 source files.
+- `mypy` (2.4.1, matching CI) is configured for `hb_engine` and the Tk UI
+  modules. It was not available in this environment, so the CI type-check job
+  is the verification.
 - `cargo test` (src-tauri): 3 tests pass, covering bundled-sidecar
   preference, the development script fallback and resolution from a bare
   directory.
@@ -510,11 +547,12 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-232 Python tests ran: 231 passed, 0 failed, 1 skipped (Python 3.13.6,
-macOS ARM64); `npm run build` (vue-tsc + vite), `cargo check` and
-`cargo test` pass; background EML import, import history, sources, source
-removal, source verification, journal, collections and archive-report IPC
-surfaces are covered by tests over the real subprocess protocol.
+252 Python tests ran: 0 failed; optional credential-backend tests skip when
+`keyring` or `cryptography` are unavailable (1 skip on Python 3.13.6, 2 on
+Python 3.15). `npm run build` (vue-tsc + vite), `cargo check` and `cargo test`
+pass; background EML import, import history, sources, source removal, source
+verification, journal, collections, reports, relationships, advanced queries
+and the subprocess IPC protocol are covered by tests.
 
 Scheduler verification status:
 
@@ -598,15 +636,14 @@ Scheduler verification status:
 
 ## Next recommended tasks
 
-1. Extract the engine into a package behind the `dispatch.py` CLI and the IPC
-   entry point, now that the packaged binary fixes the runtime contract.
-2. Support Facebook post/comment revision entries and message attachments
+1. Support Facebook post/comment revision entries and message attachments
    metadata.
-3. Close PR #4 as superseded and reconcile PR #5 branding with this branch.
-4. Extend unified search with a paged FTS contract so results are not
-   capped at 5000, and add record-kind filters to the advanced query UI.
+2. Close PR #4 as superseded and reconcile PR #5 branding with this branch.
+3. Extend unified search with a paged FTS contract so results are not
+   capped at 5000.
+4. Persist advanced query trees as saved advanced searches in the research
+   overlay.
 5. Add collection selection from the timeline and record reader, and an
    optional "hide disabled sources from default views" preference.
-6. Implement the relationship/network explorer over documented associations.
-7. Run the benchmark harness on Windows and Linux and add a 1M-record run
+6. Run the benchmark harness on Windows and Linux and add a 1M-record run
    before making large-archive claims.

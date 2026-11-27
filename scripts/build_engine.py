@@ -49,6 +49,7 @@ def rust_target_triple(run=subprocess.run):
 def pyinstaller_command():
     command = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',
                '--onefile', '--name', 'hb-engine',
+               '--collect-submodules', 'hb_engine',
                '--distpath', str(ROOT / 'dist'),
                '--workpath', str(ROOT / 'build' / 'pyinstaller'),
                '--specpath', str(ROOT / 'build')]

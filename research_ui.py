@@ -4,7 +4,7 @@
 def launch(archive,parent,selected_hashes):
     import tkinter as tk
     from tkinter import ttk,messagebox,filedialog
-    from research import Research,FIELDS,OPERATORS,TYPES,COLUMNS,GROUPS
+    from hb_engine.research import Research,FIELDS,OPERATORS,TYPES,COLUMNS,GROUPS
     r=Research(archive)
     w=tk.Toplevel(parent);w.title('HB Continuum | Research workbench');w.geometry('1050x730')
     frame=ttk.Frame(w,padding=14);frame.pack(fill='both',expand=True)

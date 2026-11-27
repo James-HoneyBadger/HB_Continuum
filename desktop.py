@@ -5,7 +5,7 @@ def launch(archive):
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
     from pathlib import Path
-    from preferences import load
+    from hb_engine.preferences import load
     from search_worker import SearchController, find_readonly, recent_readonly
     prefs=load(archive.root)
     root=tk.Tk()

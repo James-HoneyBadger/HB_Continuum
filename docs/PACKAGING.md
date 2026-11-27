@@ -4,6 +4,14 @@ The Tauri shell is only a UI: all archive work happens in the Python engine.
 A packaged app therefore ships two pieces — the shell and a standalone engine
 binary — and must not depend on a system `python3` or a repository checkout.
 
+## Engine package layout
+
+The implementation is the `hb_engine` package. `dispatch.py` is the stable CLI
+and PyInstaller entry point; it loads `hb_engine.dispatch` and calls `main()`.
+Every engine module uses package-relative imports. Top-level names such as
+`catalog.py`, `ipc.py` and `schedule.py` are compatibility aliases that point
+at the package module, preserving existing imports and test patch targets.
+
 ## Building the engine
 
 `scripts/build_engine.py` builds `dispatch.py` with PyInstaller and places the
@@ -23,8 +31,10 @@ It produces:
   and `cargo build` must work on a checkout that has not built the engine
   yet, while a release build requires it.
 
-`--no-copy` builds without copying, `--print-command` shows the PyInstaller
-invocation, and `--smoke` runs the built binary against a temporary archive
+The build passes `--collect-submodules hb_engine`, so adding an engine module
+cannot leave it out of the sidecar. `--no-copy` builds without copying,
+`--print-command` shows the PyInstaller invocation, and `--smoke` runs the
+built binary against a temporary archive
 (`--version`, `import`, `search`, `health`). CI runs `--no-copy --smoke` on
 Ubuntu, macOS and Windows.
 
