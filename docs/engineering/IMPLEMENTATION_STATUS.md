@@ -188,7 +188,9 @@ landed (Overview dashboard, design tokens, timeline pagination).
   `post_update`/`comment_update` revision kinds. Distinct exported content
   versions remain separate records; a stable key based on source key and
   original timestamp groups them and an import-order index distinguishes
-  versions. Comment authors are now stored as actors when present.
+  versions. Comment authors are now stored as actors when present. The
+  record response includes the other stored versions, and the Search detail
+  view lets you open each version without merging their text.
 - Message, post and comment attachment metadata is normalized into compact
   objects: photo/video/audio/file/gif/sticker/share/reaction, external link,
   place, event and marketplace. URIs, names, descriptions, thumbnails and
@@ -577,14 +579,14 @@ until the shell's flows are exercised against real archives.
 
 - `compileall` over `hb_engine/`, root wrappers, `tests/` and `scripts/`:
   pass.
-- `python3 -m unittest discover -s tests`: 266 tests, 0 failures; optional
+- `python3 -m unittest discover -s tests`: 267 tests, 0 failures; optional
   credential-backend tests skip when `keyring` or `cryptography` are not
   installed (1 skip on the project Python 3.13 interpreter, 2 on a local
   Python 3.15 interpreter). Includes 8 timestamp/chronology tests, 2 real-process lock
   tests, 5 import-run tests, 6 journal tests, 8 collection/draft tests,
   5 report tests, 11 source management/verification tests, 11 unified-search
   tests, 10 advanced-query tests, 5 saved-query tests, 8 relationship tests,
-  57 IPC tests, 19 Facebook tests and a packaging-smoke test.
+  58 IPC tests, 19 Facebook tests and a packaging-smoke test.
 - `mypy` (2.4.1, matching CI) is configured for `hb_engine` and the Tk UI
   modules. It was not available in this environment, so the CI type-check job
   is the verification.
@@ -615,7 +617,7 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-266 Python tests ran: 0 failed; optional credential-backend tests skip when
+267 Python tests ran: 0 failed; optional credential-backend tests skip when
 `keyring` or `cryptography` are unavailable (1 skip on Python 3.13.6, 2 on
 Python 3.15). `npm run build` (vue-tsc + vite), `cargo check` and `cargo test`
 pass; background EML import, import history, sources, source removal, source

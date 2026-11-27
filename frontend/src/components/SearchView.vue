@@ -378,6 +378,27 @@ async function exportSelected() {
         </ul>
       </div>
       <pre class="body">{{ detail.body }}</pre>
+      <div v-if="detail.revisions?.length > 1" class="revisions">
+        <h3>Stored versions ({{ detail.revisions.length }})</h3>
+        <ul>
+          <li v-for="v in detail.revisions" :key="v.record_id">
+            <button
+              v-if="!v.current"
+              type="button"
+              class="version-link"
+              @click="openRecord(v.record_id)"
+            >
+              Version {{ v.revision_index ?? "?" }}
+            </button>
+            <span v-else class="current-version">Current · version {{ v.revision_index ?? "?" }}</span>
+            <span class="version-meta">
+              {{ v.updated_at || v.occurred_at || "undated" }}
+              <template v-if="v.actor"> · {{ v.actor }}</template>
+            </span>
+            <p class="version-body">{{ v.body }}</p>
+          </li>
+        </ul>
+      </div>
       <details v-if="detail.original_json">
         <summary>Original record JSON</summary>
         <pre class="json">{{ detail.original_json }}</pre>
@@ -510,6 +531,45 @@ button {
 .attachments ul {
   margin: 4px 0 0;
   padding-left: 20px;
+}
+.revisions {
+  margin: 12px 0;
+}
+.revisions h3 {
+  font-size: 13px;
+  margin: 0 0 6px;
+}
+.revisions ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.revisions li {
+  border-top: 1px solid var(--hb-border);
+  padding: 6px 0;
+}
+.version-link {
+  padding: 2px 8px;
+  border: 1px solid var(--hb-border-strong);
+  border-radius: var(--hb-radius);
+  background: var(--hb-toolbar);
+  color: var(--hb-text);
+  cursor: pointer;
+  margin-right: 6px;
+}
+.current-version {
+  font-weight: 600;
+  margin-right: 6px;
+}
+.version-meta {
+  font-size: 11px;
+  color: var(--hb-text-secondary);
+}
+.version-body {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--hb-text-secondary);
+  white-space: pre-wrap;
 }
 .attachment-kind {
   text-transform: uppercase;

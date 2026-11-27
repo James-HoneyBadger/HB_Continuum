@@ -76,6 +76,29 @@ class Catalog:
         result['attachments'] = attachments if isinstance(attachments, list) else []
         return result
 
+    def record_revisions(self, record_id, limit=100):
+        """Other stored versions sharing this record's revision key."""
+        row = self.db.execute(
+            'SELECT revision_key FROM records WHERE record_id=?', (record_id,)).fetchone()
+        if row is None:
+            raise ValueError('Unknown record')
+        if not row[0]:
+            return []
+        limit = max(1, min(int(limit), 500))
+        rows = self.db.execute(
+            'SELECT record_id,revision_index,revision_kind,occurred_at,updated_at,'
+            'actor,substr(body,1,200) FROM records WHERE revision_key=? '
+            'ORDER BY revision_index IS NULL, revision_index, '
+            "COALESCE(updated_at,occurred_at,'') LIMIT ?", (row[0], limit)).fetchall()
+        keys = ('record_id', 'revision_index', 'revision_kind', 'occurred_at',
+                'updated_at', 'actor', 'body')
+        result = []
+        for values in rows:
+            item = dict(zip(keys, values))
+            item['current'] = item['record_id'] == record_id
+            result.append(item)
+        return result
+
     def list_records(self, source_type='facebook', record_kind=None, actor=None, limit=100):
         limit = max(1, min(int(limit), 5000))
         sql = 'SELECT record_id, source_key, record_kind, actor, occurred_at, body FROM records WHERE source_type=?'

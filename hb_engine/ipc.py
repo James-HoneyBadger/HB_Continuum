@@ -130,6 +130,22 @@ def _record(root, record_id):
             row = ((old[0], old[1], old[2], old[3], old[4], old[5], None,
                     old[6], old[7], None, None, None, None, '[]')
                    if old else None)
+        revisions = []
+        if row is not None and row[11]:
+            try:
+                keys = ('record_id', 'revision_index', 'revision_kind', 'occurred_at',
+                        'updated_at', 'actor', 'body')
+                for values in conn.execute(
+                        'SELECT record_id,revision_index,revision_kind,occurred_at,'
+                        'updated_at,actor,substr(body,1,200) FROM records '
+                        'WHERE revision_key=? ORDER BY revision_index IS NULL, '
+                        'revision_index, COALESCE(updated_at,occurred_at,\'\') LIMIT 100',
+                        (row[11],)):
+                    item = dict(zip(keys, values))
+                    item['current'] = item['record_id'] == record_id
+                    revisions.append(item)
+            except sqlite3.OperationalError:
+                revisions = []
     finally:
         conn.close()
     if row is None:
@@ -143,8 +159,8 @@ def _record(root, record_id):
             'occurred_precision': row[6] or '', 'body': row[7] or '',
             'original_json': row[8] or '', 'updated_at': row[9] or '',
             'revision_kind': row[10] or '', 'revision_key': row[11] or '',
-            'revision_index': row[12], 'attachments': attachments
-            if isinstance(attachments, list) else []}
+            'revision_index': row[12], 'revisions': revisions,
+            'attachments': attachments if isinstance(attachments, list) else []}
 
 def _verify(root):
     root = Path(root)

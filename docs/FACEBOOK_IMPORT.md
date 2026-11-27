@@ -40,6 +40,8 @@ Each record is stored in the source-independent catalog
 - `revision_key` and `revision_index` — a deterministic grouping key and an
   import-order index for post/comment versions that share a source key and
   original timestamp. Distinct content versions remain separate records.
+  The catalog record detail lists the other stored versions and lets you
+  open each one without merging their text.
 - `attachments_json` — normalized attachment metadata, up to 100 entries per
   record. Media files themselves are not copied.
 

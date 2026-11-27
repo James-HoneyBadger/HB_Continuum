@@ -184,6 +184,29 @@ class IPCServerTests(unittest.TestCase):
         self.assertIsNone(result['revision_index'])
         self.assertEqual(result['updated_at'],'')
 
+    def test_record_includes_revision_versions(self):
+        from facebook import import_files
+        from catalog import Catalog
+        first=self.root/'posts_a.json'
+        first.write_text(json.dumps({'your_posts':[
+            {'timestamp': 1700000000, 'data': [{'post': 'First version'}]}]}))
+        second=self.root/'posts_b.json'
+        second.write_text(json.dumps({'your_posts':[
+            {'timestamp': 1700000000, 'data': [{'post': 'Second version'}]}]}))
+        import_files([str(first), str(second)], self.root)
+        catalog=Catalog(self.root)
+        try:
+            rid=catalog.db.execute(
+                'SELECT record_id FROM records WHERE revision_index=1').fetchone()[0]
+        finally:
+            catalog.close()
+        result=self.server.handle(request('record',record_id=rid))['result']
+        self.assertEqual(len(result['revisions']),2)
+        self.assertEqual([item['revision_index'] for item in result['revisions']],[1,2])
+        self.assertTrue(result['revisions'][0]['current'])
+        self.assertFalse(result['revisions'][1]['current'])
+        self.assertEqual(result['revisions'][0]['body'],'First version')
+
     def test_verify(self):
         resp=self.server.handle(request('verify'))
         self.assertEqual(resp['result']['checked'],1)
