@@ -4,44 +4,10 @@
 import sqlite3
 from pathlib import Path
 
-VERSION = 2
+from migrations import MIGRATIONS as _MIGRATIONS, apply as migrate, target_version
 
-MIGRATIONS = {
-    1: (
-        "CREATE TABLE IF NOT EXISTS source_files("
-        "file_hash TEXT PRIMARY KEY,"
-        "source_type TEXT NOT NULL,"
-        "source_key TEXT NOT NULL,"
-        "path TEXT NOT NULL,"
-        "size INTEGER NOT NULL,"
-        "imported_at TEXT NOT NULL)",
-        "CREATE TABLE IF NOT EXISTS records("
-        "record_id TEXT PRIMARY KEY,"
-        "source_type TEXT NOT NULL,"
-        "source_key TEXT NOT NULL,"
-        "record_kind TEXT NOT NULL,"
-        "actor TEXT,"
-        "occurred_at TEXT,"
-        "occurred_precision TEXT,"
-        "body TEXT,"
-        "original_json TEXT,"
-        "file_hash TEXT NOT NULL REFERENCES source_files(file_hash),"
-        "created_at TEXT NOT NULL)",
-        "CREATE INDEX IF NOT EXISTS records_by_kind ON records(source_type, record_kind)",
-        "CREATE INDEX IF NOT EXISTS records_by_time ON records(occurred_at)",
-    ),
-    2: (
-        "CREATE VIRTUAL TABLE IF NOT EXISTS record_search USING fts5(body, actor)",
-        "CREATE TRIGGER IF NOT EXISTS records_ai AFTER INSERT ON records BEGIN "
-        "INSERT INTO record_search(rowid, body, actor) VALUES (new.rowid, new.body, new.actor); END",
-        "CREATE TRIGGER IF NOT EXISTS records_ad AFTER DELETE ON records BEGIN "
-        "INSERT INTO record_search(record_search, rowid, body, actor) VALUES('delete', old.rowid, old.body, old.actor); END",
-        "CREATE TRIGGER IF NOT EXISTS records_au AFTER UPDATE ON records BEGIN "
-        "INSERT INTO record_search(record_search, rowid, body, actor) VALUES('delete', old.rowid, old.body, old.actor); "
-        "INSERT INTO record_search(rowid, body, actor) VALUES (new.rowid, new.body, new.actor); END",
-        "INSERT INTO record_search(rowid, body, actor) SELECT rowid, body, actor FROM records",
-    ),
-}
+VERSION = target_version('catalog')
+MIGRATIONS = _MIGRATIONS['catalog']
 
 class Catalog:
     """Source-independent record catalog alongside the email archive.
@@ -57,12 +23,7 @@ class Catalog:
         self._migrate()
 
     def _migrate(self):
-        current = self.db.execute('PRAGMA user_version').fetchone()[0]
-        for version in range(current + 1, VERSION + 1):
-            with self.db:
-                for statement in MIGRATIONS[version]:
-                    self.db.execute(statement)
-                self.db.execute(f'PRAGMA user_version={version}')
+        migrate(self.db, 'catalog')
 
     def close(self):
         self.db.close()

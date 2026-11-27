@@ -45,7 +45,10 @@ Phase A — Stabilization (repository audit in progress).
   over stdin/stdout with `ping`, `stats`, paginated `search`, background
   `summarize` jobs with progress events and cancellation, and graceful
   `shutdown`; `dispatch serve` entry point (working tree, uncommitted).
-- Tauri 2 + Vue 3 desktop shell (`frontend/`, `src-tauri/`): a managed
+- Database migrations: shared versioned, transactional `migrations.py` for
+  `archive.sqlite3`, `research.sqlite3` and `catalog.sqlite3`, with a
+  newer-schema guard, pre-migration snapshots, and
+  `dispatch migrate [--dry-run] [--no-snapshot]` (working tree, uncommitted).
   Python subprocess client driving `stats`, `search`, `message`, `thread`,
   `record`, `verify`, `import_eml`, `preferences`, and the full research
   overlay (workspaces, saved searches, tags, fields, metadata, reports with
@@ -55,11 +58,11 @@ Phase A — Stabilization (repository audit in progress).
 
 ## Pending capabilities
 
-See `BASELINE_AUDIT.md` section 9. In brief: versioned migrations,
-packaged engine, desktop framework decision + PoC, local AI (Ollama
-summarization/embeddings), source-independent catalog and adapters
-(including Facebook JSON), unified search/timeline/research studio/Second
-Me, cross-platform scheduling, packaging, documentation overhaul.
+See `BASELINE_AUDIT.md` section 9. In brief: packaged engine (PyInstaller or
+equivalent) and sidecar bundling, local embeddings/hybrid search, Second Me,
+backup and restore (blocked on PR #4), Facebook post revisions, timeline and
+relationships explorers, and the documentation overhaul
+(ROADMAP/SECURITY/ARCHITECTURE/CHANGELOG).
 
 ## Architectural decisions
 
@@ -88,6 +91,9 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 
 ## Database changes
 
+- Schema versioning moved to `migrations.py`, shared by all three databases
+  and tracked with `PRAGMA user_version`; `archive` and `research` are at
+  version 1, `catalog` at version 2.
 - New source-independent catalog database `catalog.sqlite3` with
   `source_files` and `records` tables plus a trigger-maintained FTS5
   `record_search` index, governed by a `PRAGMA user_version`-based migration
@@ -101,17 +107,20 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 
 ## Migration considerations
 
-- No migration framework exists. PR #4 introduces `attachment_index` and
-  `extraction_versions` tables additively. A versioned, transactional,
-  recoverable migration mechanism is required before further schema
-  evolution.
+- Versioned, transactional migrations are implemented in `migrations.py` and
+  documented in `docs/MIGRATION.md`. Snapshots are written before modifying a
+  database that already contains data, and databases from a newer build are
+  refused rather than opened.
+- PR #4's `attachment_index` and `extraction_versions` tables should be
+  re-expressed as an `archive` version 2 migration when that work lands,
+  replacing its ad-hoc version marker.
 
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 112 tests, all pass (29 baseline
+- `python3 -m unittest discover -s tests`: 127 tests, all pass (29 baseline
   + 5 search-worker + 14 Facebook importer + 9 summarization + 4 unified
-  search + 24 IPC + 26 scheduler + 1 Windows-path tick).
+  search + 24 IPC + 26 scheduler + 1 Windows-path tick + 15 migrations).
 - `mypy` (2.4.1, matching CI): no issues in 16 source files.
 - End-to-end CLI smoke tests of `dispatch facebook preview/import/search/
   list`, `dispatch summarize run --all` (fake loopback Ollama),

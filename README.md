@@ -53,6 +53,7 @@ python3 dispatch.py --version
 python3 dispatch.py import sample.eml
 python3 dispatch.py search invoice
 python3 dispatch.py verify
+python3 dispatch.py migrate --dry-run
 python3 dispatch.py gui
 python3 dispatch.py sync imap.example.invalid user@example.invalid --folder INBOX
 python3 dispatch.py export evidence HASH

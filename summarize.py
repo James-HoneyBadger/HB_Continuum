@@ -11,7 +11,6 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from preferences import load as load_prefs
-from research import SUMMARIES_DDL
 
 MAX_RESPONSE = 1_000_000
 
@@ -77,7 +76,8 @@ class Summarizer:
         self.prefs = prefs if prefs is not None else load_prefs(self.root)
         self.db = sqlite3.connect(self.root / 'research.sqlite3', timeout=30)
         self.db.execute('PRAGMA foreign_keys=ON')
-        self.db.executescript(SUMMARIES_DDL)
+        from migrations import apply as migrate
+        migrate(self.db, 'research')
         self._opener = urllib.request.build_opener(_NoRedirect(), urllib.request.ProxyHandler({}))
         self._cancelled = threading.Event()
 

@@ -112,10 +112,11 @@ Configuration (`preferences.py`):
 
 ## 3. Known defects
 
-- No schema migration framework. Schema is created with
-  `CREATE TABLE IF NOT EXISTS` in `Archive.__init__` and `Research.__init__`;
-  PR #4 introduces `extraction_versions` as an ad-hoc marker rather than a
-  general versioned migration system.
+- ~~No schema migration framework.~~ Resolved: schema is versioned with
+  `PRAGMA user_version` in `migrations.py` for all three databases, with
+  transactional steps and pre-migration snapshots (see `docs/MIGRATION.md`).
+  PR #4's `extraction_versions` marker should become an `archive` v2
+  migration when that work lands.
 - `Archive` SQLite connections use the default `check_same_thread=True`;
   sharing a connection across threads raises `ProgrammingError`. The GUI
   search worker avoids this with a separate read-only connection, but the
@@ -211,8 +212,8 @@ Configuration (`preferences.py`):
    change files also touched by this working tree (`desktop.py`, `mypy.ini`,
    `ci.yml`).
 2. Reconcile the working-tree search-threading changes with PR #4/#5.
-3. Extend the versioned migration mechanism to `research.sqlite3` and
-   `archive.sqlite3` (the catalog now demonstrates the pattern).
+3. ~~Extend the versioned migration mechanism to `research.sqlite3` and
+   `archive.sqlite3`.~~ Done in `migrations.py`.
 4. Extract the engine into a package while preserving the `dispatch.py` CLI.
 5. Decide the desktop framework (Tauri 2 vs PySide6/QML) via a working PoC.
 6. Implement optional local embeddings/hybrid search with fake-server tests

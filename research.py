@@ -11,21 +11,6 @@ OPERATORS=('contains','equals','starts with')
 FIELDS=('subject','sender','body','date')
 TYPES=('text','number','date','choice','boolean')
 
-SUMMARIES_DDL = """
-CREATE TABLE IF NOT EXISTS summaries(
-  message_hash TEXT NOT NULL,
-  summary_type TEXT NOT NULL CHECK (summary_type IN ('message','thread')),
-  model_name TEXT NOT NULL,
-  prompt_version TEXT NOT NULL,
-  summary_text TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  input_digest TEXT,
-  thread_members TEXT,
-  PRIMARY KEY (message_hash, summary_type, model_name, prompt_version)
-);
-CREATE INDEX IF NOT EXISTS summaries_lookup ON summaries(summary_type, model_name, prompt_version, message_hash);
-"""
-
 def namecheck(value):
     if not isinstance(value,str) or not value.strip() or len(value)>100 or any(ord(c)<32 for c in value):
         raise ValueError('Name must contain 1–100 printable characters')
@@ -36,17 +21,8 @@ class Research:
         self.archive=archive
         self.db=sqlite3.connect(archive.root/'research.sqlite3',timeout=30)
         self.db.execute('PRAGMA foreign_keys=ON')
-        self.db.executescript("""
-        CREATE TABLE IF NOT EXISTS workspaces(name TEXT PRIMARY KEY, description TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS searches(workspace TEXT REFERENCES workspaces(name) ON DELETE CASCADE,name TEXT,query TEXT NOT NULL,tag TEXT NOT NULL,limit_n INTEGER NOT NULL,PRIMARY KEY(workspace,name));
-        CREATE TABLE IF NOT EXISTS tags(hash TEXT,tag TEXT,source TEXT,PRIMARY KEY(hash,tag,source));
-        CREATE INDEX IF NOT EXISTS tags_by_name ON tags(tag,hash);
-        CREATE TABLE IF NOT EXISTS rules(name TEXT PRIMARY KEY,field TEXT,operator TEXT,value TEXT,tag TEXT,enabled INTEGER);
-        CREATE TABLE IF NOT EXISTS fields(name TEXT PRIMARY KEY,type TEXT,choices TEXT);
-        CREATE TABLE IF NOT EXISTS metadata(hash TEXT,field TEXT REFERENCES fields(name) ON DELETE CASCADE,value TEXT,PRIMARY KEY(hash,field));
-        CREATE TABLE IF NOT EXISTS reports(name TEXT PRIMARY KEY,workspace TEXT,search TEXT,columns TEXT,group_by TEXT);
-        """)
-        self.db.executescript(SUMMARIES_DDL)
+        from migrations import apply as migrate
+        migrate(self.db, 'research')
         self.db.execute("INSERT OR IGNORE INTO workspaces VALUES('General','Default research workspace')")
         self.db.commit()
     def close(self): self.db.close()
