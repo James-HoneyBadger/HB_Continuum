@@ -3,6 +3,7 @@ import { onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import OverviewView from "./components/OverviewView.vue";
 import SearchView from "./components/SearchView.vue";
+import AdvancedSearchView from "./components/AdvancedSearchView.vue";
 import ImportView from "./components/ImportView.vue";
 import SourcesView from "./components/SourcesView.vue";
 import CollectionsView from "./components/CollectionsView.vue";
@@ -26,6 +27,7 @@ const tabs = [
   "Timeline",
   "Relationships",
   "Search",
+  "Advanced",
   "Sources",
   "Import",
   "Research",
@@ -115,6 +117,7 @@ onMounted(refreshStats);
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <OverviewView v-if="tab === 'Overview'" :on-error="reportError" :on-changed="refreshStats" />
         <SearchView v-else-if="tab === 'Search'" :on-error="reportError" :on-changed="refreshStats" />
+        <AdvancedSearchView v-else-if="tab === 'Advanced'" :on-error="reportError" :on-changed="refreshStats" />
         <TimelineView v-else-if="tab === 'Timeline'" :on-error="reportError" :on-changed="refreshStats" />
         <RelationshipsView v-else-if="tab === 'Relationships'" :on-error="reportError" :on-changed="refreshStats" />
         <SourcesView v-else-if="tab === 'Sources'" :on-error="reportError" :on-changed="refreshStats" />

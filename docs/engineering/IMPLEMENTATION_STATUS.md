@@ -75,8 +75,8 @@ landed (Overview dashboard, design tokens, timeline pagination).
   sidecar, then `HB_ENGINE_SCRIPT`/`dispatch.py` for development, with a clear
   startup error when none exists. A `--smoke` mode exercises the built binary,
   and CI builds and smoke-tests it on Ubuntu, macOS and Windows.
-- Desktop shell client: drives `stats`, `search`, `message`, `thread`,
-  `timeline`, `correspondents`, `relationships`, `record`, `verify`, `health`, `import_eml`,
+- Desktop shell client: drives `stats`, `search`, `search_advanced`, `message`,
+  `thread`, `timeline`, `correspondents`, `relationships`, `record`, `verify`, `health`, `import_eml`,
   `facebook_preview`/`facebook_import`, `preferences`, the full research
   overlay (workspaces, saved searches, tags, fields, metadata, reports with
   CSV export, rule rebuild), evidence export, synchronization profiles and
@@ -175,6 +175,31 @@ landed (Overview dashboard, design tokens, timeline pagination).
   the active query and filters is shown above the results.
 - Tests cover sender/kind/tag filters, exact counts, inexact tag totals,
   query validation and IPC validation.
+
+### Advanced boolean queries (2026-11-27)
+
+- `search_advanced` accepts a nested tree of groups (`and`, `or`, `not`) and
+  rules: text, actor, kind, source, date and tag. The tree is validated for
+  depth, node count, child count, value count and rule-specific fields; a
+  malformed text expression is rejected by each selected index with syntax
+  help instead of becoming an empty result.
+- Rules evaluate as exact sets of `(source, id)` keys. AND intersects, OR
+  unions, and NOT subtracts its single child from the selected-source
+  universe, so negation is not a filter over an already-ranked page. Text
+  rules carry reciprocal-rank scores; results sort by summed text relevance,
+  then newest normalized date. Totals are exact and pagination reports
+  `has_more`.
+- Tag rules query the research overlay and therefore match email only; tags
+  are explained in the response definitions. Date rules use a half-open
+  `[after, before)` range and never match undated records. Snippets are
+  truncated stored text.
+- The Advanced workspace provides a recursive graphical builder: nested
+  groups, rule-kind switching, source/kind checkboxes, inclusive date inputs
+  and tag any/all mode. The sidebar lists it separately from unified Search.
+- Tests cover nested AND/OR, exact NOT complements including nested NOT,
+  metadata/date/source rules, undated handling, tag any/all, exact totals and
+  pagination, global source scoping, validation messages, depth limits,
+  malformed FTS and the IPC surface.
 
 ### Relationship explorer (2026-11-27)
 
@@ -332,6 +357,12 @@ until the shell's flows are exercised against real archives.
 
 ## Files changed
 
+- Advanced-query increment (2026-11-27): `advanced_search.py` (new), `ipc.py`,
+  `src-tauri/src/lib.rs`, `frontend/src/App.vue`,
+  `frontend/src/components/AdvancedSearchView.vue` (new),
+  `frontend/src/components/QueryGroup.vue` (new),
+  `tests/test_advanced_search.py` (new), `tests/test_ipc.py`,
+  `docs/engineering/ADR-003-ipc-protocol.md`, `README.md`.
 - Relationship increment (2026-11-27): `dispatch.py`, `ipc.py`,
   `src-tauri/src/lib.rs`, `frontend/src/App.vue`,
   `frontend/src/components/RelationshipsView.vue` (new),
@@ -447,12 +478,13 @@ until the shell's flows are exercised against real archives.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 241 tests, 240 pass and 1 is
-  skipped on this machine (the optional `keyring` backend is not
-  installed). Includes 8 timestamp/chronology tests, 2 real-process lock
+- `python3 -m unittest discover -s tests`: 252 tests, 0 failures; optional
+  credential-backend tests skip when `keyring` or `cryptography` are not
+  installed (1 skip on the project Python 3.13 interpreter, 2 on a local
+  Python 3.15 interpreter). Includes 8 timestamp/chronology tests, 2 real-process lock
   tests, 5 import-run tests, 6 journal tests, 8 collection/draft tests,
   5 report tests, 11 source management/verification tests, 10 unified-search
-  tests, 8 relationship tests and 55 IPC tests.
+  tests, 10 advanced-query tests, 8 relationship tests and 56 IPC tests.
 - `mypy` (2.4.1, matching CI): no issues in 19 source files.
 - `cargo test` (src-tauri): 3 tests pass, covering bundled-sidecar
   preference, the development script fallback and resolution from a bare

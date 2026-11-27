@@ -158,7 +158,12 @@ adds source, exact sender/actor, record-kind, tag and date-range filters.
 Totals are exact counts unless a tag filter is applied, and a listing limit is
 reported explicitly rather than disguised as a total. Malformed query
 expressions are rejected with an explanation and syntax help instead of
-silently returning no matches.
+silently returning no matches. The Advanced workspace builds nested boolean
+groups over text, sender/actor, record kind, source, date and tag rules. Each
+rule is evaluated as a set; NOT excludes its child from the selected sources,
+so negation is exact rather than a filter on an already-ranked page. Text
+rules use FTS5 syntax, tag rules apply to email only, and results are ranked by
+summed text relevance then newest declared date with an exact total.
 
 ```sh
 python3 dispatch.py search-all "receipt"
@@ -169,7 +174,8 @@ python3 dispatch.py search-all "bullion" --sources facebook
 Python engine over the versioned IPC protocol. Workspaces include an Overview
 dashboard (unique records, mailbox origins, undated counts, coverage, storage,
 records by year); a paged timeline with oldest/newest ordering, sender filter
-and date range; unified search with paging and date range; Sources; a
+and date range; unified search with paging and date range; a nested boolean
+query builder; Sources; a
 background Import Center with preview, progress, cancellation and history;
 Research; Journal with revision history; archive Reports; synchronization;
 Health with resumable repair jobs; Backup with schema status and validated

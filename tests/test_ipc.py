@@ -46,6 +46,28 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(self.server.handle(request(
             'search',query='bullion',senders=[1]))['error']['code'],'INVALID_PARAMS')
 
+    def test_search_advanced(self):
+        tree={'type':'group','op':'and','children':[
+            {'type':'rule','kind':'text','value':'bullion'},
+            {'type':'rule','kind':'actor','values':['a@example.invalid']}]}
+        result=self.server.handle(request('search_advanced',query=tree))['result']
+        self.assertEqual(result['total'],1)
+        self.assertEqual(result['items'][0]['id'],self.h)
+        self.assertEqual(result['mode'],'boolean')
+        negated={'type':'group','op':'not','children':[
+            {'type':'rule','kind':'text','value':'bullion'}]}
+        self.assertEqual(self.server.handle(request(
+            'search_advanced',query=negated))['result']['items'],[])
+        self.assertEqual(self.server.handle(request(
+            'search_advanced',query={'type':'group','op':'and','children':[]}))['error']['code'],
+            'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request(
+            'search_advanced',query=tree,limit=0))['error']['code'],'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request(
+            'search_advanced',query=tree,sources=['other']))['error']['code'],'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request('search_advanced'))['error']['code'],
+                         'INVALID_PARAMS')
+
     def test_search_validate(self):
         self.assertTrue(self.server.handle(request(
             'search_validate',query='bullion'))['result']['valid'])

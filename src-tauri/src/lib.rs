@@ -219,6 +219,26 @@ fn search(
 }
 
 #[tauri::command]
+fn search_advanced(
+    state: State<AppState>,
+    query: Value,
+    sources: Option<Vec<String>>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "search_advanced",
+        json!({
+            "query": query,
+            "sources": sources.unwrap_or_else(|| vec!["email".to_string(), "facebook".to_string()]),
+            "limit": limit.unwrap_or(100),
+            "offset": offset.unwrap_or(0),
+        }),
+    )
+}
+
+#[tauri::command]
 fn search_validate(state: State<AppState>, query: String) -> Result<Value, String> {
     call(&state, "search_validate", json!({ "query": query }))
 }
@@ -830,7 +850,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            ping, stats, search, search_validate, message, thread, timeline, dashboard,
+            ping, stats, search, search_advanced, search_validate, message, thread,
+            timeline, dashboard,
             correspondents, relationships,
             record, verify, health,
             reindex, recover_orphans, migrate_status, backup, verify_backup, restore,

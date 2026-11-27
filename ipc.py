@@ -994,6 +994,24 @@ class IPCServer:
                 'has_more': exact is not None and total > start + page_size,
                 'total': total, 'total_is_exact': exact is not None, 'capped': capped}
 
+    def _advanced_search(self, params):
+        from advanced_search import search_advanced
+        if 'query' not in params:
+            raise IPCError('INVALID_PARAMS', 'search_advanced requires a query tree')
+        sources = params.get('sources', ('email', 'facebook'))
+        if isinstance(sources, str):
+            sources = tuple(x.strip() for x in sources.split(',') if x.strip())
+        sources = tuple(sources) or ('email', 'facebook')
+        if not all(source in ('email', 'facebook') for source in sources):
+            raise IPCError('INVALID_PARAMS', 'sources must be email and/or facebook')
+        limit = params.get('limit', 100)
+        offset = params.get('offset', 0)
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 5000:
+            raise IPCError('INVALID_PARAMS', 'limit must be an integer between 1 and 5000')
+        if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+            raise IPCError('INVALID_PARAMS', 'offset must be a non-negative integer')
+        return search_advanced(self.root, params['query'], limit, offset, sources)
+
     def _start_job(self, work):
         """Run work(cancel_event) on a daemon thread; emit job_complete/job_error."""
         job_id = uuid.uuid4().hex
@@ -1286,6 +1304,8 @@ class IPCServer:
                                             'catalog': self._catalog_stats()})
             if method == 'search':
                 return _result(request_id, self._search(params))
+            if method == 'search_advanced':
+                return _result(request_id, self._advanced_search(params))
             if method == 'search_validate':
                 from unified import validate_query
                 return _result(request_id, validate_query(

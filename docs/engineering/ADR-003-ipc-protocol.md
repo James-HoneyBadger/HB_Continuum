@@ -20,8 +20,9 @@ spawned as `python3 dispatch.py --archive <root> serve`.
   either `result` or `error: {code, message}`.
 - Long-running jobs emit `event` objects (`progress`, `job_complete`,
   `job_error`) tagged with a `job_id`.
-- Methods are an explicit allowlist: `ping`, `stats`, `search`, `message`,
-  `thread`, `timeline`, `correspondents`, `record`, `verify`, `health`,
+- Methods are an explicit allowlist: `ping`, `stats`, `search`,
+  `search_advanced`, `search_validate`, `message`, `thread`, `timeline`,
+  `correspondents`, `relationships`, `record`, `verify`, `health`,
   `migrate_status`, `reindex`,
   `recover_orphans`, `backup`, `verify_backup`, `restore`, `import_eml`,
   `facebook_preview`, `facebook_import`, `preferences`, `preferences_set`,
@@ -47,6 +48,13 @@ spawned as `python3 dispatch.py --archive <root> serve`.
 - `timeline` returns messages ordered by their declared Date header with
   unparseable dates last, optionally filtered by sender; `correspondents`
   counts messages per sender. Both are read-only and cap `limit` at 5000.
+- `search_advanced` accepts a validated tree of nested boolean groups and
+  rules, evaluates each rule as a set over the selected sources, and returns
+  an exact total with one page. Malformed trees or FTS expressions are
+  rejected as `INVALID_PARAMS` rather than silently returning no matches.
+- `relationships` returns observed co-participation in shared email threads
+  and catalog conversations, with source-prefixed identities and explicit
+  participant/edge caps. It reads through a read-only connection.
 - `message` and `thread` results carry the body text and indexed attachment
   metadata (`filename`, `mime`, `characters`); an archive without the
   attachment index reports an empty list rather than failing.
