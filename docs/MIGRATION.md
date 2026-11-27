@@ -105,6 +105,18 @@ The log records observed counts only. A process killed mid-run leaves
 silently rewritten as success. Nothing is backfilled for imports performed
 before version 4; the UI reports history as unavailable for those runs.
 
+## Archive version 5: original file sizes
+
+Version 5 adds a nullable `messages.size` column holding the byte length of
+the stored original. New imports record it directly; the migration backfills
+it by inspecting each raw file when it runs with the archive root (opening an
+archive normally, or `dispatch migrate`). Storage totals then sum the column
+instead of walking the raw directory.
+
+A record whose original is missing keeps `NULL`, and summary code falls back
+to inspecting the filesystem, so a damaged archive still reports an honest
+size rather than zero.
+
 ## Research version 2: journal entries
 
 Version 2 adds two tables to `research.sqlite3`:

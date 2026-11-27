@@ -154,6 +154,19 @@ landed (Overview dashboard, design tokens, timeline pagination).
   retrospective user records stored in the research overlay, never merged
   with preserved evidence.
 
+### Benchmarks and stored original sizes (2026-11-27)
+
+- Added `scripts/benchmark.py`, a deterministic synthetic benchmark harness
+  for ingest, search, timeline paging, dashboard and peak memory, with an
+  empty-directory safety rule and JSON output. Baselines are recorded in
+  `docs/BENCHMARKS.md`.
+- Archive schema 5 adds `messages.size`, recorded at import and backfilled
+  from the raw files during migration. Dashboard/source/report storage
+  totals now sum the column instead of walking every file, measured at 699 ms
+  to 34 ms for 100,000 records. A missing size falls back to the scan.
+- Benchmarks are covered by tests (determinism, workdir safety, measured
+  structure), and CI compiles the harness.
+
 ### Safe automatic migration (2026-11-27)
 
 - `Archive` now migrates under the archive write lock. When an existing
@@ -206,6 +219,11 @@ until the shell's flows are exercised against real archives.
 
 ## Files changed
 
+- Benchmark increment (2026-11-27): `scripts/benchmark.py` (new),
+  `docs/BENCHMARKS.md` (new), `migrations.py`, `dispatch.py`, `ipc.py`,
+  `tests/test_benchmark.py` (new), `tests/test_migrations.py`,
+  `tests/test_timeline.py`, `tests/test_ipc.py`,
+  `.github/workflows/ci.yml`.
 - Migration-safety increment (2026-11-27): `dispatch.py`, `schedule.py`,
   `tests/test_migrations.py`, `docs/MIGRATION.md`.
 - Reports increment (2026-11-27): `reporting.py` (new), `ipc.py`,
@@ -264,7 +282,8 @@ until the shell's flows are exercised against real archives.
   at version 2 and `research` at version 2. Archive version 2 adds
   `attachment_index` and `extraction_versions`; version 3 adds `sort_ts`,
   `date_precision` and the `messages_sort_ts` index (additive, with a
-  transactional backfill); version 4 adds `import_runs` and its time index.
+  transactional backfill); version 4 adds `import_runs` and its time index;
+  version 5 adds `messages.size`, backfilled from the stored originals.
   Research version 2 adds `journal_entries` and `journal_revisions`.
 - New source-independent catalog database `catalog.sqlite3` with
   `source_files` and `records` tables plus a trigger-maintained FTS5
@@ -290,7 +309,7 @@ until the shell's flows are exercised against real archives.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 197 tests, 196 pass and 1 is
+- `python3 -m unittest discover -s tests`: 202 tests, 201 pass and 1 is
   skipped on this machine (the optional `keyring` backend is not
   installed). Includes 8 timestamp/chronology tests, 2 real-process lock
   tests, 5 import-run tests, 6 journal tests, 5 report tests,
@@ -320,7 +339,7 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-197 Python tests ran: 196 passed, 0 failed, 1 skipped (Python 3.13.6,
+202 Python tests ran: 201 passed, 0 failed, 1 skipped (Python 3.13.6,
 macOS ARM64); `npm run build` (vue-tsc + vite), `cargo check` and
 `cargo test` pass; background EML import, import history, sources, journal
 and archive-report IPC surfaces are covered by tests over the real
@@ -361,16 +380,25 @@ Scheduler verification status:
 
 ## Performance findings
 
-- Chronological navigation now uses indexed SQL over `messages.sort_ts`
-  instead of a Python sort over every matching row. A page reads only its
-  window; the unknown-date section is appended from an indexed `sort_ts IS
-  NULL` lookup, and a count is taken only when a page starts past the dated
-  records.
+- `scripts/benchmark.py` now produces a reproducible synthetic baseline
+  (`docs/BENCHMARKS.md`). On macOS ARM64 with Python 3.13.6:
+
+  | records | ingest | find p95 | timeline first | timeline deep | dashboard | peak RSS |
+  |---|---|---|---|---|---|---|
+  | 10,000 | 9.8 s (1,021/s) | 0.1 ms | 0.1 ms | 3.7 ms | 5.1 ms | 46.8 MiB |
+  | 100,000 | 150.1 s (666/s) | 0.1 ms | 0.1 ms | 34.6 ms | 33.9 ms | 77.8 MiB |
+
+- The first timeline page is constant-time; a deep page grows with the
+  offset because SQLite walks the `sort_ts` index to the requested position.
+  The archive is never loaded into memory.
+- Storage accounting initially walked every raw file on each dashboard
+  refresh (699 ms at 100k). Archive schema 5 records original sizes at
+  import, reducing that dashboard to 34 ms while keeping a filesystem
+  fallback for older or damaged archives.
 - Unified search still materializes at most `SEARCH_CAP` (5000) fused
   results per query before paginating; that cap, not archive size, bounds
   memory. Raising it needs a paged FTS contract.
-- No reproducible benchmark suite yet; 10k/100k/1M synthetic runs remain
-  outstanding.
+- 1,000,000-record runs have not been performed and are not claimed.
 
 ## Known limitations
 
@@ -405,4 +433,5 @@ Scheduler verification status:
    capped at 5000, and add record-kind filters to the advanced query UI.
 5. Add source enable/disable and an explicit removal workflow that explains
    what happens to shared records; add per-source integrity status.
-6. Add a reproducible 10k/100k synthetic benchmark suite.
+6. Run the benchmark harness on Windows and Linux and add a 1M-record run
+   before making large-archive claims.
