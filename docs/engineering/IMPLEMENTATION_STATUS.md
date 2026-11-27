@@ -66,19 +66,26 @@ Phase A — Stabilization (repository audit in progress).
   Facebook export preview and background import alongside EML import; the
   Timeline tab shows chronological messages with per-correspondent counts
   and a reader.
-  Python subprocess client driving `stats`, `search`, `message`, `thread`,
-  `record`, `verify`, `import_eml`, `preferences`, and the full research
+- Packaged engine (branch `develop/engine-expansion`):
+  `scripts/build_engine.py` builds `dispatch.py` with PyInstaller into
+  `dist/hb-engine` and copies it to `src-tauri/binaries/hb-engine-<host-triple>`
+  for Tauri's `externalBin`; the shell resolves `HB_ENGINE`, then the bundled
+  sidecar, then `HB_ENGINE_SCRIPT`/`dispatch.py` for development, with a clear
+  startup error when none exists. A `--smoke` mode exercises the built binary,
+  and CI builds and smoke-tests it on Ubuntu, macOS and Windows.
+- Desktop shell client: drives `stats`, `search`, `message`, `thread`,
+  `timeline`, `correspondents`, `record`, `verify`, `health`, `import_eml`,
+  `facebook_preview`/`facebook_import`, `preferences`, the full research
   overlay (workspaces, saved searches, tags, fields, metadata, reports with
-  CSV export, rule rebuild), evidence export, and synchronization profiles
-  (status, save, enable/disable, run-as-job); native open/save dialogs;
-  frontend and Rust builds verified (working tree, uncommitted).
+  CSV export, rule rebuild), evidence export, synchronization profiles and
+  backup/restore, with native open/save dialogs; frontend and Rust builds
+  verified.
 
 ## Pending capabilities
 
-See `BASELINE_AUDIT.md` section 9. In brief: packaged engine (PyInstaller or
-equivalent) and sidecar bundling, local embeddings/hybrid search, Second Me,
-Facebook post revisions and message attachment metadata, relationship
-explorer, and the documentation overhaul
+See `BASELINE_AUDIT.md` section 9. In brief: local embeddings/hybrid
+search, Second Me, Facebook post revisions and message attachment metadata,
+relationship explorer, and the documentation overhaul
 (ROADMAP/SECURITY/ARCHITECTURE/CHANGELOG).
 
 Archive hardening, verified backup/restore, desktop health/backup surfaces,
@@ -118,7 +125,9 @@ until the shell's flows are exercised against real archives.
   `frontend/src/components/HealthView.vue`,
   `frontend/src/components/BackupView.vue`,
   `frontend/src/composables/useEngineJob.ts`,
-  `frontend/src/components/TimelineView.vue`, `facebook.py`,
+  `frontend/src/components/TimelineView.vue`, `scripts/build_engine.py`,
+  `docs/PACKAGING.md`, `src-tauri/tauri.conf.json`,
+  `src-tauri/tauri.bundle.conf.json`, `facebook.py`,
   `frontend/src/components/ImportView.vue`, `src-tauri/src/lib.rs`,
   `tests/test_migrations.py`, `tests/test_ipc.py` modified.
 
@@ -158,6 +167,16 @@ until the shell's flows are exercised against real archives.
   search + 40 IPC + 26 scheduler + 1 Windows-path tick + 17 migrations + 15
   archive hardening).
 - `mypy` (2.4.1, matching CI): no issues in 19 source files.
+- `cargo test` (src-tauri): 3 tests pass, covering bundled-sidecar
+  preference, the development script fallback and resolution from a bare
+  directory.
+- Bundled engine built locally with PyInstaller 6.22.3 (aarch64 Linux) and
+  smoke-tested outside the repository: `--version`, `import`, `search`,
+  `health` and an IPC `ping`/`health`/`shutdown` session all pass.
+- Packaging layout verified with `tauri build --debug --no-bundle --config
+  src-tauri/tauri.bundle.conf.json`: Tauri copied `hb-engine` next to the
+  application, and the app launched under Xvfb spawned that engine and served
+  `stats` (creating and migrating the archive databases over IPC).
 - End-to-end CLI smoke tests of `dispatch facebook preview/import/search/
   list`, `dispatch summarize run --all` (fake loopback Ollama),
   `dispatch search-all`, and `dispatch serve` (subprocess protocol): pass.
@@ -230,8 +249,8 @@ Scheduler verification status:
 
 ## Next recommended tasks
 
-1. Retire the Tkinter fallback once the shell's import, research and
-   synchronization flows have been exercised against real archives.
+1. Extract the engine into a package behind the `dispatch.py` CLI and the IPC
+   entry point, now that the packaged binary fixes the runtime contract.
 2. Support Facebook post/comment revision entries and message attachments
    metadata.
 3. Close PR #4 as superseded and reconcile PR #5 branding with this branch.

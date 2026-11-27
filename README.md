@@ -123,6 +123,18 @@ cd frontend && npm install
 npm run tauri -- dev
 ```
 
+Development runs the engine from the checkout. To build a distributable
+app, first produce the standalone engine sidecar for the host, then package:
+
+```sh
+python3 scripts/build_engine.py
+cd frontend && npm run tauri -- build --config src-tauri/tauri.bundle.conf.json
+```
+
+The shell prefers a bundled `hb-engine` binary, falls back to
+`python3 dispatch.py` during development, and accepts `HB_ENGINE` /
+`HB_ENGINE_SCRIPT` overrides. See [Packaging](docs/PACKAGING.md).
+
 The Tkinter workstation (`dispatch gui`) remains the stable fallback until
 the new shell reaches functional parity.
 

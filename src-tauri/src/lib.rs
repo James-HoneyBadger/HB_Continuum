@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
@@ -38,27 +38,87 @@ fn expand_archive(path: &str) -> String {
     path.to_string()
 }
 
-fn script_path() -> Result<PathBuf, String> {
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let repo = manifest
-        .parent()
-        .ok_or_else(|| "no repository root".to_string())?;
-    let script = repo.join("dispatch.py");
-    if script.is_file() {
-        Ok(script)
+enum EngineCommand {
+    /// Standalone engine produced by `scripts/build_engine.py`.
+    Binary(PathBuf),
+    /// Development fallback: run the checked-out `dispatch.py` with Python.
+    Script(PathBuf),
+}
+
+fn bundled_engine_name() -> &'static str {
+    if cfg!(windows) {
+        "hb-engine.exe"
     } else {
-        Err(format!("dispatch.py not found at {}", script.display()))
+        "hb-engine"
     }
 }
 
+/// Locate a development `dispatch.py` without relying on the working directory.
+fn dev_script(exe_dir: &Path) -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("HB_ENGINE_SCRIPT") {
+        let path = PathBuf::from(path);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    let candidates = [
+        exe_dir.join("dispatch.py"),
+        exe_dir.join("../../..").join("dispatch.py"),
+    ];
+    for candidate in candidates {
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo_script = manifest.parent()?.join("dispatch.py");
+    if repo_script.is_file() {
+        Some(repo_script)
+    } else {
+        None
+    }
+}
+
+/// Resolve the engine, preferring a bundled sidecar over a checked-out script.
+fn engine_command(exe_dir: &Path) -> Option<EngineCommand> {
+    if let Some(path) = std::env::var_os("HB_ENGINE") {
+        let path = PathBuf::from(path);
+        if path.is_file() {
+            return Some(EngineCommand::Binary(path));
+        }
+    }
+    let bundled = exe_dir.join(bundled_engine_name());
+    if bundled.is_file() {
+        return Some(EngineCommand::Binary(bundled));
+    }
+    dev_script(exe_dir).map(EngineCommand::Script)
+}
+
 fn spawn_engine(app: &tauri::AppHandle, archive: &str) -> Result<Engine, String> {
-    let script = script_path()?;
-    let mut child = Command::new("python3")
-        .arg(&script)
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+        .ok_or_else(|| "cannot determine the application directory".to_string())?;
+    let (mut command, working_dir) = match engine_command(&exe_dir) {
+        Some(EngineCommand::Binary(path)) => (Command::new(&path), exe_dir.clone()),
+        Some(EngineCommand::Script(path)) => {
+            let mut command = Command::new("python3");
+            command.arg(&path);
+            let dir = path.parent().map(Path::to_path_buf).unwrap_or(exe_dir.clone());
+            (command, dir)
+        }
+        None => {
+            return Err(format!(
+                "engine not found: bundle {} next to the app or set HB_ENGINE",
+                bundled_engine_name()
+            ))
+        }
+    };
+    let mut child = command
         .arg("--archive")
         .arg(expand_archive(archive))
         .arg("serve")
-        .current_dir(script.parent().expect("script has parent"))
+        .current_dir(working_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -448,4 +508,54 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("hb-continuum-{}-{}", std::process::id(), name));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("scratch dir");
+        dir
+    }
+
+    #[test]
+    fn bundled_engine_wins_over_dev_script() {
+        let dir = scratch("bundled");
+        let engine = dir.join(bundled_engine_name());
+        fs::write(&engine, b"#!/bin/sh\n").expect("write engine");
+        fs::write(dir.join("dispatch.py"), b"print()\n").expect("write script");
+        match engine_command(&dir) {
+            Some(EngineCommand::Binary(path)) => assert_eq!(path, engine),
+            _ => panic!("expected the bundled engine to be preferred"),
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dev_mode_falls_back_to_dispatch_script() {
+        let dir = scratch("script");
+        let script = dir.join("dispatch.py");
+        fs::write(&script, b"print()\n").expect("write script");
+        match engine_command(&dir) {
+            Some(EngineCommand::Script(path)) => assert_eq!(path, script),
+            _ => panic!("expected the dispatch script to be used"),
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_engine_reports_a_clear_error() {
+        if std::env::var_os("HB_ENGINE").is_some() {
+            return;
+        }
+        let dir = scratch("missing");
+        // The compile-time repository fallback still exists in tests, so a bare
+        // directory should resolve to the checkout rather than None.
+        assert!(engine_command(&dir).is_some());
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

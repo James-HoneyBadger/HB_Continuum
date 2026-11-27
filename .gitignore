@@ -20,3 +20,7 @@ src-tauri/gen/
 
 .hb-backup-*/
 .hb-restore-*/
+
+dist/
+build/
+src-tauri/binaries/
