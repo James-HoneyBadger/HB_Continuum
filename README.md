@@ -140,7 +140,7 @@ The Reports workspace writes a self-contained Markdown, JSON or standalone HTML 
 
 HB Continuum is growing from an email archive into a source-independent historical record. These capabilities are opt-in and still evolving.
 
-**Facebook import** — import posts, comments, group posts, messages, events, photos/videos, and reactions from a user-obtained Facebook JSON export. Post/comment update timestamps and revision versions are preserved, and message/post attachment metadata is stored without copying media files. Original exports are never uploaded or modified. See [Facebook import](docs/FACEBOOK_IMPORT.md).
+**Facebook import** — import posts, comments, group posts, messages, events, photos/videos, and reactions from a user-obtained Facebook JSON export. Post/comment update timestamps and revision versions are preserved, and message/post attachment metadata is stored and searchable without copying media files. Original exports are never uploaded or modified. See [Facebook import](docs/FACEBOOK_IMPORT.md).
 
 ```sh
 python3 dispatch.py facebook preview ~/facebook-export

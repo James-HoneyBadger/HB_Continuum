@@ -11,6 +11,7 @@ import hashlib, json
 from datetime import datetime, timezone
 from pathlib import Path
 from .catalog import Catalog
+from .migrations import attachment_search_text
 
 SUPPORTED = ('posts', 'comments', 'messages', 'events', 'media', 'reactions')
 MAX_ATTACHMENTS = 100
@@ -557,6 +558,7 @@ def import_files(paths, root, progress=None, cancel_event=None):
                         revision_index = catalog.db.execute(
                             'SELECT count(*) FROM records WHERE revision_key=?',
                             (revision_key,)).fetchone()[0] + 1
+                    attachments_text = attachment_search_text(record['attachments'])
                     inserted = catalog.add_record(
                         record_id, 'facebook', source_key, record['record_kind'],
                         record['actor'], record['occurred_at'], record['occurred_precision'],
@@ -565,7 +567,8 @@ def import_files(paths, root, progress=None, cancel_event=None):
                         revision_kind=record['revision_kind'],
                         revision_key=revision_key, revision_index=revision_index,
                         attachments_json=json.dumps(record['attachments'],
-                                                    ensure_ascii=False))
+                                                    ensure_ascii=False),
+                        attachments_text=attachments_text)
                     if inserted:
                         counts['records_imported'] += 1
                         if record['updated_at']:

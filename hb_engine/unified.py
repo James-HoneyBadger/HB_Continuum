@@ -121,7 +121,8 @@ def _facebook_search(root, query, limit, senders=None, kinds=None, after=None, b
         catalog.close()
     return [{'source': 'facebook', 'id': r[0], 'kind': r[2],
              'title': r[1] or '', 'actor': r[3] or '',
-             'date': r[4] or '', 'snippet': (r[5] or '')[:SNIPPET_LEN]} for r in rows]
+             'date': r[4] or '', 'snippet': (r[6] or r[5] or '')[:SNIPPET_LEN]}
+            for r in rows]
 
 def _facebook_count(root, query, senders=None, kinds=None, after=None, before=None):
     catalog = Catalog(root)

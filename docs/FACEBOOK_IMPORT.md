@@ -101,8 +101,10 @@ by `--kind` and `--actor`.
   that Facebook did not export.
 - Attachment metadata is stored, not the attachment files. URIs, names,
   titles, descriptions, thumbnail URIs and timestamps are preserved; media
-  files are not downloaded or copied. Attachment metadata is not currently
-  part of the FTS index, so search covers the record body and actor.
+  files are not downloaded or copied. Attachment names, titles, URIs,
+  descriptions, links, places, events, marketplace fields and reaction
+  values are included in the catalog FTS index, so `facebook search` and
+  unified search can find records by attachment metadata.
 - Whole JSON files are parsed into memory; very large single files (many
   hundreds of MB) may be slow or memory-heavy.
 - Timestamps are taken as declared by the export; they are not verified

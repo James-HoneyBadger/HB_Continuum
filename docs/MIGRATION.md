@@ -153,6 +153,17 @@ The migration is additive; existing catalog records keep their identifiers,
 search rows, source-file references and original JSON. A new
 `records_revision_key` index supports grouping versions.
 
+## Catalog version 5: attachment search text
+
+Version 5 adds `attachments_text` to `records` and rebuilds the FTS5
+`record_search` index with `body`, `actor` and `attachments_text`. A
+migration callable flattens each record's stored `attachments_json` into
+bounded searchable text before the index is repopulated.
+
+Attachment metadata is now searchable in `facebook search`, unified search
+and advanced text rules. The original attachment files are still not copied,
+and the stored JSON remains the authoritative metadata.
+
 ## Research version 2: journal entries
 
 Version 2 adds two tables to `research.sqlite3`:

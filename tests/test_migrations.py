@@ -144,8 +144,8 @@ class MigrationTests(unittest.TestCase):
             research.close();archive.db.close()
 
     def test_catalog_version_registry(self):
-        self.assertEqual(target_version('catalog'),4)
-        self.assertEqual(sorted(MIGRATIONS['catalog']),[1,2,3,4])
+        self.assertEqual(target_version('catalog'),5)
+        self.assertEqual(sorted(MIGRATIONS['catalog']),[1,2,3,4,5])
 
     def test_archive_version_registry(self):
         self.assertEqual(target_version('archive'),6)
@@ -234,6 +234,34 @@ class MigrationTests(unittest.TestCase):
             self.assertEqual(record['attachments'],[])
             self.assertIsNone(record['revision_index'])
             self.assertIsNone(record['updated_at'])
+        finally:
+            catalog.close()
+
+    def test_catalog_v4_attachments_become_searchable(self):
+        db=sqlite3.connect(self.root/'catalog.sqlite3')
+        try:
+            for version in (1,2,3,4):
+                for statement in MIGRATIONS['catalog'][version]:
+                    if callable(statement):
+                        statement(db,self.root)
+                    else:
+                        db.execute(statement)
+            db.execute('INSERT INTO source_files VALUES(?,?,?,?,?,?)',
+                       ('h','facebook','posts','p',1,'now'))
+            db.execute(
+                "INSERT INTO records VALUES('r','facebook','posts','post',NULL,NULL,"
+                "'second','hello',NULL,'h','now',NULL,NULL,NULL,NULL,?)",
+                ('[{"kind": "file", "name": "bullseye.pdf"}]',))
+            db.execute('PRAGMA user_version=4')
+            db.commit()
+        finally:
+            db.close()
+        catalog=Catalog(self.root)
+        try:
+            self.assertEqual(current_version(catalog.db),target_version('catalog'))
+            self.assertEqual(len(catalog.search_records('bullseye')),1)
+            record=catalog.record('r')
+            self.assertIn('bullseye.pdf',record['attachments_text'])
         finally:
             catalog.close()
 

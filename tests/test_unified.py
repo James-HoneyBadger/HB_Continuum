@@ -30,6 +30,19 @@ class UnifiedSearchTests(unittest.TestCase):
         self.assertIn('Bullion receipt',email['snippet'])
         self.assertIn('Bought bullion',facebook['snippet'])
 
+    def test_attachment_metadata_is_searchable(self):
+        chat=self.root/'messages/inbox/Chat/message_1.json'
+        chat.parent.mkdir(parents=True)
+        chat.write_text(json.dumps({'title': 'Chat', 'messages': [{
+            'sender_name': 'Alice', 'timestamp_ms': 1700000000000,
+            'content': 'No matching body text',
+            'files': [{'uri': 'files/tax-document.pdf'}]}]}))
+        import_files([str(chat)], self.root)
+        results=search_unified(self.root, 'document', sources=('facebook',))
+        self.assertEqual(len(results),1)
+        self.assertEqual(results[0]['kind'],'message')
+        self.assertIn('tax-document.pdf',results[0]['snippet'])
+
     def test_source_filter(self):
         results=search_unified(self.root, 'bullion', sources=('facebook',))
         self.assertEqual({r['source'] for r in results},{'facebook'})

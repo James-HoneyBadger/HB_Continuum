@@ -42,15 +42,16 @@ class Catalog:
     def add_record(self, record_id, source_type, source_key, record_kind, actor,
                    occurred_at, precision, body, original_json, file_hash, created_at,
                    updated_at=None, revision_kind=None, revision_key=None,
-                   revision_index=None, attachments_json='[]'):
+                   revision_index=None, attachments_json='[]', attachments_text=''):
         cur = self.db.execute(
             'INSERT OR IGNORE INTO records(record_id,source_type,source_key,record_kind,'
             'actor,occurred_at,occurred_precision,body,original_json,file_hash,created_at,'
-            'updated_at,revision_kind,revision_key,revision_index,attachments_json) '
-            'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            'updated_at,revision_kind,revision_key,revision_index,attachments_json,'
+            'attachments_text) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
             (record_id, source_type, source_key, record_kind, actor, occurred_at,
              precision, body, original_json, file_hash, created_at, updated_at,
-             revision_kind, revision_key, revision_index, attachments_json))
+             revision_kind, revision_key, revision_index, attachments_json,
+             attachments_text))
         return cur.rowcount == 1
 
     def record(self, record_id):
@@ -58,14 +59,15 @@ class Catalog:
         row = self.db.execute(
             'SELECT record_id,source_type,source_key,record_kind,actor,occurred_at,'
             'occurred_precision,body,original_json,file_hash,created_at,updated_at,'
-            'revision_kind,revision_key,revision_index,attachments_json '
+            'revision_kind,revision_key,revision_index,attachments_json,attachments_text '
             'FROM records WHERE record_id=?', (record_id,)).fetchone()
         if row is None:
             return None
         keys = ('record_id', 'source_type', 'source_key', 'record_kind', 'actor',
                 'occurred_at', 'occurred_precision', 'body', 'original_json',
                 'file_hash', 'created_at', 'updated_at', 'revision_kind',
-                'revision_key', 'revision_index', 'attachments_json')
+                'revision_key', 'revision_index', 'attachments_json',
+                'attachments_text')
         result = dict(zip(keys, row))
         try:
             attachments = json.loads(result.pop('attachments_json') or '[]')
@@ -128,7 +130,8 @@ class Catalog:
         """Matches ranked by the FTS5 bm25 score (best first)."""
         limit = max(1, min(int(limit), 5000))
         where, params = self._ranked_filters(query, source_type, actor, kinds, after, before)
-        sql = ('SELECT r.record_id, r.source_key, r.record_kind, r.actor, r.occurred_at, r.body '
+        sql = ('SELECT r.record_id, r.source_key, r.record_kind, r.actor, r.occurred_at, '
+               "r.body, snippet(record_search, -1, '', '', '...', 32) "
                'FROM records r JOIN record_search ON record_search.rowid = r.rowid '
                'WHERE ' + where + ' ORDER BY bm25(record_search) LIMIT ?')
         try:

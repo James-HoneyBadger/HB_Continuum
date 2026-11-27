@@ -3,7 +3,7 @@
 import json, tempfile, unittest
 from pathlib import Path
 from facebook import preview, import_files, _expand, _extract_items, _normalize
-from catalog import Catalog
+from catalog import Catalog, target_version
 
 class FacebookImportTests(unittest.TestCase):
     def setUp(self):
@@ -240,6 +240,7 @@ class FacebookImportTests(unittest.TestCase):
             self.assertEqual(photo['uri'],'photos/a.jpg')
             self.assertIsNone(row[1])
             self.assertIsNone(row[2])
+            self.assertEqual(len(catalog.search_records('doc')),1)
         finally:
             catalog.close()
 
@@ -289,7 +290,8 @@ class FacebookImportTests(unittest.TestCase):
         conn.close()
         catalog=Catalog(self.root)
         try:
-            self.assertEqual(catalog.db.execute('PRAGMA user_version').fetchone()[0],4)
+            self.assertEqual(catalog.db.execute('PRAGMA user_version').fetchone()[0],
+                             target_version('catalog'))
             self.assertEqual(catalog.stats()['records'],1)
             self.assertEqual(len(catalog.search_records('hello')),1)
         finally:

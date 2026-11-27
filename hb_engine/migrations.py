@@ -13,13 +13,42 @@ database header and updates inside the same transaction as the DDL. Opening
 a database written by a newer build raises instead of proceeding, so an older
 binary cannot silently damage a newer archive.
 """
-import sqlite3
+import json, sqlite3
 from pathlib import Path
 
 from .timestamps import parse_timestamp
 
 class MigrationError(RuntimeError):
     pass
+
+ATTACHMENT_TEXT_FIELDS = ('kind', 'name', 'title', 'uri', 'description', 'url',
+                          'link', 'source', 'address', 'reaction', 'actor',
+                          'price', 'seller')
+
+def attachment_search_text(attachments):
+    """Flatten normalized attachment metadata into searchable text."""
+    if isinstance(attachments, str):
+        try:
+            attachments = json.loads(attachments or '[]')
+        except (TypeError, ValueError):
+            return ''
+    if not isinstance(attachments, list):
+        return ''
+    parts = []
+    for item in attachments:
+        if not isinstance(item, dict):
+            continue
+        for key in ATTACHMENT_TEXT_FIELDS:
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                parts.append(value.strip())
+    return ' '.join(dict.fromkeys(parts))[:10_000]
+
+def _catalog_attachment_text(db, root):
+    for record_id, raw in db.execute(
+            'SELECT record_id, attachments_json FROM records').fetchall():
+        db.execute('UPDATE records SET attachments_text=? WHERE record_id=?',
+                   (attachment_search_text(raw), record_id))
 
 DATABASES = (('archive', 'archive.sqlite3'),
              ('research', 'research.sqlite3'),
@@ -227,12 +256,34 @@ CATALOG_V4 = (
     'CREATE INDEX IF NOT EXISTS records_revision_key ON records(revision_key)',
 )
 
+CATALOG_V5 = (
+    "ALTER TABLE records ADD COLUMN attachments_text TEXT NOT NULL DEFAULT ''",
+    _catalog_attachment_text,
+    'DROP TRIGGER IF EXISTS records_ai',
+    'DROP TRIGGER IF EXISTS records_ad',
+    'DROP TRIGGER IF EXISTS records_au',
+    'DROP TABLE IF EXISTS record_search',
+    'CREATE VIRTUAL TABLE record_search USING fts5(body, actor, attachments_text)',
+    'CREATE TRIGGER IF NOT EXISTS records_ai AFTER INSERT ON records BEGIN '
+    'INSERT INTO record_search(rowid, body, actor, attachments_text) '
+    'VALUES (new.rowid, new.body, new.actor, new.attachments_text); END',
+    'CREATE TRIGGER IF NOT EXISTS records_ad AFTER DELETE ON records BEGIN '
+    'DELETE FROM record_search WHERE rowid = old.rowid; END',
+    'CREATE TRIGGER IF NOT EXISTS records_au AFTER UPDATE ON records BEGIN '
+    'DELETE FROM record_search WHERE rowid = old.rowid; '
+    'INSERT INTO record_search(rowid, body, actor, attachments_text) '
+    'VALUES (new.rowid, new.body, new.actor, new.attachments_text); END',
+    'INSERT INTO record_search(rowid, body, actor, attachments_text) '
+    'SELECT rowid, body, actor, attachments_text FROM records',
+)
+
 MIGRATIONS = {
     'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3, 4: ARCHIVE_V4,
                 5: ARCHIVE_V5, 6: ARCHIVE_V6},
     'research': {1: RESEARCH_V1, 2: RESEARCH_V2, 3: RESEARCH_V3, 4: RESEARCH_V4,
                  5: RESEARCH_V5},
-    'catalog': {1: CATALOG_V1, 2: CATALOG_V2, 3: CATALOG_V3, 4: CATALOG_V4},
+    'catalog': {1: CATALOG_V1, 2: CATALOG_V2, 3: CATALOG_V3, 4: CATALOG_V4,
+                5: CATALOG_V5},
 }
 
 def target_version(name):
