@@ -70,7 +70,17 @@ def tick(root,force=None,now=None,get_password=None):
         profiles=config(root)
         if force and force not in profiles: raise ValueError('Unknown profile')
         states=read_json(root/'schedule-status.json',{})
-        ar=Archive(root)
+        try:
+            ar=Archive(root)
+        except SyncBusy:
+            # Another archive operation is running (including its migration);
+            # defer due profiles without recording an attempt.
+            stamp=now or utcnow()
+            for name,p in profiles.items():
+                if name==force or (force is None and due(profile(**p),states.get(name,{}),stamp)):
+                    states[name]={'status':'deferred: archive busy'}
+            write_json(root/'schedule-status.json',states)
+            return states
         try:
             for name,p in profiles.items():
                 p=profile(**p); stamp=now or utcnow()

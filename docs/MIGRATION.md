@@ -124,8 +124,15 @@ tags, rules, fields and reports are untouched.
 
 ## Inspecting and migrating
 
-Opening the archive at all (`dispatch`, `dispatch gui`) migrates
-automatically. To inspect first, or to migrate with a snapshot:
+Opening the archive at all (`dispatch`, `dispatch gui`, the desktop shell)
+migrates automatically, under the archive write lock. If the database
+already contains data, an automatic snapshot is written first to
+`archive.v<version>.<UTC timestamp>.backup.sqlite3` (a suffix is added if
+that name exists). A brand-new database needs no snapshot. If another
+process holds the archive lock, an up-to-date archive is still opened
+read-only; a pending migration waits instead of racing.
+
+To inspect first, or to migrate with a snapshot:
 
 ```sh
 # Report versions and pending steps; changes nothing
@@ -144,9 +151,12 @@ each database.
 ## Snapshots and rollback
 
 With snapshots enabled (the default), each database that already contains
-data is copied through SQLite's backup API to
-`<name>.v<version>.backup.sqlite3` in the archive directory before it is
-modified. The copy has the pre-migration version and contents.
+data is copied through SQLite's backup API before it is modified. The
+explicit `migrate` command names the copy
+`<name>.v<version>.backup.sqlite3`; opening the archive normally writes
+`archive.v<version>.<UTC timestamp>.backup.sqlite3` so repeated opens never
+replace an earlier snapshot. The copy has the pre-migration version and
+contents.
 
 To roll back:
 

@@ -154,6 +154,16 @@ landed (Overview dashboard, design tokens, timeline pagination).
   retrospective user records stored in the research overlay, never merged
   with preserved evidence.
 
+### Safe automatic migration (2026-11-27)
+
+- `Archive` now migrates under the archive write lock. When an existing
+  archive has pending schema work, it writes a timestamped snapshot before
+  touching the database; a brand-new database is not snapshotted, and an
+  up-to-date archive still opens while another process works.
+- `schedule.tick` treats an archive held by another operation as a
+  deferral rather than crashing while opening the archive, preserving the
+  documented "archive busy" behaviour.
+
 ### Archive reports (2026-11-27, fourth increment)
 
 - New `reporting.py` renders an independently understandable archive report
@@ -196,6 +206,8 @@ until the shell's flows are exercised against real archives.
 
 ## Files changed
 
+- Migration-safety increment (2026-11-27): `dispatch.py`, `schedule.py`,
+  `tests/test_migrations.py`, `docs/MIGRATION.md`.
 - Reports increment (2026-11-27): `reporting.py` (new), `ipc.py`,
   `src-tauri/src/lib.rs`, `frontend/src/App.vue`,
   `frontend/src/components/ReportsView.vue` (new),
@@ -278,7 +290,7 @@ until the shell's flows are exercised against real archives.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 196 tests, 195 pass and 1 is
+- `python3 -m unittest discover -s tests`: 197 tests, 196 pass and 1 is
   skipped on this machine (the optional `keyring` backend is not
   installed). Includes 8 timestamp/chronology tests, 2 real-process lock
   tests, 5 import-run tests, 6 journal tests, 5 report tests,
@@ -308,7 +320,7 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-196 Python tests ran: 195 passed, 0 failed, 1 skipped (Python 3.13.6,
+197 Python tests ran: 196 passed, 0 failed, 1 skipped (Python 3.13.6,
 macOS ARM64); `npm run build` (vue-tsc + vite), `cargo check` and
 `cargo test` pass; background EML import, import history, sources, journal
 and archive-report IPC surfaces are covered by tests over the real

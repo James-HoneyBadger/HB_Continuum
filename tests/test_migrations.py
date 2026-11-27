@@ -172,6 +172,35 @@ class MigrationTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_opening_a_legacy_archive_snapshots_before_migrating(self):
+        db=sqlite3.connect(self.root/'archive.sqlite3')
+        try:
+            db.executescript(LEGACY_ARCHIVE)
+            db.execute('PRAGMA user_version=1')
+            db.execute("INSERT INTO messages VALUES(?,?,?,?,?,?,?)",
+                       ('a'*64,'Hi','s@e','d','<m>',None,'body'))
+            db.execute("INSERT INTO search VALUES(?,?,?,?)",('a'*64,'Hi','s@e','body'))
+            db.commit()
+        finally:
+            db.close()
+        archive=Archive(self.root)
+        try:
+            self.assertEqual(current_version(archive.db),target_version('archive'))
+            snapshots=sorted(self.root.glob('archive.v1.*.backup.sqlite3'))
+            self.assertEqual(len(snapshots),1)
+            copy=sqlite3.connect(snapshots[0])
+            try:
+                self.assertEqual(current_version(copy),1)
+                self.assertEqual(copy.execute('SELECT count(*) FROM messages').fetchone()[0],1)
+            finally:
+                copy.close()
+            # An up-to-date archive is not snapshotted again.
+            archive.db.close()
+            archive=Archive(self.root)
+            self.assertEqual(len(sorted(self.root.glob('archive.v*.backup.sqlite3'))),1)
+        finally:
+            archive.db.close()
+
     def test_research_upgrades_to_journal_schema(self):
         db=sqlite3.connect(self.root/'research.sqlite3')
         try:

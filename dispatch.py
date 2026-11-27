@@ -116,8 +116,32 @@ class Archive:
         self.db = sqlite3.connect(self.root / 'archive.sqlite3', timeout=30)
         self.db.execute('PRAGMA foreign_keys=ON')
         self.db.execute('PRAGMA busy_timeout=30000')
-        from migrations import apply as migrate
-        migrate(self.db, 'archive')
+        self._migrate_safely()
+    def _migrate_safely(self):
+        """Migrate under the archive lock, snapshotting an existing archive first.
+
+        A brand-new database needs no snapshot. If another process is already
+        working, an up-to-date schema is safe to use read-only; a pending
+        migration must wait rather than race.
+        """
+        import migrations
+        from sync_lock import sync_lock, SyncBusy
+        target=migrations.target_version('archive')
+        try:
+            with sync_lock(self.root):
+                version=migrations.current_version(self.db)
+                if version<target and migrations.has_schema(self.db):
+                    stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+                    path=self.root/f'archive.v{version}.{stamp}.backup.sqlite3'
+                    suffix=1
+                    while path.exists():
+                        path=self.root/f'archive.v{version}.{stamp}-{suffix}.backup.sqlite3'
+                        suffix+=1
+                    migrations.snapshot(self.db,path)
+                migrations.apply(self.db,'archive')
+        except SyncBusy:
+            if migrations.current_version(self.db)<target:
+                raise
     def ingest(self, raw, origin=None):
         from sync_lock import sync_lock
         with sync_lock(self.root):
