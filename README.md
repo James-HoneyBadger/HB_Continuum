@@ -147,7 +147,10 @@ python3 dispatch.py summarize run --all --type thread
 ```
 
 **Unified search** — search archived email and imported records together;
-snippets are excerpts of the stored text, never generated.
+snippets are excerpts of the stored text, never generated. The desktop search
+adds source, exact sender/actor, record-kind, tag and date-range filters.
+Totals are exact counts unless a tag filter is applied, and a listing limit is
+reported explicitly rather than disguised as a total.
 
 ```sh
 python3 dispatch.py search-all "receipt"

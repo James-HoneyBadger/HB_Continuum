@@ -154,6 +154,22 @@ landed (Overview dashboard, design tokens, timeline pagination).
   retrospective user records stored in the research overlay, never merged
   with preserved evidence.
 
+### Search filters and honest totals (2026-11-27)
+
+- Unified search accepts sender/actor, record-kind, date-range and tag
+  filters alongside the FTS query. Sender and kind filters are applied in
+  SQL for both sources; tags are resolved in the research overlay and applied
+  to email results after ranking.
+- Totals are exact counts from each source unless a tag filter is used.
+  Responses now report `total`, `total_is_exact` and `capped`, and `has_more`
+  only when it is actually known. The 5000-fused-candidate listing cap is
+  exposed instead of being reported as a total.
+- The Search workspace gains source checkboxes, exact sender/actor, record
+  kind and tag inputs, and states "at least" totals and the listing cap
+  explicitly.
+- Tests cover sender/kind/tag filters, exact counts, inexact tag totals and
+  IPC validation.
+
 ### Evidence collections (2026-11-27)
 
 - Research schema 3 adds `collections` and `collection_items`. A collection is
@@ -274,6 +290,9 @@ until the shell's flows are exercised against real archives.
 
 ## Files changed
 
+- Search-filter increment (2026-11-27): `unified.py`, `catalog.py`, `ipc.py`,
+  `frontend/src/components/SearchView.vue`, `tests/test_unified.py`,
+  `tests/test_ipc.py`.
 - Collections increment (2026-11-27): `migrations.py`, `research.py`,
   `reporting.py`, `ipc.py`, `src-tauri/src/lib.rs`, `frontend/src/App.vue`,
   `frontend/src/components/CollectionsView.vue` (new),
@@ -377,12 +396,12 @@ until the shell's flows are exercised against real archives.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 222 tests, 221 pass and 1 is
+- `python3 -m unittest discover -s tests`: 227 tests, 226 pass and 1 is
   skipped on this machine (the optional `keyring` backend is not
   installed). Includes 8 timestamp/chronology tests, 2 real-process lock
   tests, 5 import-run tests, 6 journal tests, 6 collection tests, 5 report
-  tests, 11 source management/verification tests, 6 unified-search tests and
-  50 IPC tests.
+  tests, 11 source management/verification tests, 9 unified-search tests and
+  52 IPC tests.
 - `mypy` (2.4.1, matching CI): no issues in 19 source files.
 - `cargo test` (src-tauri): 3 tests pass, covering bundled-sidecar
   preference, the development script fallback and resolution from a bare
@@ -408,7 +427,7 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-222 Python tests ran: 221 passed, 0 failed, 1 skipped (Python 3.13.6,
+227 Python tests ran: 226 passed, 0 failed, 1 skipped (Python 3.13.6,
 macOS ARM64); `npm run build` (vue-tsc + vite), `cargo check` and
 `cargo test` pass; background EML import, import history, sources, source
 removal, source verification, journal, collections and archive-report IPC
@@ -481,7 +500,7 @@ Scheduler verification status:
 - The desktop shell now has a Source Manager with enable/disable, per-source
   verification and preview-first removal, import history, Collections, a
   Journal and archive reports, but still lacks the relationship explorer,
-  research report drafts and a graphical advanced query builder.
+  research report drafts and full nested boolean query groups.
 - Disabling a source stops new automatic imports; it does not hide that
   source's historical records from search or the timeline.
 - Import history is best-effort for Facebook imports: a completed import
