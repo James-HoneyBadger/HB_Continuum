@@ -1,12 +1,30 @@
-# HB_Dispatch
+# HB Continuum
 
-**Operational local-first email archive and personal historical research workstation.**
+**Open-source, local-first personal knowledge archive and historical research workstation.**
 
-HB Dispatch is in active real-world use. It has moved beyond a proof of concept: live mailbox retrieval, searchable local preservation and source-backed historical research have been demonstrated with more than 20,000 unique archived messages across two mail providers. Development continues, but the core archival workflow is working software today.
+HB Continuum is in active real-world use. It has moved beyond a proof of concept: live mailbox retrieval, searchable local preservation and source-backed historical research have been demonstrated with more than 31,000 unique archived messages across two mail providers. Development continues, but the core archival workflow is working software today.
+
+## Beyond email: a source-independent continuum
+
+*Time is linear. Knowledge need not be.*
+
+Part of the Honey Badger Universe, HB Continuum is designed around a broader vision than email archiving: preserve and explore historical information across otherwise disconnected sources, on infrastructure you control.
+
+The existing email ingestion engine retains the name **Dispatch**. Future source adapters may support social media exports (including Facebook posts, comments and Messenger history), journals, documents, photographs and metadata, software development histories, and other structured or unstructured records.
+
+The intended architecture preserves original source material and provenance, with source-specific ingestion and a unified searchable index. Cross-source timelines, genealogy, personal and organizational archives, historical research and evidence organization are potential applications. These additional importers and unified indexing are development goals, not implemented capabilities today.
+
+### Second Me
+
+An optional historical knowledge interface could help people rediscover their documented past using their own records and words. The goal is retrieval and evidence-backed reconstruction, not impersonation or invention. AI is optional and interchangeable; local models may enable offline analysis, while external AI services may receive selected records when explicitly authorized.
+
+Local-first storage, open formats, user control, no mandatory cloud services, no telemetry, and no subscriptions remain foundational principles.
+
+**The intelligence is replaceable. The memories are yours.**
 
 ## Demonstrated in real-world use
 
-As of November 26, 2026, a live deployment had indexed 20,185 unique messages, with a second mailbox import still underway. The SQLite message count and full-text index count reconciled at that snapshot. An earlier completed 12,798-message import also passed SQLite integrity checks and reconciled against its original EML file count.
+As of November 26, 2026, a live deployment had archived 31,441 unique messages across Gmail and IONOS, with matching SQLite message, origin, full-text index and original EML counts. SQLite quick integrity checks passed. A third provider, Apple iCloud Mail, subsequently began importing successfully. These checks do not establish complete mailbox coverage or content-level verification.
 
 Practical investigations have included:
 
@@ -15,15 +33,15 @@ Practical investigations have included:
 - Rebuilding a precious-metals purchase ledger from orders, shipment notices and cancellations.
 - Exploring historical correspondence, recurring topics and account activity across providers.
 
-These are actual research outcomes, not hypothetical feature claims. Some investigations used authorized external analysis of the local archive; HB Dispatch itself supplies the searchable evidence foundation, not an automated financial or legal adviser. Private correspondence and underlying records are not published.
+These are actual research outcomes, not hypothetical feature claims. Some investigations used authorized external analysis of the local archive; HB Continuum itself supplies the searchable evidence foundation, not an automated financial or legal adviser. Private correspondence and underlying records are not published.
 
-**Status:** the core archive is operational and published as the [v0.3.0 release](https://github.com/James-HoneyBadger/HB_Dispatch/releases/tag/v0.3.0), which adds local scheduled synchronization, a configuration center and a research workbench to the archival core. The release is a milestone tag, not a claim of comprehensive security certification.
+**Status:** the core archive is operational and published as the [v0.3.0 release](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.3.0), which adds local scheduled synchronization, a configuration center and a research workbench to the archival core. The release is a milestone tag, not a claim of comprehensive security certification.
 
 ## Your mail. Your archive. Your choice.
 
 **Your email provider should be your communications service, not the permanent custodian of your correspondence.**
 
-HB Dispatch is built around personal digital sovereignty: keep your own searchable, locally controlled copy of your email history, independent of any hosting provider, subscription tier or cloud archive. Changing providers should not mean leaving years of correspondence behind.
+HB Continuum is built around personal digital sovereignty: keep your own searchable, locally controlled copy of your email history, independent of any hosting provider, subscription tier or cloud archive. Changing providers should not mean leaving years of correspondence behind.
 
 The working archival workflow is simple: retrieve messages, preserve their original EML data, index them locally, verify their integrity, and maintain independent backups. Once archival and recovery have been verified, you can manage server storage separately from your long-term retention needs.
 
@@ -32,9 +50,9 @@ The working archival workflow is simple: retrieve messages, preserve their origi
 - Your retention decisions, rather than a provider's storage quota.
 - Your backups, independent of the mailbox host.
 
-HB Dispatch is free and open-source software, licensed under the [GNU General Public License version 3 (GPL-3.0-only)](LICENSE). No telemetry, advertising, mandatory online account or subscription. It complements existing mail clients rather than requiring you to replace them.
+HB Continuum is free and open-source software, licensed under the [GNU General Public License version 3 (GPL-3.0-only)](LICENSE). No telemetry, advertising, mandatory online account or subscription. It complements existing mail clients rather than requiring you to replace them.
 
-**Important:** HB Dispatch uses read-only IMAP retrieval and does not delete server mail. Keep independent backups and test restoration before removing any server copies. Comprehensive mailbox coverage and restoration testing remain essential; a successful import alone does not establish completeness.
+**Important:** HB Continuum uses read-only IMAP retrieval and does not delete server mail. Keep independent backups and test restoration before removing any server copies. Comprehensive mailbox coverage and restoration testing remain essential; a successful import alone does not establish completeness.
 
 ## Learn by doing
 
@@ -63,15 +81,15 @@ python3 dispatch.py export evidence HASH
 python3 -m unittest discover -s tests -v
 ```
 
-Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, read-only mailbox selection and BODY.PEEK. Passwords are prompted for, never stored by the application. Provider-specific authentication may be required. Gmail OAuth and a native MCP integration remain future work. Manual synchronization prompts for passwords; scheduled synchronization is macOS-only and reads credentials from the login Keychain.
+Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, read-only mailbox selection and BODY.PEEK. Passwords are prompted for, never stored by the application. Provider-specific authentication may be required. Gmail OAuth and a native MCP integration remain future work. Manual synchronization prompts for passwords; scheduled synchronization supports platform-specific schedulers and credential stores.
 
 ## Privacy and limitations
 
-Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Verify backup and restore with `dispatch backup`, `dispatch verify-backup` and `dispatch restore`, and diagnose local consistency with `dispatch health` (see [Archive hardening](docs/ARCHIVE_HARDENING.md)). Failed imports may leave unindexed raw files; `dispatch recover-orphans` and `dispatch reindex` repair them from the preserved originals. Failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS and Gmail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search indexes plain-text bodies, HTML reduced to offline text, and attachment names, types and bounded text; PDF, Office and image contents are not converted. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Dispatch as the sole evidence archive.
+Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Verify backup and restore with `dispatch backup`, `dispatch verify-backup` and `dispatch restore`, and diagnose local consistency with `dispatch health` (see [Archive hardening](docs/ARCHIVE_HARDENING.md)). Failed imports may leave unindexed raw files; `dispatch recover-orphans` and `dispatch reindex` repair them from the preserved originals. Failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS, Gmail and iCloud Mail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search indexes plain-text bodies, HTML reduced to offline text, and attachment names, types and bounded text; PDF, Office and image contents are not converted. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Continuum as the sole evidence archive.
 
-## Scheduled synchronization (macOS)
+## Scheduled synchronization
 
-Maintain multiple mailboxes automatically with the local synchronization center, configurable interval or daily schedules, macOS Keychain credentials and a per-user LaunchAgent. See [Scheduled synchronization](docs/SCHEDULED_SYNC.md). Finish any older manual import before enabling the service.
+Maintain multiple mailboxes automatically with the local synchronization center, configurable interval or daily schedules and platform-specific credential stores. See [Scheduled synchronization](docs/SCHEDULED_SYNC.md). Finish any older manual import before enabling the service.
 
 ## Configuration center
 

@@ -6,7 +6,7 @@ def launch(archive,parent,selected_hashes):
     from tkinter import ttk,messagebox,filedialog
     from research import Research,FIELDS,OPERATORS,TYPES,COLUMNS,GROUPS
     r=Research(archive)
-    w=tk.Toplevel(parent);w.title('HB Dispatch | Research workbench');w.geometry('1050x730')
+    w=tk.Toplevel(parent);w.title('HB Continuum | Research workbench');w.geometry('1050x730')
     frame=ttk.Frame(w,padding=14);frame.pack(fill='both',expand=True)
     ttk.Label(frame,text='Research workbench',font=('TkDefaultFont',20,'bold')).pack(anchor='w')
     ttk.Label(frame,text='Personal classifications and notes are separate from original archived messages.').pack(anchor='w',pady=(0,10))

@@ -1,6 +1,6 @@
 # Local scheduled synchronization
 
-HB Dispatch's synchronization center maintains an existing archive without
+HB Continuum's synchronization center maintains an existing archive without
 a hosted scheduler or a permanent terminal window. It uses a per-user
 platform scheduler, the operating system credential store and the existing
 read-only IMAP importer. Nothing is uploaded except the standard IMAP
@@ -46,7 +46,7 @@ python3 scripts/scheduler_smoke.py
 
 ## First-time setup
 
-1. Finish any import started with an older version of HB Dispatch. This
+1. Finish any import started with an older version of HB Continuum (formerly HB Dispatch). This
    matters because older versions did not participate in the synchronization lock.
 2. Start the correspondence workstation with
    `python3 dispatch.py --archive ~/HB_Mail_Archive gui` and select
@@ -59,7 +59,7 @@ python3 scripts/scheduler_smoke.py
 4. Select **Keychain setup**. In macOS Keychain Access, choose the login
    keychain and create a generic password item with the exact service and account
    shown. Use the provider's app-specific password where applicable.
-   The name is `HB Dispatch IMAP <lowercase-host>`; the account is your exact
+   The name is `HB Continuum IMAP <lowercase-host>`; the account is your exact
    IMAP username. Never put passwords in command arguments or profile JSON.
 5. Select the profile and **Run now** to test the credentials. macOS may
    ask permission for the security utility to read that specific Keychain item.

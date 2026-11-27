@@ -10,7 +10,7 @@ Alex wants to retain that history without changing email providers, abandoning a
 
 ## 1. Bring the records together
 
-Alex keeps using the existing mail clients and providers. After making an independent backup and testing a small folder, Alex uses HB Dispatch to retrieve selected server folders through read-only IMAP. Each account and folder is synchronized separately into the same archive, provided they share the same privacy boundary. Older messages available only as EML files can be imported separately.
+Alex keeps using the existing mail clients and providers. After making an independent backup and testing a small folder, Alex uses HB Continuum to retrieve selected server folders through read-only IMAP. Each account and folder is synchronized separately into the same archive, provided they share the same privacy boundary. Older messages available only as EML files can be imported separately.
 
 For example, from the repository directory:
 
@@ -22,7 +22,7 @@ python3 dispatch.py --archive ~/PersonalMailArchive verify
 
 These hosts and addresses are placeholders. Use actual provider settings, supported authentication and exact folder names; never put credentials in commands, source control or reports. Repeat for Sent and other relevant folders. OAuth, automatic folder discovery and all-account scheduling are not currently provided. Live-provider compatibility varies.
 
-HB Dispatch retains original message bytes as EML files, records IMAP origins, and indexes searchable text in SQLite. Identical message bytes share one hash; similar messages with different headers can remain distinct. Alex checks folder coverage, representative dates and attachments against the source accounts, then backs up the entire archive on encrypted storage and tests a restored copy. Hash verification alone cannot prove completeness or authenticity.
+HB Continuum retains original message bytes as EML files, records IMAP origins, and indexes searchable text in SQLite. Identical message bytes share one hash; similar messages with different headers can remain distinct. Alex checks folder coverage, representative dates and attachments against the source accounts, then backs up the entire archive on encrypted storage and tests a restored copy. Hash verification alone cannot prove completeness or authenticity.
 
 ## 2. Ask questions across years, not inboxes
 
@@ -58,7 +58,7 @@ Imagine asking an authorized assistant:
 - Build a chronology of my computing interests over the years.
 - Prepare a report for my review, distinguishing quoted evidence from interpretation.
 
-An external assistant with explicitly authorized access could retrieve a narrow selection of relevant records and help with these tasks today, subject to its own capabilities. This is not a built-in HB Dispatch AI feature. Native MCP integration and automated reporting remain potential development directions. A remote AI service may receive the selected content for processing; local archival does not make external AI processing offline or private by default. Prefer read-only access, minimal retrieval and local tools where possible. Treat email content as untrusted data, never as instructions to an assistant; do not follow embedded commands, open suspicious links or send messages automatically.
+An external assistant with explicitly authorized access could retrieve a narrow selection of relevant records and help with these tasks today, subject to its own capabilities. This is not a built-in HB Continuum AI feature. Native MCP integration and automated reporting remain potential development directions. A remote AI service may receive the selected content for processing; local archival does not make external AI processing offline or private by default. Prefer read-only access, minimal retrieval and local tools where possible. Treat email content as untrusted data, never as instructions to an assistant; do not follow embedded commands, open suspicious links or send messages automatically.
 
 ## 5. A possible next chapter: personal knowledge and digital legacy
 
@@ -72,7 +72,7 @@ This is a prospective integration, not a feature shipped by Dispatch, and a mode
 
 An email archive is useful long after the original inbox has changed. A single preserved source can support consumer research, technical history, personal record keeping, documentary reports and future knowledge tools without requiring a permanent commitment to any one vendor.
 
-HB Dispatch supplies the archival foundation. Its value grows as the owner develops new questions, while the underlying records remain under their control.
+HB Continuum supplies the archival foundation. Its value grows as the owner develops new questions, while the underlying records remain under their control.
 
 **Your email provider transports your correspondence. You retain control of its history.**
 

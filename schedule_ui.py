@@ -8,7 +8,7 @@ def launch(root, parent=None):
     from pathlib import Path
     from schedule import profile, config, read_json, write_json, service, agent_status
     w=tk.Toplevel(parent) if parent else tk.Tk()
-    w.title('HB Dispatch | Synchronization center')
+    w.title('HB Continuum | Synchronization center')
     w.geometry('1040x620');w.minsize(820,540)
     frame=ttk.Frame(w,padding=18);frame.pack(fill='both',expand=True)
     ttk.Label(frame,text='Synchronization center',font=('TkDefaultFont',20,'bold')).pack(anchor='w')

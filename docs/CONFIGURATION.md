@@ -1,6 +1,6 @@
 # Configuration center
 
-HB Dispatch exposes archive-specific preferences through a graphical configuration
+HB Continuum exposes archive-specific preferences through a graphical configuration
 center. No source code editing is required. Open the desktop application
 with `python3 dispatch.py --archive ~/HB_Mail_Archive gui`, then choose
 **Configuration center**. Save changes and restart the workstation to apply

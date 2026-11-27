@@ -6,7 +6,7 @@ def launch(root,parent,on_save=None):
     from tkinter import ttk,messagebox,filedialog
     from preferences import FIELDS,DEFAULTS,load,save,decode,export
     from schedule import read_json
-    w=tk.Toplevel(parent);w.title('HB Dispatch | Configuration center');w.geometry('820x610')
+    w=tk.Toplevel(parent);w.title('HB Continuum | Configuration center');w.geometry('820x610')
     frame=ttk.Frame(w,padding=16);frame.pack(fill='both',expand=True)
     ttk.Label(frame,text='Configuration center',font=('TkDefaultFont',20,'bold')).pack(anchor='w')
     ttk.Label(frame,text='Archive-specific settings • No programming required').pack(anchor='w',pady=(0,10))
