@@ -194,7 +194,6 @@ def _preferences_set(root, values):
     return {'values': validated}
 
 RESEARCH_TABLES = ('workspaces', 'searches', 'tags', 'fields', 'reports')
-
 def _research_list(root, table):
     if table not in RESEARCH_TABLES:
         raise IPCError('INVALID_PARAMS', 'table must be one of ' + ', '.join(RESEARCH_TABLES))
@@ -250,6 +249,158 @@ def _research_results(root, workspace, name):
         aconn.close()
     return {'workspace': workspace, 'name': name, 'count': len(rows), 'results': rows}
 
+def _with_research(root, action):
+    """Run a research-overlay write through the documented Research API."""
+    from dispatch import Archive
+    from research import Research
+    archive = Archive(root)
+    research = Research(archive)
+    try:
+        return action(archive, research)
+    finally:
+        research.close()
+        archive.db.close()
+
+def _hash_list(value):
+    if not isinstance(value, list) or not value:
+        raise IPCError('INVALID_PARAMS', 'hashes must be a non-empty list')
+    if not all(_valid_hash(h) for h in value):
+        raise IPCError('INVALID_PARAMS', 'hashes must be 64-character lowercase hex strings')
+    return list(dict.fromkeys(value))
+
+def _text(value, name, limit=4096):
+    if not isinstance(value, str):
+        raise IPCError('INVALID_PARAMS', f'{name} must be a string')
+    if len(value) > limit:
+        raise IPCError('INVALID_PARAMS', f'{name} exceeds {limit} characters')
+    return value
+
+def _research_workspace_save(root, workspace, description=''):
+    return _with_research(root, lambda a, r: (
+        r.workspace(_text(workspace, 'workspace', 100), _text(description, 'description', 2000)),
+        {'workspace': workspace})[1])
+
+def _research_search_save(root, params):
+    workspace = _text(params.get('workspace'), 'workspace', 100)
+    name = _text(params.get('name'), 'name', 100)
+    query = _text(params.get('query', ''), 'query', 4096)
+    tag = _text(params.get('tag', ''), 'tag', 100)
+    limit = params.get('limit', 1000)
+    if not isinstance(limit, int) or isinstance(limit, bool):
+        raise IPCError('INVALID_PARAMS', 'limit must be an integer')
+
+    def action(a, r):
+        if not r.db.execute('SELECT 1 FROM workspaces WHERE name=?', (workspace,)).fetchone():
+            raise IPCError('NOT_FOUND', 'unknown workspace')
+        r.save_search(workspace, name, query, tag, limit)
+        return {'workspace': workspace, 'name': name}
+    return _with_research(root, action)
+
+def _research_tag(root, hashes, tag, remove=False):
+    targets = _hash_list(hashes)
+    label = _text(tag, 'tag', 100)
+    def action(a, r):
+        for h in targets:
+            (r.untag if remove else r.tag)(h, label)
+        return {'tag': label, 'hashes': targets, 'removed': bool(remove)}
+    return _with_research(root, action)
+
+def _research_apply_rules(root):
+    return _with_research(root, lambda a, r: {'matches': r.apply_rules()})
+
+def _research_field_define(root, params):
+    name = _text(params.get('name'), 'name', 100)
+    kind = _text(params.get('kind'), 'kind', 20)
+    choices = params.get('choices') or []
+    if not isinstance(choices, list) or not all(isinstance(c, str) for c in choices):
+        raise IPCError('INVALID_PARAMS', 'choices must be a list of strings')
+    return _with_research(root, lambda a, r: (
+        r.define_field(name, kind, choices), {'name': name, 'kind': kind})[1])
+
+def _research_metadata_set(root, digest, field, value):
+    if not _valid_hash(digest):
+        raise IPCError('INVALID_PARAMS', 'hash must be 64-character lowercase hex')
+    name = _text(field, 'field', 100)
+    text = _text(value, 'value', 4096)
+    return _with_research(root, lambda a, r: (
+        r.set_metadata(digest, name, text), {'hash': digest, 'field': name, 'value': text})[1])
+
+def _research_report_save(root, params):
+    name = _text(params.get('name'), 'name', 100)
+    workspace = _text(params.get('workspace'), 'workspace', 100)
+    search = _text(params.get('search'), 'search', 100)
+    columns = params.get('columns')
+    group_by = _text(params.get('group_by', '') or '', 'group_by', 20)
+    if not isinstance(columns, list) or not all(isinstance(c, str) for c in columns):
+        raise IPCError('INVALID_PARAMS', 'columns must be a list of strings')
+    return _with_research(root, lambda a, r: (
+        r.save_report(name, workspace, search, columns, group_by), {'name': name})[1])
+
+def _research_report_preview(root, name):
+    label = _text(name, 'name', 100)
+    def action(a, r):
+        columns, rows = r.report(label)
+        return {'name': label, 'columns': columns, 'rows': rows}
+    return _with_research(root, action)
+
+def _research_report_export(root, name, path):
+    label = _text(name, 'name', 100)
+    destination = _text(path, 'path', 4096)
+    def action(a, r):
+        r.export_report(label, destination)
+        return {'name': label, 'path': destination}
+    return _with_research(root, action)
+
+def _export_evidence(root, hashes, destination):
+    from dispatch import Archive
+    targets = _hash_list(hashes)
+    dest = _text(destination, 'destination', 4096)
+    archive = Archive(root)
+    try:
+        archive.export(targets, dest)
+    finally:
+        archive.db.close()
+    return {'destination': dest, 'messages': len(targets)}
+
+def _schedule_status(root):
+    from schedule import config, read_json
+    base = Path(root)
+    return {'profiles': config(base), 'status': read_json(base / 'schedule-status.json', {})}
+
+def _schedule_profile_save(root, params):
+    from schedule import profile, config, write_json
+    payload = {k: params.get(k) for k in ('name', 'host', 'user', 'folders', 'minutes', 'daily', 'enabled')}
+    if not isinstance(payload.get('folders'), list):
+        raise IPCError('INVALID_PARAMS', 'folders must be a list')
+    item = profile(payload['name'], payload['host'], payload['user'], payload['folders'],
+                   payload.get('minutes'), payload.get('daily'),
+                   bool(payload.get('enabled', False)))
+    base = Path(root)
+    profiles = config(base)
+    profiles[item['name']] = item
+    write_json(base / 'schedule.json', profiles)
+    return {'profile': item}
+
+def _schedule_profile_enabled(root, name, enabled):
+    from schedule import config, write_json
+    label = _text(name, 'name', 40)
+    base = Path(root)
+    profiles = config(base)
+    if label not in profiles:
+        raise IPCError('NOT_FOUND', 'unknown schedule profile')
+    profiles[label]['enabled'] = bool(enabled)
+    write_json(base / 'schedule.json', profiles)
+    return {'name': label, 'enabled': bool(enabled)}
+
+def _schedule_run(root, name=None):
+    from schedule import tick
+    base = Path(root)
+    if name is not None:
+        from schedule import config
+        if _text(name, 'name', 40) not in config(base):
+            raise IPCError('NOT_FOUND', 'unknown schedule profile')
+    return tick(base, name)
+
 class IPCError(RuntimeError):
     def __init__(self, code, message):
         super().__init__(message)
@@ -296,6 +447,28 @@ class IPCServer:
                 'page_size': page_size, 'has_more': len(results) > start + page_size,
                 'total': len(results)}
 
+    def _start_job(self, work):
+        """Run work(cancel_event) on a daemon thread; emit job_complete/job_error."""
+        job_id = uuid.uuid4().hex
+        cancel_event = threading.Event()
+        job = {'id': job_id, 'cancel_event': cancel_event, 'done': False}
+        self._jobs[job_id] = job
+
+        def runner():
+            try:
+                result = work(job_id, cancel_event)
+                self._write(_event('job_complete', job_id=job_id, result=result))
+            except IPCError as exc:
+                self._write(_event('job_error', job_id=job_id, code=exc.code, message=str(exc)))
+            except Exception as exc:
+                self._write(_event('job_error', job_id=job_id, code='INTERNAL_ERROR',
+                                   message=type(exc).__name__ + ': ' + str(exc)))
+            finally:
+                job['done'] = True
+
+        threading.Thread(target=runner, daemon=True).start()
+        return {'job_id': job_id, 'status': 'started'}
+
     def _start_summarize(self, params):
         from preferences import load as load_prefs
         from summarize import Summarizer, OllamaError
@@ -308,12 +481,8 @@ class IPCServer:
         summary_type = params.get('summary_type', 'message')
         if summary_type not in ('message', 'thread'):
             raise IPCError('INVALID_PARAMS', 'summary_type must be message or thread')
-        job_id = uuid.uuid4().hex
-        cancel_event = threading.Event()
-        job = {'id': job_id, 'cancel_event': cancel_event}
-        self._jobs[job_id] = job
 
-        def worker():
+        def work(job_id, cancel_event):
             summarizer = Summarizer(self.root)
             try:
                 if not summarizer.enabled():
@@ -323,30 +492,37 @@ class IPCServer:
                     self._write(_event('progress', job_id=job_id, done=done, total=total,
                                        hash=digest, status=status))
 
-                if hashes is not None:
-                    result = summarizer.summarize_batch(
-                        hashes, summary_type, model=params.get('model'),
-                        prompt_version=params.get('prompt_version'),
-                        progress=progress, cancel_event=cancel_event)
-                else:
-                    result = summarizer.summarize_all(
+                try:
+                    if hashes is not None:
+                        return summarizer.summarize_batch(
+                            hashes, summary_type, model=params.get('model'),
+                            prompt_version=params.get('prompt_version'),
+                            progress=progress, cancel_event=cancel_event)
+                    return summarizer.summarize_all(
                         summary_type, model=params.get('model'),
                         prompt_version=params.get('prompt_version'),
                         progress=progress, cancel_event=cancel_event)
-                self._write(_event('job_complete', job_id=job_id, result=result))
-            except IPCError as exc:
-                self._write(_event('job_error', job_id=job_id, code=exc.code, message=str(exc)))
-            except OllamaError as exc:
-                self._write(_event('job_error', job_id=job_id, code='OLLAMA_ERROR', message=str(exc)))
-            except Exception as exc:
-                self._write(_event('job_error', job_id=job_id, code='INTERNAL_ERROR',
-                                   message=type(exc).__name__ + ': ' + str(exc)))
+                except OllamaError as exc:
+                    raise IPCError('OLLAMA_ERROR', str(exc)) from None
             finally:
                 summarizer.close()
-                job['done'] = True
 
-        threading.Thread(target=worker, daemon=True).start()
-        return {'job_id': job_id, 'status': 'started'}
+        return self._start_job(work)
+
+    def _start_schedule_run(self, params):
+        from schedule import config
+        name = params.get('name')
+        if name is not None:
+            if not isinstance(name, str) or name not in config(self.root):
+                raise IPCError('NOT_FOUND', 'unknown schedule profile')
+
+        def work(job_id, cancel_event):
+            self._write(_event('progress', job_id=job_id, done=0, total=1, hash='', status='syncing'))
+            result = _schedule_run(self.root, name)
+            self._write(_event('progress', job_id=job_id, done=1, total=1, hash='', status='complete'))
+            return result
+
+        return self._start_job(work)
 
     def _cancel(self, params):
         job_id = params.get('job_id')
@@ -392,6 +568,42 @@ class IPCServer:
                 return _result(request_id, _research_list(self.root, params.get('table')))
             if method == 'research_results':
                 return _result(request_id, _research_results(self.root, params.get('workspace'), params.get('name')))
+            if method == 'research_workspace_save':
+                return _result(request_id, _research_workspace_save(
+                    self.root, params.get('workspace'), params.get('description', '')))
+            if method == 'research_search_save':
+                return _result(request_id, _research_search_save(self.root, params))
+            if method == 'research_tag':
+                return _result(request_id, _research_tag(self.root, params.get('hashes'), params.get('tag')))
+            if method == 'research_untag':
+                return _result(request_id, _research_tag(
+                    self.root, params.get('hashes'), params.get('tag'), remove=True))
+            if method == 'research_apply_rules':
+                return _result(request_id, _research_apply_rules(self.root))
+            if method == 'research_field_define':
+                return _result(request_id, _research_field_define(self.root, params))
+            if method == 'research_metadata_set':
+                return _result(request_id, _research_metadata_set(
+                    self.root, params.get('hash'), params.get('field'), params.get('value')))
+            if method == 'research_report_save':
+                return _result(request_id, _research_report_save(self.root, params))
+            if method == 'research_report_preview':
+                return _result(request_id, _research_report_preview(self.root, params.get('name')))
+            if method == 'research_report_export':
+                return _result(request_id, _research_report_export(
+                    self.root, params.get('name'), params.get('path')))
+            if method == 'export_evidence':
+                return _result(request_id, _export_evidence(
+                    self.root, params.get('hashes'), params.get('destination')))
+            if method == 'schedule_status':
+                return _result(request_id, _schedule_status(self.root))
+            if method == 'schedule_profile_save':
+                return _result(request_id, _schedule_profile_save(self.root, params))
+            if method == 'schedule_profile_enabled':
+                return _result(request_id, _schedule_profile_enabled(
+                    self.root, params.get('name'), params.get('enabled')))
+            if method == 'schedule_run':
+                return _result(request_id, self._start_schedule_run(params))
             if method == 'summarize':
                 return _result(request_id, self._start_summarize(params))
             if method == 'cancel':

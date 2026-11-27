@@ -42,12 +42,12 @@ Phase A — Stabilization (repository audit in progress).
   `summarize` jobs with progress events and cancellation, and graceful
   `shutdown`; `dispatch serve` entry point (working tree, uncommitted).
 - Tauri 2 + Vue 3 desktop shell (`frontend/`, `src-tauri/`): a managed
-  Python subprocess client that drives `stats`, `search`, `message`,
-  `thread`, `record`, `verify`, `import_eml`, `preferences` (view/edit),
-  and `research_list`/`research_results` through Rust commands; native file
-  selection for import via the dialog plugin (open-only permission);
-  frontend production build and Rust build verified (working tree,
-  uncommitted).
+  Python subprocess client driving `stats`, `search`, `message`, `thread`,
+  `record`, `verify`, `import_eml`, `preferences`, and the full research
+  overlay (workspaces, saved searches, tags, fields, metadata, reports with
+  CSV export, rule rebuild), evidence export, and synchronization profiles
+  (status, save, enable/disable, run-as-job); native open/save dialogs;
+  frontend and Rust builds verified (working tree, uncommitted).
 
 ## Pending capabilities
 
@@ -103,9 +103,9 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 78 tests, all pass (29 baseline
+- `python3 -m unittest discover -s tests`: 85 tests, all pass (29 baseline
   + 5 search-worker + 14 Facebook importer + 9 summarization + 4 unified
-  search + 17 IPC).
+  search + 24 IPC).
 - End-to-end CLI smoke tests of `dispatch facebook preview/import/search/
   list`, `dispatch summarize run --all` (fake loopback Ollama),
   `dispatch search-all`, and `dispatch serve` (subprocess protocol): pass.
@@ -115,8 +115,10 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 
 ## Test results
 
-78 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
-frontend and Rust builds pass.
+85 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
+frontend and Rust builds pass; IPC surfaces smoke-tested end-to-end over the
+real subprocess protocol (import, tag, workspace, saved search, field,
+metadata, report preview, schedule profile).
 
 ## CI status
 
@@ -128,9 +130,11 @@ frontend and Rust builds pass.
 
 - No telemetry or hidden networking; network use is explicit (IMAP sync).
 - Credentials excluded from preferences, backups, and Git.
-- Tauri shell restricts capabilities to `core:default` and
-  `dialog:allow-open` (native open dialogs only; no save dialog, no shell,
-  filesystem, or HTTP plugins).
+- Tauri shell restricts capabilities to `core:default`, `dialog:allow-open`
+  and `dialog:allow-save` (native dialogs only; no shell, filesystem, or
+  HTTP plugins).
+- Synchronization over IPC never accepts a password: the engine resolves
+  credentials from the OS store at run time; no secret crosses the protocol.
 - Symlink/path hardening and read-only backup connections exist only on
   PR #4; recommended for integration.
 

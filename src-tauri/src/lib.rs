@@ -199,6 +199,127 @@ fn research_results(state: State<AppState>, workspace: String, name: String) -> 
 }
 
 #[tauri::command]
+fn research_workspace_save(
+    state: State<AppState>,
+    workspace: String,
+    description: Option<String>,
+) -> Result<Value, String> {
+    call(&state, "research_workspace_save",
+         json!({ "workspace": workspace, "description": description.unwrap_or_default() }))
+}
+
+#[tauri::command]
+fn research_search_save(
+    state: State<AppState>,
+    workspace: String,
+    name: String,
+    query: String,
+    tag: String,
+    limit: u32,
+) -> Result<Value, String> {
+    call(&state, "research_search_save",
+         json!({ "workspace": workspace, "name": name, "query": query, "tag": tag, "limit": limit }))
+}
+
+#[tauri::command]
+fn research_tag(state: State<AppState>, hashes: Vec<String>, tag: String) -> Result<Value, String> {
+    call(&state, "research_tag", json!({ "hashes": hashes, "tag": tag }))
+}
+
+#[tauri::command]
+fn research_untag(state: State<AppState>, hashes: Vec<String>, tag: String) -> Result<Value, String> {
+    call(&state, "research_untag", json!({ "hashes": hashes, "tag": tag }))
+}
+
+#[tauri::command]
+fn research_apply_rules(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "research_apply_rules", json!({}))
+}
+
+#[tauri::command]
+fn research_field_define(
+    state: State<AppState>,
+    name: String,
+    kind: String,
+    choices: Option<Vec<String>>,
+) -> Result<Value, String> {
+    call(&state, "research_field_define",
+         json!({ "name": name, "kind": kind, "choices": choices.unwrap_or_default() }))
+}
+
+#[tauri::command]
+fn research_metadata_set(
+    state: State<AppState>,
+    hash: String,
+    field: String,
+    value: String,
+) -> Result<Value, String> {
+    call(&state, "research_metadata_set", json!({ "hash": hash, "field": field, "value": value }))
+}
+
+#[tauri::command]
+fn research_report_save(
+    state: State<AppState>,
+    name: String,
+    workspace: String,
+    search: String,
+    columns: Vec<String>,
+    group_by: Option<String>,
+) -> Result<Value, String> {
+    call(&state, "research_report_save", json!({
+        "name": name, "workspace": workspace, "search": search,
+        "columns": columns, "group_by": group_by.unwrap_or_default(),
+    }))
+}
+
+#[tauri::command]
+fn research_report_preview(state: State<AppState>, name: String) -> Result<Value, String> {
+    call(&state, "research_report_preview", json!({ "name": name }))
+}
+
+#[tauri::command]
+fn research_report_export(state: State<AppState>, name: String, path: String) -> Result<Value, String> {
+    call(&state, "research_report_export", json!({ "name": name, "path": path }))
+}
+
+#[tauri::command]
+fn export_evidence(state: State<AppState>, hashes: Vec<String>, destination: String) -> Result<Value, String> {
+    call(&state, "export_evidence", json!({ "hashes": hashes, "destination": destination }))
+}
+
+#[tauri::command]
+fn schedule_status(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "schedule_status", json!({}))
+}
+
+#[tauri::command]
+fn schedule_profile_save(
+    state: State<AppState>,
+    name: String,
+    host: String,
+    user: String,
+    folders: Vec<String>,
+    minutes: Option<u32>,
+    daily: Option<String>,
+    enabled: bool,
+) -> Result<Value, String> {
+    call(&state, "schedule_profile_save", json!({
+        "name": name, "host": host, "user": user, "folders": folders,
+        "minutes": minutes, "daily": daily, "enabled": enabled,
+    }))
+}
+
+#[tauri::command]
+fn schedule_profile_enabled(state: State<AppState>, name: String, enabled: bool) -> Result<Value, String> {
+    call(&state, "schedule_profile_enabled", json!({ "name": name, "enabled": enabled }))
+}
+
+#[tauri::command]
+fn schedule_run(state: State<AppState>, name: Option<String>) -> Result<Value, String> {
+    call(&state, "schedule_run", json!({ "name": name }))
+}
+
+#[tauri::command]
 fn set_archive(state: State<AppState>, path: String) -> Result<(), String> {
     let mut guard = state.engine.lock().expect("engine lock");
     if let Some(mut engine) = guard.take() {
@@ -239,6 +360,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ping, stats, search, message, thread, record, verify,
             import_eml, preferences, preferences_set, research_list, research_results,
+            research_workspace_save, research_search_save, research_tag, research_untag,
+            research_apply_rules, research_field_define, research_metadata_set,
+            research_report_save, research_report_preview, research_report_export,
+            export_evidence, schedule_status, schedule_profile_save,
+            schedule_profile_enabled, schedule_run,
             set_archive, shutdown
         ])
         .run(tauri::generate_context!())

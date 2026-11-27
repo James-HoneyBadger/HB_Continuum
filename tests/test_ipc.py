@@ -128,6 +128,87 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(resp['result']['results'][0]['hash'],self.h)
         self.assertEqual(self.server.handle(request('research_list',table='evil'))['error']['code'],'INVALID_PARAMS')
 
+    def test_research_workspace_and_search_save(self):
+        resp=self.server.handle(request('research_workspace_save',workspace='Metals',description='Bullion'))
+        self.assertEqual(resp['result']['workspace'],'Metals')
+        resp=self.server.handle(request('research_search_save',workspace='Metals',name='Silver',query='silver',limit=10))
+        self.assertEqual(resp['result']['name'],'Silver')
+        listed=self.server.handle(request('research_list',table='searches'))['result']['rows']
+        self.assertTrue(any(r[0]=='Metals' and r[1]=='Silver' and r[4]==10 for r in listed))
+        self.assertEqual(self.server.handle(request('research_search_save',workspace='Nope',name='x'))['error']['code'],'NOT_FOUND')
+        self.assertEqual(self.server.handle(request('research_search_save',workspace='Metals',name='x',limit='10'))['error']['code'],'INVALID_PARAMS')
+
+    def test_research_tags_and_rules(self):
+        resp=self.server.handle(request('research_tag',hashes=[self.h],tag='invoice'))
+        self.assertEqual(resp['result']['tag'],'invoice')
+        rows=self.server.handle(request('research_list',table='tags'))['result']['rows']
+        self.assertTrue(any(r[0]==self.h and r[1]=='invoice' and r[2]=='manual' for r in rows))
+        self.server.handle(request('research_untag',hashes=[self.h],tag='invoice'))
+        rows=self.server.handle(request('research_list',table='tags'))['result']['rows']
+        self.assertFalse(any(r[1]=='invoice' for r in rows))
+        self.assertEqual(self.server.handle(request('research_tag',hashes=['bad'],tag='x'))['error']['code'],'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request('research_tag',hashes=['0'*64],tag='x'))['error']['code'],'INVALID_PARAMS')
+
+    def test_research_fields_and_metadata(self):
+        self.server.handle(request('research_field_define',name='State',kind='text'))
+        resp=self.server.handle(request('research_metadata_set',hash=self.h,field='State',value='Open'))
+        self.assertEqual(resp['result']['value'],'Open')
+        rows=self.server.handle(request('research_list',table='fields'))['result']['rows']
+        self.assertTrue(any(r[0]=='State' for r in rows))
+        self.assertEqual(self.server.handle(request('research_metadata_set',hash=self.h,field='Missing',value='x'))['error']['code'],'INVALID_PARAMS')
+
+    def test_research_reports(self):
+        from research import Research
+        research=Research(self.a)
+        try:
+            research.save_search('General','all','')
+        finally:
+            research.close()
+        resp=self.server.handle(request('research_report_save',name='cols',workspace='General',search='all',columns=['subject','hash']))
+        self.assertEqual(resp['result']['name'],'cols')
+        preview=self.server.handle(request('research_report_preview',name='cols'))['result']
+        self.assertEqual(preview['columns'],['subject','hash'])
+        self.assertEqual(len(preview['rows']),1)
+        target=self.root/'report.csv'
+        exported=self.server.handle(request('research_report_export',name='cols',path=str(target)))
+        self.assertTrue(target.is_file())
+        self.assertEqual(exported['result']['path'],str(target))
+        again=self.server.handle(request('research_report_export',name='cols',path=str(target)))
+        self.assertEqual(again['error']['code'],'INTERNAL_ERROR')
+
+    def test_export_evidence(self):
+        dest=self.root/'evidence-1'
+        resp=self.server.handle(request('export_evidence',hashes=[self.h],destination=str(dest)))
+        self.assertEqual(resp['result']['messages'],1)
+        self.assertTrue((dest/(self.h+'.eml')).is_file())
+        self.assertTrue((dest/'manifest.json').is_file())
+
+    def test_schedule_status_and_profile(self):
+        resp=self.server.handle(request('schedule_status'))
+        self.assertEqual(resp['result']['profiles'],{})
+        saved=self.server.handle(request('schedule_profile_save',name='mail',host='imap.example.invalid',
+                                         user='u@example.invalid',folders=['INBOX'],minutes=30,enabled=False))
+        self.assertEqual(saved['result']['profile']['name'],'mail')
+        self.assertEqual(self.server.handle(request('schedule_profile_enabled',name='mail',enabled=True))['result']['enabled'],True)
+        self.assertEqual(self.server.handle(request('schedule_profile_enabled',name='nope',enabled=True))['error']['code'],'NOT_FOUND')
+        resp=self.server.handle(request('schedule_status'))
+        self.assertIn('mail',resp['result']['profiles'])
+        self.assertNotIn('password',json.dumps(resp['result']).lower())
+
+    def test_schedule_run_job_reports_error(self):
+        self.server.handle(request('schedule_profile_save',name='mail',host='imap.example.invalid',
+                                   user='u@example.invalid',folders=['INBOX'],minutes=30,enabled=True))
+        resp=self.server.handle(request('schedule_run',name='mail'))
+        job_id=resp['result']['job_id']
+        deadline=time.time()+5
+        while time.time()<deadline and not self.server._jobs[job_id].get('done'):
+            time.sleep(0.01)
+        self.assertTrue(self.server._jobs[job_id].get('done'))
+        lines=[json.loads(x) for x in self.server.out.getvalue().splitlines()]
+        terminal=[x for x in lines if x.get('event') in ('job_complete','job_error')]
+        self.assertEqual(len(terminal),1)
+        self.assertEqual(self.server.handle(request('schedule_run',name='nope'))['error']['code'],'NOT_FOUND')
+
     def test_summarize_disabled(self):
         resp=self.server.handle(request('summarize',hashes=[self.h]))
         self.assertEqual(resp['error']['code'],'AI_DISABLED')
