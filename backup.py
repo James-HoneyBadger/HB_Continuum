@@ -34,6 +34,12 @@ def copydb(source, target):
         src.backup(dst)
         if dst.execute('PRAGMA journal_mode=DELETE').fetchone()[0].lower() != 'delete':
             raise ValueError('Cannot normalize snapshot journal mode')
+    # A source in WAL mode can leave an empty shared-memory sidecar behind even
+    # after the journal mode is normalized; it is not part of the snapshot.
+    for suffix in ('-wal', '-shm'):
+        sidecar = target.with_name(target.name + suffix)
+        if sidecar.exists():
+            sidecar.unlink()
 
 def _entries(root):
     """Every entry below `root`, refusing symlinks and special files."""
