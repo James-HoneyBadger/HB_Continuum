@@ -76,11 +76,6 @@ ARCHIVE_V3 = (
     _backfill_archive_timestamps,
 )
 
-ARCHIVE_V5 = (
-    'ALTER TABLE messages ADD COLUMN size INTEGER',
-    _backfill_message_sizes,
-)
-
 ARCHIVE_V4 = (
     'CREATE TABLE IF NOT EXISTS import_runs('
     'id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL, source_key TEXT, '
@@ -88,6 +83,11 @@ ARCHIVE_V4 = (
     'files_seen INTEGER, records_seen INTEGER, records_new INTEGER, '
     'records_existing INTEGER, records_failed INTEGER, detail TEXT)',
     'CREATE INDEX IF NOT EXISTS import_runs_by_time ON import_runs(started_at DESC)',
+)
+
+ARCHIVE_V5 = (
+    'ALTER TABLE messages ADD COLUMN size INTEGER',
+    _backfill_message_sizes,
 )
 
 RESEARCH_V1 = (
