@@ -342,6 +342,57 @@ fn sources(state: State<AppState>) -> Result<Value, String> {
 }
 
 #[tauri::command]
+fn journal_list(
+    state: State<AppState>,
+    limit: Option<u32>,
+    include_deleted: Option<bool>,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "journal_list",
+        json!({
+            "limit": limit.unwrap_or(100),
+            "include_deleted": include_deleted.unwrap_or(false),
+        }),
+    )
+}
+
+#[tauri::command]
+fn journal_get(state: State<AppState>, entry_id: i64) -> Result<Value, String> {
+    call(&state, "journal_get", json!({ "entry_id": entry_id }))
+}
+
+#[tauri::command]
+fn journal_save(
+    state: State<AppState>,
+    entry_id: Option<i64>,
+    title: String,
+    body: String,
+    event_date: Option<String>,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "journal_save",
+        json!({
+            "entry_id": entry_id,
+            "title": title,
+            "body": body,
+            "event_date": event_date,
+        }),
+    )
+}
+
+#[tauri::command]
+fn journal_delete(state: State<AppState>, entry_id: i64) -> Result<Value, String> {
+    call(&state, "journal_delete", json!({ "entry_id": entry_id }))
+}
+
+#[tauri::command]
+fn journal_restore(state: State<AppState>, entry_id: i64) -> Result<Value, String> {
+    call(&state, "journal_restore", json!({ "entry_id": entry_id }))
+}
+
+#[tauri::command]
 fn preferences(state: State<AppState>) -> Result<Value, String> {
     call(&state, "preferences", json!({}))
 }
@@ -530,6 +581,7 @@ pub fn run() {
             reindex, recover_orphans, migrate_status, backup, verify_backup, restore,
             facebook_preview, facebook_import,
             import_eml, import_history, sources, cancel,
+            journal_list, journal_get, journal_save, journal_delete, journal_restore,
             preferences, preferences_set, research_list, research_results,
             research_workspace_save, research_search_save, research_tag, research_untag,
             research_apply_rules, research_field_define, research_metadata_set,
