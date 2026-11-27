@@ -1,6 +1,14 @@
 # Baseline audit — HB Continuum
 
 Status: 2026-11-26. Author: engineering audit per the master directive.
+
+> **Historical document.** This records the repository as it was on
+> 2026-11-26. Several findings have since been resolved: the archive lock is
+> cross-platform, timeline ordering is indexed SQL rather than a Python sort,
+> a benchmark harness exists, imports have background execution and persisted
+> history, and the desktop shell has Source Manager, Journal and Reports
+> workspaces. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for the
+> current verified state; do not treat this audit's limitations as current.
 Scope: repository state on `main` (v0.3.0), the two open pull requests
 (#4 archive hardening, #5 continuum branding), and the uncommitted working
 tree in the audit environment. This document records observed behavior, not

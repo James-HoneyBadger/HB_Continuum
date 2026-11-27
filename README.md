@@ -69,6 +69,7 @@ Python 3.12+ with SQLite FTS5 and optional Tkinter.
 ```sh
 python3 dispatch.py --version
 python3 dispatch.py import sample.eml
+python3 dispatch.py import-history
 python3 dispatch.py search invoice
 python3 dispatch.py verify
 python3 dispatch.py health
@@ -101,6 +102,22 @@ Customize the workstation per archive with validated, portable settings for appe
 
 Create workspaces, saved queries, classification rules, tags, custom metadata and reusable CSV reports without changing original correspondence. See [Research workbench](docs/RESEARCH.md).
 
+## Import center, history and source manager
+
+Desktop imports run as cancellable background jobs with real progress. Every EML, IMAP and Facebook import appends a run to the archive's import history, recording what was examined, what was new, what already existed and what failed. A killed process is reported as interrupted rather than rewritten as success.
+
+The Sources workspace derives coverage from stored provenance: unique messages and mailbox occurrences per account, folders read, normalized date coverage, last import status, catalog sources and storage footprint. It states explicitly that importing folders never proves an account is complete. Importing `.eml` files preserves messages without inventing an account. See [Migration and compatibility](docs/MIGRATION.md) for the history schema.
+
+## Journal and archive reports
+
+The Journal stores your own retrospective entries in the research overlay, separate from preserved evidence. Every edit adds a revision; saving without changes adds nothing. Removal is soft, so history stays inspectable and the entry can be restored.
+
+The Reports workspace writes a self-contained Markdown, JSON or standalone HTML archive report: summary, date coverage, records by year, email accounts, catalog sources, consistency checks, recent imports and explicit limitations. Reports are written outside the archive, never replace an existing file, and state that stored counts and hash checks are not remote truth or legal certification.
+
+## Performance baseline
+
+`scripts/benchmark.py` builds deterministic synthetic archives and measures ingest, search, timeline paging, dashboard and peak memory. Current baselines and reproduction steps are in [Benchmarks](docs/BENCHMARKS.md). The harness never touches a real archive and refuses a non-empty work directory.
+
 ## Beyond email (new)
 
 HB Continuum is growing from an email archive into a source-independent historical record. These capabilities are opt-in and still evolving.
@@ -129,14 +146,15 @@ python3 dispatch.py search-all "receipt"
 python3 dispatch.py search-all "bullion" --sources facebook
 ```
 
-**Desktop app (in development)** — a Tauri 2 shell with a Vue 3 interface
-drives the Python engine over the versioned IPC protocol, including search,
-reading with attachment metadata, a timeline with correspondent counts, EML
-and Facebook export import with preview, research, synchronization,
-preferences, integrity verification, an archive Health tab that reports
-local consistency and runs resumable reindex/recovery repairs, and a Backup
-tab for schema status plus validated backup, verification and restore. From
-a checkout:
+**Desktop application** — a Tauri 2 shell with a Vue 3 interface drives the
+Python engine over the versioned IPC protocol. Workspaces include an Overview
+dashboard (unique records, mailbox origins, undated counts, coverage, storage,
+records by year); a paged timeline with oldest/newest ordering, sender filter
+and date range; unified search with paging and date range; Sources; a
+background Import Center with preview, progress, cancellation and history;
+Research; Journal with revision history; archive Reports; synchronization;
+Health with resumable repair jobs; Backup with schema status and validated
+backup, verification and restore; and Preferences. From a checkout:
 
 ```sh
 cd frontend && npm install
