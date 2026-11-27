@@ -231,6 +231,7 @@ fn shutdown(state: State<AppState>) -> Result<(), String> {
 pub fn run() {
     let default_archive = std::env::var("HB_ARCHIVE").unwrap_or_else(|_| "~/.hb-dispatch".to_string());
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             archive: Mutex::new(default_archive),
             engine: Mutex::new(None),

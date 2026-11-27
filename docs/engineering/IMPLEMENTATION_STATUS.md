@@ -44,8 +44,10 @@ Phase A — Stabilization (repository audit in progress).
 - Tauri 2 + Vue 3 desktop shell (`frontend/`, `src-tauri/`): a managed
   Python subprocess client that drives `stats`, `search`, `message`,
   `thread`, `record`, `verify`, `import_eml`, `preferences` (view/edit),
-  and `research_list`/`research_results` through Rust commands; frontend
-  production build and Rust build verified (working tree, uncommitted).
+  and `research_list`/`research_results` through Rust commands; native file
+  selection for import via the dialog plugin (open-only permission);
+  frontend production build and Rust build verified (working tree,
+  uncommitted).
 
 ## Pending capabilities
 
@@ -126,6 +128,9 @@ frontend and Rust builds pass.
 
 - No telemetry or hidden networking; network use is explicit (IMAP sync).
 - Credentials excluded from preferences, backups, and Git.
+- Tauri shell restricts capabilities to `core:default` and
+  `dialog:allow-open` (native open dialogs only; no save dialog, no shell,
+  filesystem, or HTTP plugins).
 - Symlink/path hardening and read-only backup connections exist only on
   PR #4; recommended for integration.
 

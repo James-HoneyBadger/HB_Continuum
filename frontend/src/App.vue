@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 
 interface ArchiveStats {
   messages: number;
@@ -120,6 +121,7 @@ async function runVerify() {
 }
 
 const importPath = ref("");
+const importPaths = ref<string[]>([]);
 const importResult = ref<any>(null);
 const prefsValues = ref<Record<string, any>>({});
 const prefsFields = ref<any[]>([]);
@@ -149,11 +151,43 @@ async function savePreferences() {
   }
 }
 
+async function chooseFiles() {
+  error.value = "";
+  try {
+    const selected = await open({
+      multiple: true,
+      filters: [{ name: "Email", extensions: ["eml"] }],
+    });
+    if (!selected) return;
+    importPaths.value = Array.isArray(selected) ? selected : [selected];
+    importResult.value = null;
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function chooseFolder() {
+  error.value = "";
+  try {
+    const selected = await open({ directory: true, multiple: false });
+    if (!selected || Array.isArray(selected)) return;
+    importPaths.value = [selected];
+    importResult.value = null;
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
 async function runImport() {
   error.value = "";
   importResult.value = null;
+  const paths = importPaths.value.length ? importPaths.value : importPath.value ? [importPath.value] : [];
+  if (!paths.length) {
+    error.value = "Choose .eml files or a folder first";
+    return;
+  }
   try {
-    importResult.value = (await invoke("import_eml", { paths: [importPath.value] })) as any;
+    importResult.value = (await invoke("import_eml", { paths })) as any;
     await refreshStats();
   } catch (e) {
     error.value = String(e);
@@ -261,12 +295,24 @@ onMounted(() => {
     <section class="panel">
       <h2>Import EML</h2>
       <div class="row">
-        <input class="grow" v-model="importPath" placeholder="/path/to/mail.eml or a directory" />
-        <button @click="runImport">Import</button>
+        <button @click="chooseFiles">Choose .eml files…</button>
+        <button @click="chooseFolder">Choose folder…</button>
+        <button @click="runImport" :disabled="!importPaths.length && !importPath">Import</button>
+      </div>
+      <p v-if="importPaths.length" class="meta">
+        {{ importPaths.length === 1 ? importPaths[0] : importPaths.length + " files selected" }}
+      </p>
+      <div class="row">
+        <input class="grow" v-model="importPath" placeholder="…or type a path to a .eml file or directory" />
       </div>
       <p v-if="importResult" class="meta">
         {{ importResult.imported }} imported · {{ importResult.errors.length }} errors
       </p>
+      <ul v-if="importResult && importResult.errors.length" class="results">
+        <li v-for="e in importResult.errors" :key="e.path">
+          <span class="meta">{{ e.path }}</span> {{ e.error }}
+        </li>
+      </ul>
     </section>
 
     <section class="panel">
