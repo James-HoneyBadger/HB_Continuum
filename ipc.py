@@ -582,6 +582,21 @@ def _text(value, name, limit=4096):
         raise IPCError('INVALID_PARAMS', f'{name} exceeds {limit} characters')
     return value
 
+def _string_list(value, name, max_items, limit=200):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = [value]
+    if (not isinstance(value, list) or len(value) > max_items
+            or not all(isinstance(item, str) for item in value)):
+        raise IPCError('INVALID_PARAMS',
+                       f'{name} must be a list of at most {max_items} strings')
+    cleaned = [item.strip() for item in value if item.strip()]
+    if any(len(item) > limit for item in cleaned):
+        raise IPCError('INVALID_PARAMS',
+                       f'{name} contains a value longer than {limit} characters')
+    return cleaned or None
+
 def _research_workspace_save(root, workspace, description=''):
     return _with_research(root, lambda a, r: (
         r.workspace(_text(workspace, 'workspace', 100), _text(description, 'description', 2000)),
@@ -856,7 +871,7 @@ class IPCServer:
             catalog.close()
 
     def _search(self, params):
-        from unified import search_unified
+        from unified import CATALOG_KINDS, search_unified, search_unified_count
         query = params.get('query')
         if not isinstance(query, str) or not query.strip():
             raise IPCError('INVALID_PARAMS', 'search requires a non-empty query string')
@@ -873,12 +888,26 @@ class IPCServer:
         for name, value in (('after', after), ('before', before)):
             if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
                 raise IPCError('INVALID_PARAMS', f'{name} must be a UTC epoch integer')
+        senders = _string_list(params.get('senders'), 'senders', 20, 200)
+        kinds = _string_list(params.get('kinds'), 'kinds', len(CATALOG_KINDS) + 1, 20)
+        if kinds:
+            allowed = set(CATALOG_KINDS) | {'message'}
+            if any(kind not in allowed for kind in kinds):
+                raise IPCError('INVALID_PARAMS', 'kinds contains an unsupported record kind')
+        tags = _string_list(params.get('tags'), 'tags', 20, 100)
         results = search_unified(self.root, query, limit=SEARCH_CAP, sources=sources,
-                                 after=after, before=before)
+                                 after=after, before=before, senders=senders,
+                                 kinds=kinds, tags=tags)
         start = (page - 1) * page_size
+        exact = search_unified_count(self.root, query, sources=sources, after=after,
+                                     before=before, senders=senders, kinds=kinds,
+                                     tags=tags)
+        total = len(results) if exact is None else exact
+        capped = len(results) >= SEARCH_CAP and (exact is None or exact > len(results))
         return {'items': results[start:start + page_size], 'page': page,
-                'page_size': page_size, 'has_more': len(results) > start + page_size,
-                'total': len(results)}
+                'page_size': page_size,
+                'has_more': exact is not None and total > start + page_size,
+                'total': total, 'total_is_exact': exact is not None, 'capped': capped}
 
     def _start_job(self, work):
         """Run work(cancel_event) on a daemon thread; emit job_complete/job_error."""

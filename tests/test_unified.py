@@ -52,6 +52,33 @@ class UnifiedSearchTests(unittest.TestCase):
         self.assertTrue(all(r['source']=='email' for r in results))
         self.assertEqual(search_unified(self.root, 'bullion', after=1704067200, before=1704153600),[]) 
 
+    def test_sender_and_kind_filters(self):
+        email_only=search_unified(self.root,'bullion',senders=['a@example.invalid'])
+        self.assertEqual({r['source'] for r in email_only},{'email'})
+        catalog_only=search_unified(self.root,'bullion',kinds=['post'])
+        self.assertEqual({r['source'] for r in catalog_only},{'facebook'})
+        messages_only=search_unified(self.root,'bullion',kinds=['message'])
+        self.assertEqual({r['source'] for r in messages_only},{'email'})
+        self.assertEqual(search_unified(self.root,'bullion',kinds=['reaction']),[])
+
+    def test_tag_filter_reads_the_research_overlay(self):
+        from research import Research
+        research=Research(self.a)
+        try:
+            research.tag(self.a.find('bullion')[0][0],'important')
+        finally:
+            research.close()
+        results=search_unified(self.root,'bullion',tags=['important'])
+        self.assertEqual({r['source'] for r in results},{'email'})
+        self.assertEqual(len(results),1)
+
+    def test_exact_counts(self):
+        from unified import search_unified_count
+        self.assertEqual(search_unified_count(self.root,'bullion'),2)
+        self.assertEqual(search_unified_count(self.root,'bullion',sources=('email',)),1)
+        self.assertEqual(search_unified_count(self.root,'bullion',kinds=['post']),1)
+        self.assertIsNone(search_unified_count(self.root,'bullion',tags=['important']))
+
     def test_relevance_orders_more_specific_matches_first(self):
         self.a.ingest(b'From: a@example.invalid\r\nSubject: Bullion\r\n\r\nBullion bullion bullion')
         results=search_unified(self.root, 'bullion', sources=('email',))

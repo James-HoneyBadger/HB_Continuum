@@ -31,6 +31,28 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(resp['result']['archive']['messages'],1)
         self.assertIn('records',resp['result']['catalog'])
 
+    def test_search_filters_exact_total_and_validation(self):
+        filtered=self.server.handle(request(
+            'search',query='bullion',senders=['a@example.invalid'],page_size=10))['result']
+        self.assertEqual(filtered['total'],1)
+        self.assertTrue(filtered['total_is_exact'])
+        self.assertFalse(filtered['capped'])
+        self.assertEqual([item['id'] for item in filtered['items']],[self.h])
+        none=self.server.handle(request('search',query='bullion',kinds=['post']))['result']
+        self.assertEqual(none['items'],[])
+        self.assertEqual(none['total'],0)
+        self.assertEqual(self.server.handle(request(
+            'search',query='bullion',kinds=['bogus']))['error']['code'],'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request(
+            'search',query='bullion',senders=[1]))['error']['code'],'INVALID_PARAMS')
+
+    def test_search_tag_filter_reports_inexact_total(self):
+        self.server.handle(request('research_tag',hashes=[self.h],tag='important'))
+        response=self.server.handle(request(
+            'search',query='bullion',tags=['important'],page_size=10))['result']
+        self.assertEqual([item['id'] for item in response['items']],[self.h])
+        self.assertFalse(response['total_is_exact'])
+
     def test_search_pagination(self):
         self.a.ingest(b'From: b@example.invalid\r\nSubject: Another bullion\r\n\r\nMore bullion here')
         resp=self.server.handle(request('search',query='bullion',page=1,page_size=1))

@@ -24,6 +24,13 @@ const pageSize = 50;
 const hasMore = ref(false);
 const fromDate = ref("");
 const toDate = ref("");
+const sourceEmail = ref(true);
+const sourceFacebook = ref(true);
+const sendersText = ref("");
+const kind = ref("");
+const tagsText = ref("");
+const totalIsExact = ref(true);
+const capped = ref(false);
 const collections = ref<{ id: number; workspace: string; name: string }[]>([]);
 const collectionId = ref<number | null>(null);
 const collectionNote = ref("");
@@ -72,9 +79,25 @@ const selected = ref<string[]>([]);
 const tagName = ref("");
 const notice = ref("");
 
+function splitList(value: string): string[] | undefined {
+  const items = value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length ? items : undefined;
+}
+
 async function runSearch(target = 1) {
-  busy.value = true;
   notice.value = "";
+  const sources = [
+    sourceEmail.value ? "email" : null,
+    sourceFacebook.value ? "facebook" : null,
+  ].filter((value): value is string => value !== null);
+  if (!sources.length) {
+    notice.value = "Choose at least one source.";
+    return;
+  }
+  busy.value = true;
   try {
     const after = fromDate.value
       ? Math.floor(new Date(`${fromDate.value}T00:00:00Z`).getTime() / 1000)
@@ -84,15 +107,26 @@ async function runSearch(target = 1) {
       : undefined;
     const response = (await invoke("search", {
       query: query.value,
-      sources: ["email", "facebook"],
+      sources,
       page: target,
       pageSize,
       after,
       before,
-    })) as { items: ResultItem[]; total: number; has_more: boolean };
+      senders: splitList(sendersText.value),
+      kinds: kind.value ? [kind.value] : undefined,
+      tags: splitList(tagsText.value),
+    })) as {
+      items: ResultItem[];
+      total: number;
+      has_more: boolean;
+      total_is_exact: boolean;
+      capped: boolean;
+    };
     results.value = response.items;
     total.value = response.total;
     hasMore.value = response.has_more;
+    totalIsExact.value = response.total_is_exact;
+    capped.value = response.capped;
     page.value = target;
     selected.value = [];
     detail.value = null;
@@ -210,8 +244,35 @@ async function exportSelected() {
       <button type="submit" :disabled="busy">{{ busy ? "Searching…" : "Search" }}</button>
     </form>
 
+    <div class="row filters">
+      <label class="check"><input v-model="sourceEmail" type="checkbox" /> Email</label>
+      <label class="check"><input v-model="sourceFacebook" type="checkbox" /> Facebook</label>
+      <label class="range">
+        Sender/actor
+        <input v-model="sendersText" placeholder="exact, comma-separated" />
+      </label>
+      <label class="range">
+        Kind
+        <select v-model="kind">
+          <option value="">Any kind</option>
+          <option value="message">Message</option>
+          <option value="post">Post</option>
+          <option value="comment">Comment</option>
+          <option value="event">Event</option>
+          <option value="media">Media</option>
+          <option value="reaction">Reaction</option>
+        </select>
+      </label>
+      <label class="range">
+        Tags
+        <input v-model="tagsText" placeholder="any of, comma-separated" />
+      </label>
+    </div>
+
     <p v-if="total !== null && query" class="count">
-      {{ total }} results · page {{ page }} · {{ selected.length }} selected
+      {{ total }} results<span v-if="!totalIsExact"> (at least)</span> · page {{ page }} ·
+      {{ selected.length }} selected
+      <span v-if="capped"> · listing limited to the first 5000 matches; refine the query</span>
     </p>
     <div v-if="query && (page > 1 || hasMore)" class="row">
       <button :disabled="busy || page <= 1" @click="runSearch(page - 1)">Previous</button>
@@ -299,10 +360,23 @@ async function exportSelected() {
   font-size: 12px;
   color: var(--hb-text-secondary);
 }
-.range input {
+.range input,
+.range select {
   padding: 4px 6px;
   border: 1px solid var(--hb-border);
   background: var(--hb-workspace);
+  border-radius: var(--hb-radius);
+}
+.filters {
+  align-items: center;
+  gap: 14px;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--hb-text-secondary);
 }
 input {
   padding: 8px;
