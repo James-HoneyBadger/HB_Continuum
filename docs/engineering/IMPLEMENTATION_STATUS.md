@@ -63,7 +63,9 @@ Phase A — Stabilization (repository audit in progress).
   schema reporting (`migrate_status`) and validated `backup`, `verify_backup`
   and `restore` jobs appear in a Backup tab, and both tabs consume forwarded
   engine events through a shared job composable; the Import tab offers
-  Facebook export preview and background import alongside EML import.
+  Facebook export preview and background import alongside EML import; the
+  Timeline tab shows chronological messages with per-correspondent counts
+  and a reader.
   Python subprocess client driving `stats`, `search`, `message`, `thread`,
   `record`, `verify`, `import_eml`, `preferences`, and the full research
   overlay (workspaces, saved searches, tags, fields, metadata, reports with
@@ -110,7 +112,8 @@ relationships explorers, and the documentation overhaul
   `frontend/src/App.vue`, `frontend/src/components/SearchView.vue`,
   `frontend/src/components/HealthView.vue`,
   `frontend/src/components/BackupView.vue`,
-  `frontend/src/composables/useEngineJob.ts`, `facebook.py`,
+  `frontend/src/composables/useEngineJob.ts`,
+  `frontend/src/components/TimelineView.vue`, `facebook.py`,
   `frontend/src/components/ImportView.vue`, `src-tauri/src/lib.rs`,
   `tests/test_migrations.py`, `tests/test_ipc.py` modified.
 
@@ -145,9 +148,9 @@ relationships explorers, and the documentation overhaul
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 159 tests, all pass (29 baseline
+- `python3 -m unittest discover -s tests`: 160 tests, all pass (29 baseline
   + 5 search-worker + 14 Facebook importer + 9 summarization + 4 unified
-  search + 39 IPC + 26 scheduler + 1 Windows-path tick + 17 migrations + 15
+  search + 40 IPC + 26 scheduler + 1 Windows-path tick + 17 migrations + 15
   archive hardening).
 - `mypy` (2.4.1, matching CI): no issues in 19 source files.
 - End-to-end CLI smoke tests of `dispatch facebook preview/import/search/
@@ -164,7 +167,7 @@ relationships explorers, and the documentation overhaul
 
 ## Test results
 
-159 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
+160 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
 frontend and Rust builds pass; IPC surfaces smoke-tested end-to-end over the
 real subprocess protocol.
 
@@ -222,9 +225,8 @@ Scheduler verification status:
 
 ## Next recommended tasks
 
-1. Port the remaining workstation surfaces (timeline, correspondents,
-   thread view, evidence export) to the shell, which still cover only part of
-   the Tkinter feature set.
+1. Retire the Tkinter fallback once the shell's import, research and
+   synchronization flows have been exercised against real archives.
 2. Support Facebook post/comment revision entries and message attachments
    metadata.
 3. Close PR #4 as superseded and reconcile PR #5 branding with this branch.

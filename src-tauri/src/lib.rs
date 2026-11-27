@@ -169,6 +169,24 @@ fn thread(state: State<AppState>, hash: String) -> Result<Value, String> {
 }
 
 #[tauri::command]
+fn timeline(
+    state: State<AppState>,
+    sender: Option<String>,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "timeline",
+        json!({ "sender": sender, "limit": limit.unwrap_or(100) }),
+    )
+}
+
+#[tauri::command]
+fn correspondents(state: State<AppState>, limit: Option<u32>) -> Result<Value, String> {
+    call(&state, "correspondents", json!({ "limit": limit.unwrap_or(100) }))
+}
+
+#[tauri::command]
 fn record(state: State<AppState>, record_id: String) -> Result<Value, String> {
     call(&state, "record", json!({ "record_id": record_id }))
 }
@@ -416,7 +434,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            ping, stats, search, message, thread, record, verify, health,
+            ping, stats, search, message, thread, timeline, correspondents,
+            record, verify, health,
             reindex, recover_orphans, migrate_status, backup, verify_backup, restore,
             facebook_preview, facebook_import,
             import_eml, preferences, preferences_set, research_list, research_results,

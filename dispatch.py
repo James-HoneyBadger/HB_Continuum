@@ -22,6 +22,29 @@ def verify_raw(conn, raw):
         except OSError: bad.append(h)
     return bad
 
+def timeline_rows(conn, sender=None, limit=100):
+    """Chronological view of declared message dates; unparseable dates sort last."""
+    from email.utils import parsedate_to_datetime
+    from datetime import timezone
+    sql='SELECT hash,subject,sender,date FROM messages'
+    params=()
+    if sender is not None:
+        sql+=' WHERE sender=?'
+        params=(sender,)
+    def key(row):
+        try:
+            d=parsedate_to_datetime(row[3])
+            if d.tzinfo is None: d=d.replace(tzinfo=timezone.utc)
+            return (0,d.timestamp(),row[0])
+        except (ValueError,TypeError,OverflowError,OSError):
+            return (1,0,row[0])
+    return sorted(conn.execute(sql,params),key=key)[:max(1,min(int(limit),5000))]
+
+def correspondent_counts(conn, limit=100):
+    return conn.execute(
+        "SELECT sender, count(*) FROM messages GROUP BY sender ORDER BY count(*) DESC, sender LIMIT ?",
+        (max(1,min(int(limit),5000)),)).fetchall()
+
 def diagnose(conn, raw):
     """Consistency report shared by the CLI and the desktop protocol."""
     checks=conn.execute('PRAGMA quick_check').fetchall()
@@ -195,25 +218,9 @@ class Archive:
         return self.db.execute('SELECT hash,subject,sender FROM messages ORDER BY rowid DESC LIMIT ?', (max(1,min(int(limit),5000)),)).fetchall()
     def timeline(self, sender=None, limit=100):
         """Chronological view of declared message dates; unparseable dates sort last."""
-        from email.utils import parsedate_to_datetime
-        from datetime import timezone
-        sql='SELECT hash,subject,sender,date FROM messages'
-        params=()
-        if sender is not None:
-            sql+=' WHERE sender=?'
-            params=(sender,)
-        def key(row):
-            try:
-                d=parsedate_to_datetime(row[3])
-                if d.tzinfo is None: d=d.replace(tzinfo=timezone.utc)
-                return (0,d.timestamp(),row[0])
-            except (ValueError,TypeError,OverflowError,OSError):
-                return (1,0,row[0])
-        return sorted(self.db.execute(sql,params),key=key)[:max(1,min(int(limit),5000))]
+        return timeline_rows(self.db,sender,limit)
     def correspondents(self, limit=100):
-        return self.db.execute(
-            "SELECT sender, count(*) FROM messages GROUP BY sender ORDER BY count(*) DESC, sender LIMIT ?",
-            (max(1,min(int(limit),5000)),)).fetchall()
+        return correspondent_counts(self.db,limit)
     def thread(self, digest):
         """Return linked messages using Message-ID and In-Reply-To, not subject guesses."""
         row=self.db.execute('SELECT message_id,reply_to FROM messages WHERE hash=?',(digest,)).fetchone()

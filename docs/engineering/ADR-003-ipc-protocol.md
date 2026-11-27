@@ -21,7 +21,8 @@ spawned as `python3 dispatch.py --archive <root> serve`.
 - Long-running jobs emit `event` objects (`progress`, `job_complete`,
   `job_error`) tagged with a `job_id`.
 - Methods are an explicit allowlist: `ping`, `stats`, `search`, `message`,
-  `thread`, `record`, `verify`, `health`, `migrate_status`, `reindex`,
+  `thread`, `timeline`, `correspondents`, `record`, `verify`, `health`,
+  `migrate_status`, `reindex`,
   `recover_orphans`, `backup`, `verify_backup`, `restore`, `import_eml`,
   `facebook_preview`, `facebook_import`, `preferences`, `preferences_set`,
   the `research_*` overlay methods,
@@ -43,6 +44,9 @@ spawned as `python3 dispatch.py --archive <root> serve`.
   writing; `facebook_import` is a background job that streams per-file
   progress and returns the importer's counters, with `IMPORT_FAILED` for
   unreadable paths.
+- `timeline` returns messages ordered by their declared Date header with
+  unparseable dates last, optionally filtered by sender; `correspondents`
+  counts messages per sender. Both are read-only and cap `limit` at 5000.
 - `message` and `thread` results carry the body text and indexed attachment
   metadata (`filename`, `mime`, `characters`); an archive without the
   attachment index reports an empty list rather than failing.

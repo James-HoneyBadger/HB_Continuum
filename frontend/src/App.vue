@@ -8,13 +8,14 @@ import SyncView from "./components/SyncView.vue";
 import PreferencesView from "./components/PreferencesView.vue";
 import HealthView from "./components/HealthView.vue";
 import BackupView from "./components/BackupView.vue";
+import TimelineView from "./components/TimelineView.vue";
 
 interface Stats {
   archive: { messages: number; origins: number };
   catalog: { files: number; records: number };
 }
 
-const tabs = ["Search", "Import", "Research", "Sync", "Preferences", "Health", "Backup"] as const;
+const tabs = ["Search", "Timeline", "Import", "Research", "Sync", "Preferences", "Health", "Backup"] as const;
 const tab = ref<(typeof tabs)[number]>("Search");
 
 const archive = ref("~/.hb-dispatch");
@@ -93,6 +94,7 @@ onMounted(refreshStats);
 
     <div class="panel">
       <SearchView v-if="tab === 'Search'" :on-error="reportError" :on-changed="refreshStats" />
+      <TimelineView v-else-if="tab === 'Timeline'" :on-error="reportError" :on-changed="refreshStats" />
       <ImportView v-else-if="tab === 'Import'" :on-error="reportError" :on-changed="refreshStats" />
       <ResearchView v-else-if="tab === 'Research'" :on-error="reportError" :on-changed="refreshStats" />
       <SyncView v-else-if="tab === 'Sync'" :on-error="reportError" :on-changed="refreshStats" />

@@ -394,6 +394,24 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(self.server.handle(request('facebook_preview'))['error']['code'],'INVALID_PARAMS')
         self.assertEqual(self.server.handle(request('facebook_import',paths=[]))['error']['code'],'INVALID_PARAMS')
 
+    def test_timeline_and_correspondents(self):
+        self.a.ingest(b'From: c@example.invalid\r\nSubject: Earlier\r\nDate: Thu, 26 Nov 2026 09:00:00 +0000\r\n\r\none')
+        self.a.ingest(b'From: c@example.invalid\r\nSubject: Later\r\nDate: Thu, 26 Nov 2026 11:00:00 +0000\r\n\r\nthree')
+        self.a.ingest(b'From: d@example.invalid\r\nSubject: Undated\r\n\r\nnone')
+        rows=self.server.handle(request('timeline',limit=10))['result']
+        subjects=[r['subject'] for r in rows]
+        self.assertEqual(subjects[:2],['Earlier','Later'])
+        self.assertGreater(subjects.index('Undated'),subjects.index('Later'))
+        filtered=self.server.handle(request('timeline',sender='c@example.invalid'))['result']
+        self.assertEqual({r['sender'] for r in filtered},{'c@example.invalid'})
+        self.assertEqual(len(filtered),2)
+        counts={c['sender']:c['count'] for c in self.server.handle(request('correspondents'))['result']}
+        self.assertEqual(counts['c@example.invalid'],2)
+        self.assertEqual(counts['a@example.invalid'],1)
+        self.assertEqual(self.server.handle(request('timeline',limit=0))['error']['code'],'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request('timeline',sender=5))['error']['code'],'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request('correspondents',limit=0))['error']['code'],'INVALID_PARAMS')
+
     def test_serve_subprocess(self):
         proc=subprocess.Popen(
             [sys.executable, 'dispatch.py', '--archive', str(self.root), 'serve'],

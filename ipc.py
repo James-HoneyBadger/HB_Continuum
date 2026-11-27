@@ -171,6 +171,39 @@ def _health(root):
     finally:
         conn.close()
 
+def _timeline(root, sender=None, limit=100):
+    from dispatch import timeline_rows
+    base = Path(root)
+    path = base / 'archive.sqlite3'
+    if not path.is_file():
+        raise IPCError('ARCHIVE_NOT_AVAILABLE', 'The selected archive has no archive.sqlite3')
+    if sender is not None and not isinstance(sender, str):
+        raise IPCError('INVALID_PARAMS', 'sender must be a string')
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 5000:
+        raise IPCError('INVALID_PARAMS', 'limit must be an integer between 1 and 5000')
+    conn = _ro_connect(path)
+    try:
+        rows = timeline_rows(conn, sender, limit)
+    finally:
+        conn.close()
+    return [{'hash': h, 'subject': s or '', 'sender': f or '', 'date': d or ''}
+            for h, s, f, d in rows]
+
+def _correspondents(root, limit=100):
+    from dispatch import correspondent_counts
+    base = Path(root)
+    path = base / 'archive.sqlite3'
+    if not path.is_file():
+        raise IPCError('ARCHIVE_NOT_AVAILABLE', 'The selected archive has no archive.sqlite3')
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 5000:
+        raise IPCError('INVALID_PARAMS', 'limit must be an integer between 1 and 5000')
+    conn = _ro_connect(path)
+    try:
+        rows = correspondent_counts(conn, limit)
+    finally:
+        conn.close()
+    return [{'sender': sender or '', 'count': count} for sender, count in rows]
+
 def _migration_report(root):
     """Report on-disk schema versions and pending steps without migrating."""
     from migrations import report
@@ -675,6 +708,11 @@ class IPCServer:
                 return _result(request_id, _message(self.root, params.get('hash')))
             if method == 'thread':
                 return _result(request_id, _thread(self.root, params.get('hash')))
+            if method == 'timeline':
+                return _result(request_id, _timeline(
+                    self.root, params.get('sender'), params.get('limit', 100)))
+            if method == 'correspondents':
+                return _result(request_id, _correspondents(self.root, params.get('limit', 100)))
             if method == 'record':
                 return _result(request_id, _record(self.root, params.get('record_id')))
             if method == 'verify':
