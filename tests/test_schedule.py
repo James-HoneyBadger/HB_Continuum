@@ -7,7 +7,7 @@ from unittest import mock
 from dispatch import Archive
 from schedule import profile,due,tick,write_json,read_json,service
 import schedule
-from sync_lock import sync_lock,SyncBusy
+from sync_lock import LOCK_SUPPORTED, sync_lock, SyncBusy
 
 class SchedulingTests(unittest.TestCase):
     def setUp(self):
@@ -52,8 +52,8 @@ class SchedulingTests(unittest.TestCase):
         self.assertEqual(r['other']['status'],'ok')
         self.assertNotIn('secret should not be logged',(self.root/'schedule-status.json').read_text())
     def test_busy_defers_without_consuming_schedule(self):
-        if os.name!='posix':
-            self.skipTest('sync_lock is a no-op off POSIX')
+        if not LOCK_SUPPORTED:
+            self.skipTest('archive locking is unsupported here')
         write_json(self.root/'schedule.json',{'mail':self.p})
         with sync_lock(self.root):
             result=tick(self.root,now=self.now,get_password=lambda p:'fake')

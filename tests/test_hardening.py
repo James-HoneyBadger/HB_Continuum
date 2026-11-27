@@ -108,8 +108,8 @@ class HardeningTests(unittest.TestCase):
         self.assertEqual(self.a.verify(),[])
 
     def test_ingest_is_refused_while_sync_holds_the_lock(self):
-        from sync_lock import sync_lock, SyncBusy
-        if os.name!='posix': self.skipTest('sync_lock is a no-op off POSIX')
+        from sync_lock import LOCK_SUPPORTED, sync_lock, SyncBusy
+        if not LOCK_SUPPORTED: self.skipTest('archive locking is unsupported here')
         with sync_lock(self.a.root):
             with self.assertRaises(SyncBusy): self.a.ingest(b'Subject: busy')
         self.assertEqual(self.a.stats()['messages'],0)

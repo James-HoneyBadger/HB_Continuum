@@ -22,23 +22,66 @@ def verify_raw(conn, raw):
         except OSError: bad.append(h)
     return bad
 
-def timeline_rows(conn, sender=None, limit=100):
-    """Chronological view of declared message dates; unparseable dates sort last."""
-    from email.utils import parsedate_to_datetime
-    from datetime import timezone
+def _legacy_timeline(conn, sender, limit, offset, order, after, before):
+    """In-memory ordering for an archive that has not been migrated to schema 3."""
+    from timestamps import parse_timestamp
     sql='SELECT hash,subject,sender,date FROM messages'
     params=()
     if sender is not None:
         sql+=' WHERE sender=?'
         params=(sender,)
-    def key(row):
-        try:
-            d=parsedate_to_datetime(row[3])
-            if d.tzinfo is None: d=d.replace(tzinfo=timezone.utc)
-            return (0,d.timestamp(),row[0])
-        except (ValueError,TypeError,OverflowError,OSError):
-            return (1,0,row[0])
-    return sorted(conn.execute(sql,params),key=key)[:max(1,min(int(limit),5000))]
+    rows=[]
+    for row in conn.execute(sql,params):
+        epoch,_=parse_timestamp(row[3])
+        if after is not None and (epoch is None or epoch<after): continue
+        if before is not None and (epoch is None or epoch>=before): continue
+        rows.append((epoch,row))
+    known=[item for item in rows if item[0] is not None]
+    unknown=[item for item in rows if item[0] is None]
+    if str(order).lower()=='desc':
+        known.sort(key=lambda item:(item[0],item[1][0]),reverse=True)
+    else:
+        known.sort(key=lambda item:(item[0],item[1][0]))
+    ordered=[row for _,row in known]+[row for _,row in unknown]
+    return ordered[offset:offset+limit]
+
+def timeline_rows(conn, sender=None, limit=100, offset=0, order='asc', after=None, before=None):
+    """Chronological view of declared message dates; unknown dates sort last.
+
+    Ordering happens in SQL against the indexed `sort_ts` column so large
+    archives are paginated without loading every row. Archives still on
+    schema 2 fall back to an in-memory sort.
+    """
+    limit=max(1,min(int(limit),5000))
+    offset=max(0,int(offset or 0))
+    direction='DESC' if str(order).lower()=='desc' else 'ASC'
+    sender_filter=' AND sender=?' if sender is not None else ''
+    sender_params=(sender,) if sender is not None else ()
+    dated=['sort_ts IS NOT NULL']
+    dated_params=[]
+    if sender is not None: dated.append('sender=?'); dated_params.append(sender)
+    if after is not None: dated.append('sort_ts>=?'); dated_params.append(int(after))
+    if before is not None: dated.append('sort_ts<?'); dated_params.append(int(before))
+    dated_sql=('SELECT hash,subject,sender,date FROM messages WHERE '+(' AND '.join(dated))+
+               ' ORDER BY sort_ts '+direction+', hash ASC LIMIT ? OFFSET ?')
+    try:
+        rows=conn.execute(dated_sql,(*dated_params,limit,offset)).fetchall()
+        # Unknown dates always trail the dated records, and a date-range
+        # filter excludes them entirely.
+        if len(rows)<limit and after is None and before is None:
+            unknown_offset=0
+            if not rows:
+                known_total=conn.execute(
+                    'SELECT count(*) FROM messages WHERE '+(' AND '.join(dated)),
+                    dated_params).fetchone()[0]
+                unknown_offset=max(0,offset-known_total)
+            rows.extend(conn.execute(
+                'SELECT hash,subject,sender,date FROM messages WHERE sort_ts IS NULL'+sender_filter+
+                ' ORDER BY hash ASC LIMIT ? OFFSET ?',
+                (*sender_params,limit-len(rows),unknown_offset)).fetchall())
+        return rows
+    except sqlite3.OperationalError:
+        return _legacy_timeline(conn,sender,limit,offset,order,after,before)
 
 def correspondent_counts(conn, limit=100):
     return conn.execute(
@@ -53,7 +96,12 @@ def diagnose(conn, raw):
     indexed={h for h, in conn.execute('SELECT hash FROM search')}
     originals={p.stem for p in raw.glob('*.eml') if p.is_file()}
     duplicate=conn.execute('SELECT count(*) FROM search').fetchone()[0]-len(indexed)
+    try:
+        undated=conn.execute('SELECT count(*) FROM messages WHERE sort_ts IS NULL').fetchone()[0]
+    except sqlite3.OperationalError:
+        undated=None
     return {'sqlite_ok':checks==[('ok',)],'foreign_key_errors':len(foreign),'messages':len(hashes),
+            'undated':undated,
             'index_missing':sorted(hashes-indexed),'index_extra':sorted(indexed-hashes),
             'index_duplicate_rows':duplicate,'raw_missing':sorted(hashes-originals),
             'raw_unindexed':sorted(originals-hashes),'raw_invalid':verify_raw(conn,raw)}
@@ -88,10 +136,14 @@ class Archive:
                 if tmp is not None: tmp.unlink(missing_ok=True)
         if hashlib.sha256(target.read_bytes()).hexdigest()!=digest: raise ValueError('Raw integrity mismatch')
         from mime_index import extract, index_text
+        from timestamps import parse_timestamp
         msg,body,attachments=extract(raw)
         fields=[str(msg.get(k,'')) for k in ('Subject','From','Date','Message-ID','In-Reply-To')]
+        sort_ts,precision=parse_timestamp(fields[2])
         with self.db:
-            cur=self.db.execute('INSERT OR IGNORE INTO messages VALUES(?,?,?,?,?,?,?)',(digest,*fields,body))
+            cur=self.db.execute(
+                'INSERT OR IGNORE INTO messages(hash,subject,sender,date,message_id,reply_to,body,sort_ts,date_precision) '
+                'VALUES(?,?,?,?,?,?,?,?,?)',(digest,*fields,body,sort_ts,precision))
             if cur.rowcount:
                 self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(digest,fields[0],fields[1],index_text(body,attachments)))
                 self.db.executemany('INSERT INTO attachment_index VALUES(?,?,?,?,?)',[(digest,*a) for a in attachments])
@@ -113,7 +165,7 @@ class Archive:
         count=0
         with sync_lock(self.root):
             pending=self.db.execute(
-                'SELECT hash,subject,sender FROM messages '
+                'SELECT hash,subject,sender,date FROM messages '
                 'WHERE hash NOT IN (SELECT hash FROM extraction_versions WHERE version=2) '
                 'OR hash NOT IN (SELECT hash FROM search) '
                 'OR hash IN (SELECT hash FROM search GROUP BY hash HAVING count(*)>1)').fetchall()
@@ -121,7 +173,7 @@ class Archive:
             rowids={}
             for rowid,h in self.db.execute('SELECT rowid,hash FROM search'):
                 rowids.setdefault(h,[]).append(rowid)
-            for done,(h,subject,sender) in enumerate(pending,1):
+            for done,(h,subject,sender,date) in enumerate(pending,1):
                 if cancel_event is not None and cancel_event.is_set(): break
                 if not valid_hash(h): raise ValueError('Invalid stored message hash')
                 source=self.raw/(h+'.eml')
@@ -129,8 +181,11 @@ class Archive:
                 raw=source.read_bytes()
                 if hashlib.sha256(raw).hexdigest()!=h: raise ValueError('Raw integrity mismatch: '+h)
                 _,body,attachments=extract(raw)
+                from timestamps import parse_timestamp
+                sort_ts,precision=parse_timestamp(date)
                 with self.db:
-                    self.db.execute('UPDATE messages SET body=? WHERE hash=?',(body,h))
+                    self.db.execute('UPDATE messages SET body=?,sort_ts=?,date_precision=? WHERE hash=?',
+                                    (body,sort_ts,precision,h))
                     self.db.executemany('DELETE FROM search WHERE rowid=?',[(rid,) for rid in rowids.get(h,[])])
                     self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(h,subject,sender,index_text(body,attachments)))
                     self.db.execute('DELETE FROM attachment_index WHERE hash=?',(h,))
@@ -216,9 +271,9 @@ class Archive:
         return dict(zip(('subject','sender','date','message_id','reply_to','body'),row))
     def recent(self, limit=100):
         return self.db.execute('SELECT hash,subject,sender FROM messages ORDER BY rowid DESC LIMIT ?', (max(1,min(int(limit),5000)),)).fetchall()
-    def timeline(self, sender=None, limit=100):
+    def timeline(self, sender=None, limit=100, offset=0, order='asc', after=None, before=None):
         """Chronological view of declared message dates; unparseable dates sort last."""
-        return timeline_rows(self.db,sender,limit)
+        return timeline_rows(self.db,sender,limit,offset,order,after,before)
     def correspondents(self, limit=100):
         return correspondent_counts(self.db,limit)
     def thread(self, digest):

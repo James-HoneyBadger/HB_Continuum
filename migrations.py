@@ -2,16 +2,21 @@
 # Copyright (c) 2026 Honey Badger Universe
 """Versioned, transactional schema migrations for the local databases.
 
-Every statement is idempotent (`IF NOT EXISTS`), so version 1 is both the
-baseline for a brand-new database and the upgrade path for an existing one.
-Versions are tracked with `PRAGMA user_version`, which SQLite stores in the
-database header and updates inside the same transaction as the DDL.
+Schema-creating statements are idempotent (`IF NOT EXISTS`), so version 1 is
+both the baseline for a brand-new database and the upgrade path for an
+existing one. Additive column changes are guarded by their version, which is
+applied exactly once. A step may also carry a backfill callable that runs in
+the same transaction, so data and schema move together.
 
-Opening a database written by a newer build raises instead of proceeding, so
-an older binary cannot silently damage a newer archive.
+Versions are tracked with `PRAGMA user_version`, which SQLite stores in the
+database header and updates inside the same transaction as the DDL. Opening
+a database written by a newer build raises instead of proceeding, so an older
+binary cannot silently damage a newer archive.
 """
 import sqlite3
 from pathlib import Path
+
+from timestamps import parse_timestamp
 
 class MigrationError(RuntimeError):
     pass
@@ -40,6 +45,21 @@ ARCHIVE_V2 = (
     'filename TEXT, mime TEXT, content TEXT, PRIMARY KEY(hash,part))',
     'CREATE TABLE IF NOT EXISTS extraction_versions('
     'hash TEXT PRIMARY KEY REFERENCES messages(hash), version INTEGER NOT NULL)',
+)
+
+def _backfill_archive_timestamps(db):
+    """Populate normalized chronology for rows written before schema 3."""
+    updates = []
+    for digest, date in db.execute('SELECT hash,date FROM messages'):
+        epoch, precision = parse_timestamp(date)
+        updates.append((epoch, precision, digest))
+    db.executemany('UPDATE messages SET sort_ts=?,date_precision=? WHERE hash=?', updates)
+
+ARCHIVE_V3 = (
+    'ALTER TABLE messages ADD COLUMN sort_ts INTEGER',
+    'ALTER TABLE messages ADD COLUMN date_precision TEXT',
+    'CREATE INDEX IF NOT EXISTS messages_sort_ts ON messages(sort_ts)',
+    _backfill_archive_timestamps,
 )
 
 RESEARCH_V1 = (
@@ -97,7 +117,7 @@ CATALOG_V2 = (
 )
 
 MIGRATIONS = {
-    'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2},
+    'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3},
     'research': {1: RESEARCH_V1},
     'catalog': {1: CATALOG_V1, 2: CATALOG_V2},
 }
@@ -151,7 +171,10 @@ def apply(db, name, snapshot_path=None):
     for step in steps:
         with db:
             for statement in MIGRATIONS[name][step]:
-                db.execute(statement)
+                if callable(statement):
+                    statement(db)
+                else:
+                    db.execute(statement)
             db.execute(f'PRAGMA user_version={step}')
     return {'database': name, 'from': version, 'to': target, 'applied': steps}
 

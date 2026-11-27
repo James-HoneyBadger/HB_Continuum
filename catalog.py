@@ -72,6 +72,18 @@ class Catalog:
         except sqlite3.OperationalError:
             return []
 
+    def search_ranked(self, query, source_type='facebook', limit=100):
+        """Matches ranked by the FTS5 bm25 score (best first)."""
+        limit = max(1, min(int(limit), 5000))
+        sql = ('SELECT r.record_id, r.source_key, r.record_kind, r.actor, r.occurred_at, r.body '
+               'FROM records r JOIN record_search ON record_search.rowid = r.rowid '
+               'WHERE r.source_type=? AND record_search MATCH ? '
+               'ORDER BY bm25(record_search) LIMIT ?')
+        try:
+            return self.db.execute(sql, (source_type, query, limit)).fetchall()
+        except sqlite3.OperationalError:
+            return []
+
     def stats(self):
         return {'files': self.db.execute('SELECT count(*) FROM source_files').fetchone()[0],
                 'records': self.db.execute('SELECT count(*) FROM records').fetchone()[0]}

@@ -302,8 +302,8 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(server.handle(request('health'))['error']['code'],'ARCHIVE_NOT_AVAILABLE')
 
     def test_health_defers_while_archive_is_busy(self):
-        if os.name!='posix': self.skipTest('sync_lock is a no-op off POSIX')
-        from sync_lock import sync_lock
+        from sync_lock import LOCK_SUPPORTED, sync_lock
+        if not LOCK_SUPPORTED: self.skipTest('archive locking is unsupported here')
         with sync_lock(self.root):
             self.assertEqual(self.server.handle(request('health'))['error']['code'],'ARCHIVE_BUSY')
 
@@ -411,6 +411,28 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(self.server.handle(request('timeline',limit=0))['error']['code'],'INVALID_PARAMS')
         self.assertEqual(self.server.handle(request('timeline',sender=5))['error']['code'],'INVALID_PARAMS')
         self.assertEqual(self.server.handle(request('correspondents',limit=0))['error']['code'],'INVALID_PARAMS')
+
+    def test_timeline_pagination_and_reverse_order(self):
+        for hour in range(1,5):
+            self.a.ingest(f'From: t@example.invalid\r\nSubject: H{hour}\r\n'
+                          f'Date: Thu, 26 Nov 2026 0{hour}:00:00 +0000\r\n\r\nx'.encode())
+        first=self.server.handle(request('timeline',limit=2))['result']
+        second=self.server.handle(request('timeline',limit=2,offset=2))['result']
+        self.assertEqual([r['subject'] for r in first],['H1','H2'])
+        self.assertEqual([r['subject'] for r in second],['H3','H4'])
+        reverse=self.server.handle(request('timeline',limit=2,order='desc'))['result']
+        self.assertEqual([r['subject'] for r in reverse],['H4','H3'])
+        self.assertEqual(self.server.handle(request('timeline',order='sideways'))['error']['code'],'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request('timeline',offset=-1))['error']['code'],'INVALID_PARAMS')
+
+    def test_dashboard_reports_coverage_and_storage(self):
+        self.a.ingest(b'Date: Thu, 26 Nov 2026 09:00:00 +0000\r\n\r\ndated')
+        result=self.server.handle(request('dashboard'))['result']
+        self.assertEqual(result['archive']['messages'],2)
+        self.assertEqual(result['archive']['latest'],'2026-11-26')
+        self.assertEqual(result['archive']['undated'],1)
+        self.assertEqual(result['by_year'],[{'year':2026,'count':1}])
+        self.assertGreater(result['storage']['total_bytes'],0)
 
     def test_serve_subprocess(self):
         proc=subprocess.Popen(

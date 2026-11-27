@@ -43,5 +43,20 @@ class UnifiedSearchTests(unittest.TestCase):
         self.a.ingest(b'From: b@example.invalid\r\nSubject: Another bullion note\r\n\r\nMore bullion')
         self.assertEqual(len(search_unified(self.root, 'bullion', limit=1)),1)
 
+    def test_date_range_filters_both_sources(self):
+        self.a.ingest(b'From: b@example.invalid\r\nSubject: Bullion later\r\n'
+                      b'Date: Tue, 02 Jan 2024 00:00:00 +0000\r\n\r\nbullion')
+        # The Facebook fixture is timestamped 2023-11-14; a 2024 window excludes it.
+        results=search_unified(self.root, 'bullion', after=1704067200)
+        self.assertEqual({r['source'] for r in results},{'email'})
+        self.assertTrue(all(r['source']=='email' for r in results))
+        self.assertEqual(search_unified(self.root, 'bullion', after=1704067200, before=1704153600),[]) 
+
+    def test_relevance_orders_more_specific_matches_first(self):
+        self.a.ingest(b'From: a@example.invalid\r\nSubject: Bullion\r\n\r\nBullion bullion bullion')
+        results=search_unified(self.root, 'bullion', sources=('email',))
+        self.assertEqual(len(results),2)
+        self.assertIn('bullion bullion bullion', results[0]['snippet'].lower())
+
 if __name__=='__main__':
     unittest.main()

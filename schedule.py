@@ -2,16 +2,15 @@
 # Copyright (c) 2026 Honey Badger Universe
 """Local per-account schedules with macOS Keychain and launchd."""
 import argparse, hashlib, json, os, plistlib, re, subprocess, sys, tempfile
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from dispatch import Archive
-from sync_lock import SyncBusy
+from sync_lock import LOCK_SUPPORTED, SyncBusy, file_lock
 
-try:
-    import fcntl
-    HAS_FLOCK = True
-except ImportError:
-    HAS_FLOCK = False
+# Retained under its historical name for compatibility; it now covers
+# Windows as well as POSIX.
+HAS_FLOCK = LOCK_SUPPORTED
 
 def utcnow():
     return datetime.now(timezone.utc)
@@ -62,14 +61,11 @@ def tick(root,force=None,now=None,get_password=None):
     if get_password is None:
         get_password=lambda p: credential(p,root)
     root.mkdir(mode=0o700,parents=True,exist_ok=True)
-    locked=HAS_FLOCK
-    fd=None
-    if locked:
-        fd=os.open(root/'schedule.lock',os.O_CREAT|os.O_RDWR,0o600)
-        try: fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        except BlockingIOError:
-            os.close(fd)
-            return {'status':'scheduler already running'}
+    scheduler_lock = file_lock(root/'schedule.lock') if HAS_FLOCK else nullcontext()
+    try:
+        scheduler_lock.__enter__()
+    except SyncBusy:
+        return {'status':'scheduler already running'}
     try:
         profiles=config(root)
         if force and force not in profiles: raise ValueError('Unknown profile')
@@ -97,7 +93,7 @@ def tick(root,force=None,now=None,get_password=None):
         finally: ar.db.close()
         return states
     finally:
-        if fd is not None: os.close(fd)
+        scheduler_lock.__exit__(None, None, None)
 
 def agent(root):
     from schedulers import get_scheduler

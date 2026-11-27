@@ -171,7 +171,7 @@ def _health(root):
     finally:
         conn.close()
 
-def _timeline(root, sender=None, limit=100):
+def _timeline(root, sender=None, limit=100, offset=0, order='asc', after=None, before=None):
     from dispatch import timeline_rows
     base = Path(root)
     path = base / 'archive.sqlite3'
@@ -181,13 +181,92 @@ def _timeline(root, sender=None, limit=100):
         raise IPCError('INVALID_PARAMS', 'sender must be a string')
     if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 5000:
         raise IPCError('INVALID_PARAMS', 'limit must be an integer between 1 and 5000')
+    if not isinstance(offset, int) or isinstance(offset, bool) or not 0 <= offset <= 10_000_000:
+        raise IPCError('INVALID_PARAMS', 'offset must be a non-negative integer')
+    if order not in ('asc', 'desc'):
+        raise IPCError('INVALID_PARAMS', 'order must be asc or desc')
+    for name, value in (('after', after), ('before', before)):
+        if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
+            raise IPCError('INVALID_PARAMS', f'{name} must be a UTC epoch integer')
     conn = _ro_connect(path)
     try:
-        rows = timeline_rows(conn, sender, limit)
+        rows = timeline_rows(conn, sender, limit, offset, order, after, before)
     finally:
         conn.close()
     return [{'hash': h, 'subject': s or '', 'sender': f or '', 'date': d or ''}
             for h, s, f, d in rows]
+
+def _dashboard(root):
+    """Operational and historical summary. Every figure has one definition.
+
+    `messages` counts unique archived records; `origins` counts mailbox
+    occurrences, so it can exceed `messages`. `undated` counts records whose
+    declared date could not be normalized. `by_year` groups normalized
+    timestamps only and excludes undated records.
+    """
+    from datetime import datetime, timezone
+    base = Path(root)
+    path = base / 'archive.sqlite3'
+    if not path.is_file():
+        raise IPCError('ARCHIVE_NOT_AVAILABLE', 'The selected archive has no archive.sqlite3')
+    conn = _ro_connect(path)
+    try:
+        messages = conn.execute('SELECT count(*) FROM messages').fetchone()[0]
+        origins = conn.execute('SELECT count(*) FROM origins').fetchone()[0]
+        try:
+            by_year = conn.execute(
+                "SELECT cast(strftime('%Y', sort_ts, 'unixepoch') AS integer) AS year, count(*) "
+                'FROM messages WHERE sort_ts IS NOT NULL GROUP BY year ORDER BY year').fetchall()
+            earliest, latest = conn.execute('SELECT min(sort_ts), max(sort_ts) FROM messages').fetchone()
+            undated = conn.execute('SELECT count(*) FROM messages WHERE sort_ts IS NULL').fetchone()[0]
+        except sqlite3.OperationalError:
+            by_year, earliest, latest = [], None, None
+            undated = messages
+    finally:
+        conn.close()
+
+    def iso(value):
+        if value is None:
+            return None
+        return datetime.fromtimestamp(value, timezone.utc).date().isoformat()
+
+    raw_bytes = 0
+    raw = base / 'raw'
+    if raw.is_dir():
+        for entry in raw.iterdir():
+            try:
+                if entry.is_file() and not entry.is_symlink():
+                    raw_bytes += entry.stat().st_size
+            except OSError:
+                continue
+    database_bytes = 0
+    for name in ('archive.sqlite3', 'research.sqlite3', 'catalog.sqlite3',
+                 'archive.sqlite3-wal', 'archive.sqlite3-shm'):
+        candidate = base / name
+        try:
+            if candidate.is_file():
+                database_bytes += candidate.stat().st_size
+        except OSError:
+            continue
+    return {
+        'archive': {'messages': messages, 'origins': origins, 'undated': undated,
+                    'earliest': iso(earliest), 'latest': iso(latest)},
+        'catalog': _catalog_stats(base),
+        'by_year': [{'year': year, 'count': count} for year, count in by_year],
+        'storage': {'raw_bytes': raw_bytes, 'database_bytes': database_bytes,
+                    'total_bytes': raw_bytes + database_bytes},
+    }
+
+def _catalog_stats(root):
+    path = Path(root) / 'catalog.sqlite3'
+    if not path.is_file():
+        return {'files': 0, 'records': 0}
+    conn = _ro_connect(path)
+    try:
+        return {'files': conn.execute('SELECT count(*) FROM source_files').fetchone()[0],
+                'records': conn.execute('SELECT count(*) FROM records').fetchone()[0]}
+    finally:
+        conn.close()
 
 def _correspondents(root, limit=100):
     from dispatch import correspondent_counts
@@ -518,7 +597,13 @@ class IPCServer:
             raise IPCError('INVALID_PARAMS', 'sources must be email and/or facebook')
         page = max(1, int(params.get('page', 1)))
         page_size = max(1, min(int(params.get('page_size', 20)), 1000))
-        results = search_unified(self.root, query, limit=SEARCH_CAP, sources=sources)
+        after = params.get('after')
+        before = params.get('before')
+        for name, value in (('after', after), ('before', before)):
+            if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
+                raise IPCError('INVALID_PARAMS', f'{name} must be a UTC epoch integer')
+        results = search_unified(self.root, query, limit=SEARCH_CAP, sources=sources,
+                                 after=after, before=before)
         start = (page - 1) * page_size
         return {'items': results[start:start + page_size], 'page': page,
                 'page_size': page_size, 'has_more': len(results) > start + page_size,
@@ -710,7 +795,11 @@ class IPCServer:
                 return _result(request_id, _thread(self.root, params.get('hash')))
             if method == 'timeline':
                 return _result(request_id, _timeline(
-                    self.root, params.get('sender'), params.get('limit', 100)))
+                    self.root, params.get('sender'), params.get('limit', 100),
+                    params.get('offset', 0), params.get('order', 'asc'),
+                    params.get('after'), params.get('before')))
+            if method == 'dashboard':
+                return _result(request_id, _dashboard(self.root))
             if method == 'correspondents':
                 return _result(request_id, _correspondents(self.root, params.get('limit', 100)))
             if method == 'record':
