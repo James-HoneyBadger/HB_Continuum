@@ -210,7 +210,7 @@ class MigrationTests(unittest.TestCase):
             db.execute("INSERT INTO workspaces VALUES('Keep','unchanged')")
             db.commit()
             result=apply(db,'research')
-            self.assertEqual(result['applied'],[2])
+            self.assertEqual(result['applied'],[2,3])
             tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             self.assertTrue({'journal_entries','journal_revisions'}<=tables)
             self.assertEqual(db.execute("SELECT description FROM workspaces WHERE name='Keep'").fetchone()[0],

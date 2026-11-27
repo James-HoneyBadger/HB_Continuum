@@ -705,6 +705,79 @@ def _journal_restore(root, entry_id):
         raise IPCError('INVALID_PARAMS', 'entry_id must be an integer')
     return _with_research(root, lambda a, r: r.journal_restore(entry_id))
 
+def _collections_list(root, workspace=None):
+    if workspace is not None:
+        workspace = _text(workspace, 'workspace', 100)
+    return _with_research(root, lambda a, r: {'collections': r.collection_list(workspace)})
+
+def _collection_get(root, collection_id):
+    return _with_research(root, lambda a, r: r.collection_get(collection_id))
+
+def _collection_create(root, params):
+    workspace = _text(params.get('workspace'), 'workspace', 100)
+    name = _text(params.get('name'), 'name', 100)
+    description = params.get('description', '')
+    if not isinstance(description, str):
+        raise IPCError('INVALID_PARAMS', 'description must be a string')
+    return _with_research(root, lambda a, r: r.collection_create(workspace, name, description))
+
+def _collection_delete(root, collection_id):
+    return _with_research(root, lambda a, r: r.collection_delete(collection_id))
+
+def _collection_add(root, params):
+    collection_id = params.get('collection_id')
+    if not isinstance(collection_id, int) or isinstance(collection_id, bool):
+        raise IPCError('INVALID_PARAMS', 'collection_id must be an integer')
+    item_type = _text(params.get('item_type'), 'item_type', 20)
+    item_id = _text(params.get('item_id'), 'item_id', 500)
+    note = params.get('note')
+    if note is not None and not isinstance(note, str):
+        raise IPCError('INVALID_PARAMS', 'note must be a string or null')
+    return _with_research(root, lambda a, r: r.collection_add(
+        collection_id, item_type, item_id, note))
+
+def _collection_remove(root, params):
+    collection_id = params.get('collection_id')
+    if not isinstance(collection_id, int) or isinstance(collection_id, bool):
+        raise IPCError('INVALID_PARAMS', 'collection_id must be an integer')
+    item_type = _text(params.get('item_type'), 'item_type', 20)
+    item_id = _text(params.get('item_id'), 'item_id', 500)
+    return _with_research(root, lambda a, r: r.collection_remove(
+        collection_id, item_type, item_id))
+
+def _collection_export(root, params):
+    from reporting import (COLLECTION_EXTENSIONS, build_collection_manifest,
+                           write_collection_manifest)
+    collection_id = params.get('collection_id')
+    if not isinstance(collection_id, int) or isinstance(collection_id, bool):
+        raise IPCError('INVALID_PARAMS', 'collection_id must be an integer')
+    destination = params.get('destination')
+    fmt = params.get('format', 'markdown')
+    if not isinstance(destination, str) or not destination.strip():
+        raise IPCError('INVALID_PARAMS', 'destination is required')
+    if fmt not in COLLECTION_EXTENSIONS:
+        raise IPCError('INVALID_PARAMS', 'format must be markdown or json')
+    root_path = Path(root).expanduser().resolve()
+    dest = Path(destination).expanduser().resolve()
+    if dest.is_relative_to(root_path) or root_path.is_relative_to(dest):
+        raise IPCError('INVALID_PARAMS', 'A manifest must be written outside the archive')
+    if not dest.parent.is_dir():
+        raise IPCError('INVALID_PARAMS', 'Destination folder does not exist')
+    if dest.suffix.lower() != COLLECTION_EXTENSIONS[fmt]:
+        raise IPCError('INVALID_PARAMS',
+                       f'{fmt} manifests use the {COLLECTION_EXTENSIONS[fmt]} extension')
+    if dest.exists():
+        raise IPCError('DESTINATION_EXISTS', 'Destination already exists')
+
+    def action(archive, research):
+        manifest = build_collection_manifest(research.collection_get(collection_id))
+        try:
+            return write_collection_manifest(manifest, fmt, dest)
+        except FileExistsError:
+            raise IPCError('DESTINATION_EXISTS', 'Destination already exists') from None
+
+    return _with_research(root, action)
+
 def _export_evidence(root, hashes, destination):
     from dispatch import Archive
     targets = _hash_list(hashes)
@@ -1196,6 +1269,23 @@ class IPCServer:
                 return _result(request_id, _journal_delete(self.root, params.get('entry_id')))
             if method == 'journal_restore':
                 return _result(request_id, _journal_restore(self.root, params.get('entry_id')))
+            if method == 'collections_list':
+                return _result(request_id, _collections_list(
+                    self.root, params.get('workspace')))
+            if method == 'collection_get':
+                return _result(request_id, _collection_get(
+                    self.root, params.get('collection_id')))
+            if method == 'collection_create':
+                return _result(request_id, _collection_create(self.root, params))
+            if method == 'collection_delete':
+                return _result(request_id, _collection_delete(
+                    self.root, params.get('collection_id')))
+            if method == 'collection_add':
+                return _result(request_id, _collection_add(self.root, params))
+            if method == 'collection_remove':
+                return _result(request_id, _collection_remove(self.root, params))
+            if method == 'collection_export':
+                return _result(request_id, _collection_export(self.root, params))
             if method == 'export_evidence':
                 return _result(request_id, _export_evidence(
                     self.root, params.get('hashes'), params.get('destination')))

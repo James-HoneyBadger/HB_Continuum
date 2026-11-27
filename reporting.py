@@ -246,6 +246,68 @@ def render_html(report):
         'li{margin:3px 0}'
         '</style></head><body>' + ''.join(body) + '</body></html>\n')
 
+COLLECTION_EXTENSIONS = {'markdown': '.md', 'json': '.json'}
+
+COLLECTION_LIMITATIONS = (
+    'This manifest references records held locally. It is not a copy of their contents.',
+    'Email identifiers are SHA-256 content hashes; catalog identifiers are record ids of the '
+    'imported export.',
+    'Content hashes detect changed bytes. They are not proof of authenticity, legal '
+    'admissibility or chain of custody.',
+    'Items marked missing were not found when the manifest was generated and are not silently '
+    'dropped.',
+)
+
+def build_collection_manifest(collection):
+    items = []
+    for item in collection.get('items', []):
+        items.append({key: item.get(key) for key in (
+            'item_type', 'item_id', 'kind', 'title', 'actor', 'date',
+            'note', 'added_at', 'exists')})
+    return {
+        'title': f"Evidence manifest: {collection.get('name', 'collection')}",
+        'generated_at': _now(),
+        'workspace': collection.get('workspace', ''),
+        'description': collection.get('description', ''),
+        'item_count': collection.get('item_count', len(items)),
+        'items': items,
+        'limitations': list(COLLECTION_LIMITATIONS),
+    }
+
+def render_collection_markdown(manifest):
+    lines = [f"# {manifest['title']}", '',
+             f"Generated: {manifest['generated_at']}", '',
+             f"Workspace: {_value(manifest.get('workspace'))}", '',
+             f"Items: {manifest.get('item_count', 0)}", '']
+    if manifest.get('description'):
+        lines += [manifest['description'], '']
+    lines += _markdown_table(
+        ('Type', 'Identifier', 'Title', 'Actor', 'Date', 'Note'),
+        [(item.get('item_type'), item.get('item_id') + ('' if item.get('exists') else ' (missing)'),
+          item.get('title'), item.get('actor'), item.get('date'), item.get('note'))
+         for item in manifest.get('items', [])]) + ['']
+    lines += ['## Limitations', '']
+    lines += [f"- {item}" for item in manifest.get('limitations', [])]
+    return '\n'.join(lines).rstrip() + '\n'
+
+def render_collection(manifest, fmt):
+    if fmt == 'markdown':
+        return render_collection_markdown(manifest)
+    if fmt == 'json':
+        return json.dumps(manifest, indent=2, ensure_ascii=False) + '\n'
+    raise ValueError(f'Unsupported manifest format {fmt!r}')
+
+def write_collection_manifest(manifest, fmt, destination):
+    """Write a manifest, refusing to replace an existing file."""
+    text = render_collection(manifest, fmt)
+    path = Path(destination)
+    if path.suffix.lower() != COLLECTION_EXTENSIONS[fmt]:
+        raise ValueError(f'{fmt} manifests use the {COLLECTION_EXTENSIONS[fmt]} extension')
+    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600),
+                   'w', encoding='utf-8') as handle:
+        handle.write(text)
+    return {'path': str(path), 'format': fmt, 'bytes': len(text.encode('utf-8'))}
+
 RENDERERS = {'markdown': render_markdown,
              'json': lambda report: json.dumps(report, indent=2, ensure_ascii=False) + '\n',
              'html': render_html}

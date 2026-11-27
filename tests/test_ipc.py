@@ -223,6 +223,27 @@ class IPCServerTests(unittest.TestCase):
         finally:
             shutil.rmtree(outside,ignore_errors=True)
 
+    def test_collection_round_trip(self):
+        created=self.server.handle(request(
+            'collection_create',workspace='General',name='Case',description='Investigation'))['result']
+        self.assertEqual(created['name'],'Case')
+        added=self.server.handle(request(
+            'collection_add',collection_id=created['id'],item_type='email',
+            item_id=self.h,note='primary'))['result']
+        self.assertEqual(added['item_count'],1)
+        self.assertEqual(added['items'][0]['title'],'Silver invoice')
+        listed=self.server.handle(request('collections_list'))['result']['collections']
+        self.assertEqual(listed[0]['item_count'],1)
+        removed=self.server.handle(request(
+            'collection_remove',collection_id=created['id'],item_type='email',
+            item_id=self.h))['result']
+        self.assertEqual(removed['item_count'],0)
+        self.assertEqual(self.server.handle(request(
+            'collection_delete',collection_id=created['id']))['result']['deleted'],True)
+        self.assertEqual(self.server.handle(request(
+            'collection_add',collection_id=created['id'],item_type='email',
+            item_id=self.h))['error']['code'],'INVALID_PARAMS')
+
     def test_journal_round_trip_and_revision_history(self):
         created=self.server.handle(request(
             'journal_save',title='Remembered',body='first text',event_date='2015-06-01'))['result']

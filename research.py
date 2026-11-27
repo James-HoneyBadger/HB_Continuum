@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Honey Badger Universe
 """User-defined research overlays; original evidence is never modified."""
 import csv, json, sqlite3, os
+from contextlib import closing
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -214,6 +215,126 @@ class Research:
             self.db.execute('UPDATE journal_entries SET deleted_at=NULL,updated_at=? WHERE id=?',
                             (now,entry_id))
         return self.journal_get(entry_id)
+    def _collection_clock(self):
+        return datetime.now(timezone.utc).isoformat(timespec='seconds')
+    def _collection_row(self,collection_id):
+        if type(collection_id) is not int or collection_id<1:
+            raise ValueError('Invalid collection id')
+        row=self.db.execute(
+            'SELECT id,workspace,name,description,created_at,updated_at '
+            'FROM collections WHERE id=?',(collection_id,)).fetchone()
+        if row is None: raise ValueError('Unknown collection')
+        return row
+    def collection_list(self,workspace=None):
+        sql=('SELECT c.id,c.workspace,c.name,c.description,c.created_at,c.updated_at,'
+             'count(i.item_id) FROM collections c '
+             'LEFT JOIN collection_items i ON i.collection_id=c.id')
+        params=()
+        if workspace:
+            sql+=' WHERE c.workspace=?'; params=(workspace,)
+        sql+=' GROUP BY c.id ORDER BY c.name'
+        keys=('id','workspace','name','description','created_at','updated_at','item_count')
+        return [dict(zip(keys,row)) for row in self.db.execute(sql,params)]
+    def collection_create(self,workspace,name,description=''):
+        name=namecheck(name)
+        if not isinstance(description,str) or len(description)>4000:
+            raise ValueError('Description must be text up to 4000 characters')
+        if not self.db.execute('SELECT 1 FROM workspaces WHERE name=?',(workspace,)).fetchone():
+            raise ValueError('Unknown workspace')
+        now=self._collection_clock()
+        try:
+            with self.db:
+                collection_id=self.db.execute(
+                    'INSERT INTO collections(workspace,name,description,created_at,updated_at) '
+                    'VALUES(?,?,?,?,?)',(workspace,name,description,now,now)).lastrowid
+        except sqlite3.IntegrityError:
+            raise ValueError('A collection with that name already exists in this workspace') from None
+        return self.collection_get(collection_id)
+    def _collection_items(self,collection_id):
+        rows=self.db.execute(
+            'SELECT item_type,item_id,note,added_at FROM collection_items '
+            'WHERE collection_id=? ORDER BY added_at,item_id',(collection_id,)).fetchall()
+        items=[]; catalog=None
+        try:
+            for item_type,item_id,note,added_at in rows:
+                title=actor=date=kind=''; exists=False
+                if item_type=='email':
+                    found=self.archive.db.execute(
+                        'SELECT subject,sender,date FROM messages WHERE hash=?',
+                        (item_id,)).fetchone()
+                    if found:
+                        title,actor,date=found[0] or '',found[1] or '',found[2] or ''
+                        exists=True
+                    kind='message'
+                else:
+                    if catalog is None:
+                        path=self.archive.root/'catalog.sqlite3'
+                        if path.is_file():
+                            catalog=sqlite3.connect(str(path),timeout=30)
+                            catalog.execute('PRAGMA query_only=ON')
+                    if catalog is not None:
+                        found=catalog.execute(
+                            'SELECT record_kind,actor,occurred_at FROM records WHERE record_id=?',
+                            (item_id,)).fetchone()
+                        if found:
+                            kind,actor,date=found[0] or '',found[1] or '',found[2] or ''
+                            exists=True
+                items.append({'item_type':item_type,'item_id':item_id,'note':note or '',
+                              'added_at':added_at,'title':title,'actor':actor,'date':date,
+                              'kind':kind,'exists':exists})
+        finally:
+            if catalog is not None: catalog.close()
+        return items
+    def collection_get(self,collection_id):
+        row=self._collection_row(collection_id)
+        collection=dict(zip(('id','workspace','name','description','created_at','updated_at'),row))
+        collection['items']=self._collection_items(collection_id)
+        collection['item_count']=len(collection['items'])
+        return collection
+    def _require_collection_item(self,item_type,item_id):
+        if not isinstance(item_id,str) or not item_id:
+            raise ValueError('Invalid item id')
+        if item_type=='email':
+            if not self.archive.db.execute('SELECT 1 FROM messages WHERE hash=?',(item_id,)).fetchone():
+                raise ValueError('Unknown archived message')
+            return
+        if item_type=='catalog':
+            path=self.archive.root/'catalog.sqlite3'
+            if not path.is_file(): raise ValueError('Unknown catalog record')
+            with closing(sqlite3.connect(str(path),timeout=30)) as conn:
+                conn.execute('PRAGMA query_only=ON')
+                if not conn.execute('SELECT 1 FROM records WHERE record_id=?',(item_id,)).fetchone():
+                    raise ValueError('Unknown catalog record')
+            return
+        raise ValueError('item_type must be email or catalog')
+    def collection_add(self,collection_id,item_type,item_id,note=None):
+        self._collection_row(collection_id)
+        self._require_collection_item(item_type,item_id)
+        if note is not None and (not isinstance(note,str) or len(note)>2000):
+            raise ValueError('Note must be text up to 2000 characters')
+        now=self._collection_clock()
+        with self.db:
+            self.db.execute(
+                'INSERT INTO collection_items(collection_id,item_type,item_id,note,added_at) '
+                'VALUES(?,?,?,?,?) ON CONFLICT(collection_id,item_type,item_id) '
+                'DO UPDATE SET note=excluded.note',
+                (collection_id,item_type,item_id,note,now))
+            self.db.execute('UPDATE collections SET updated_at=? WHERE id=?',(now,collection_id))
+        return self.collection_get(collection_id)
+    def collection_remove(self,collection_id,item_type,item_id):
+        self._collection_row(collection_id)
+        now=self._collection_clock()
+        with self.db:
+            self.db.execute(
+                'DELETE FROM collection_items WHERE collection_id=? AND item_type=? AND item_id=?',
+                (collection_id,item_type,item_id))
+            self.db.execute('UPDATE collections SET updated_at=? WHERE id=?',(now,collection_id))
+        return self.collection_get(collection_id)
+    def collection_delete(self,collection_id):
+        self._collection_row(collection_id)
+        with self.db:
+            self.db.execute('DELETE FROM collections WHERE id=?',(collection_id,))
+        return {'deleted':True,'id':collection_id}
     def export_report(self,name,path):
         cols,rows=self.report(name)
         def safe(v):

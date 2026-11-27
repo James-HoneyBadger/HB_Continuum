@@ -144,6 +144,21 @@ RESEARCH_V2 = (
     'CREATE INDEX IF NOT EXISTS journal_entries_by_date ON journal_entries(event_date DESC)',
 )
 
+RESEARCH_V3 = (
+    'CREATE TABLE IF NOT EXISTS collections('
+    'id INTEGER PRIMARY KEY AUTOINCREMENT, workspace TEXT NOT NULL '
+    'REFERENCES workspaces(name) ON DELETE CASCADE, name TEXT NOT NULL, '
+    "description TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, "
+    'updated_at TEXT NOT NULL, UNIQUE(workspace, name))',
+    'CREATE TABLE IF NOT EXISTS collection_items('
+    'collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE, '
+    "item_type TEXT NOT NULL CHECK (item_type IN ('email','catalog')), "
+    'item_id TEXT NOT NULL, note TEXT, added_at TEXT NOT NULL, '
+    'PRIMARY KEY(collection_id, item_type, item_id))',
+    'CREATE INDEX IF NOT EXISTS collection_items_by_id '
+    'ON collection_items(item_type, item_id)',
+)
+
 CATALOG_V1 = (
     'CREATE TABLE IF NOT EXISTS source_files('
     'file_hash TEXT PRIMARY KEY, source_type TEXT NOT NULL, source_key TEXT NOT NULL, '
@@ -182,7 +197,7 @@ CATALOG_V3 = (
 MIGRATIONS = {
     'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3, 4: ARCHIVE_V4,
                 5: ARCHIVE_V5, 6: ARCHIVE_V6},
-    'research': {1: RESEARCH_V1, 2: RESEARCH_V2},
+    'research': {1: RESEARCH_V1, 2: RESEARCH_V2, 3: RESEARCH_V3},
     'catalog': {1: CATALOG_V1, 2: CATALOG_V2, 3: CATALOG_V3},
 }
 

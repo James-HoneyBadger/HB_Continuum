@@ -474,6 +474,98 @@ fn journal_restore(state: State<AppState>, entry_id: i64) -> Result<Value, Strin
 }
 
 #[tauri::command]
+fn collections_list(
+    state: State<AppState>,
+    workspace: Option<String>,
+) -> Result<Value, String> {
+    call(&state, "collections_list", json!({ "workspace": workspace }))
+}
+
+#[tauri::command]
+fn collection_get(state: State<AppState>, collection_id: i64) -> Result<Value, String> {
+    call(&state, "collection_get", json!({ "collection_id": collection_id }))
+}
+
+#[tauri::command]
+fn collection_create(
+    state: State<AppState>,
+    workspace: String,
+    name: String,
+    description: Option<String>,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "collection_create",
+        json!({
+            "workspace": workspace,
+            "name": name,
+            "description": description.unwrap_or_default(),
+        }),
+    )
+}
+
+#[tauri::command]
+fn collection_delete(state: State<AppState>, collection_id: i64) -> Result<Value, String> {
+    call(&state, "collection_delete", json!({ "collection_id": collection_id }))
+}
+
+#[tauri::command]
+fn collection_add(
+    state: State<AppState>,
+    collection_id: i64,
+    item_type: String,
+    item_id: String,
+    note: Option<String>,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "collection_add",
+        json!({
+            "collection_id": collection_id,
+            "item_type": item_type,
+            "item_id": item_id,
+            "note": note,
+        }),
+    )
+}
+
+#[tauri::command]
+fn collection_remove(
+    state: State<AppState>,
+    collection_id: i64,
+    item_type: String,
+    item_id: String,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "collection_remove",
+        json!({
+            "collection_id": collection_id,
+            "item_type": item_type,
+            "item_id": item_id,
+        }),
+    )
+}
+
+#[tauri::command]
+fn collection_export(
+    state: State<AppState>,
+    collection_id: i64,
+    destination: String,
+    format: Option<String>,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "collection_export",
+        json!({
+            "collection_id": collection_id,
+            "destination": destination,
+            "format": format.unwrap_or_else(|| "markdown".into()),
+        }),
+    )
+}
+
+#[tauri::command]
 fn preferences(state: State<AppState>) -> Result<Value, String> {
     call(&state, "preferences", json!({}))
 }
@@ -665,6 +757,8 @@ pub fn run() {
             source_set_enabled, source_removal_preview, source_remove, source_events,
             source_verify,
             journal_list, journal_get, journal_save, journal_delete, journal_restore,
+            collections_list, collection_get, collection_create, collection_delete,
+            collection_add, collection_remove, collection_export,
             preferences, preferences_set, research_list, research_results,
             research_workspace_save, research_search_save, research_tag, research_untag,
             research_apply_rules, research_field_define, research_metadata_set,

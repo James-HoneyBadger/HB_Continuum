@@ -5,6 +5,7 @@ import OverviewView from "./components/OverviewView.vue";
 import SearchView from "./components/SearchView.vue";
 import ImportView from "./components/ImportView.vue";
 import SourcesView from "./components/SourcesView.vue";
+import CollectionsView from "./components/CollectionsView.vue";
 import JournalView from "./components/JournalView.vue";
 import ReportsView from "./components/ReportsView.vue";
 import ResearchView from "./components/ResearchView.vue";
@@ -26,6 +27,7 @@ const tabs = [
   "Sources",
   "Import",
   "Research",
+  "Collections",
   "Journal",
   "Reports",
   "Sync",
@@ -115,6 +117,7 @@ onMounted(refreshStats);
         <SourcesView v-else-if="tab === 'Sources'" :on-error="reportError" :on-changed="refreshStats" />
         <ImportView v-else-if="tab === 'Import'" :on-error="reportError" :on-changed="refreshStats" />
         <ResearchView v-else-if="tab === 'Research'" :on-error="reportError" :on-changed="refreshStats" />
+        <CollectionsView v-else-if="tab === 'Collections'" :on-error="reportError" :on-changed="refreshStats" />
         <JournalView v-else-if="tab === 'Journal'" :on-error="reportError" :on-changed="refreshStats" />
         <ReportsView v-else-if="tab === 'Reports'" :on-error="reportError" :on-changed="refreshStats" />
         <SyncView v-else-if="tab === 'Sync'" :on-error="reportError" :on-changed="refreshStats" />

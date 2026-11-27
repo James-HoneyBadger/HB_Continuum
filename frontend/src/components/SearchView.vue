@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -24,6 +24,48 @@ const pageSize = 50;
 const hasMore = ref(false);
 const fromDate = ref("");
 const toDate = ref("");
+const collections = ref<{ id: number; workspace: string; name: string }[]>([]);
+const collectionId = ref<number | null>(null);
+const collectionNote = ref("");
+
+async function loadCollections() {
+  try {
+    const response = (await invoke("collections_list")) as {
+      collections: { id: number; workspace: string; name: string }[];
+    };
+    collections.value = response.collections;
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
+async function addSelectedToCollection() {
+  notice.value = "";
+  if (!collectionId.value) {
+    notice.value = "Choose a collection first.";
+    return;
+  }
+  if (!selected.value.length) {
+    notice.value = "Select one or more results first.";
+    return;
+  }
+  const targets = results.value.filter((item) => selected.value.includes(item.id));
+  try {
+    for (const item of targets) {
+      await invoke("collection_add", {
+        collectionId: collectionId.value,
+        itemType: item.source === "email" ? "email" : "catalog",
+        itemId: item.id,
+        note: collectionNote.value || null,
+      });
+    }
+    notice.value = `Added ${targets.length} record(s) to the selected collection.`;
+    collectionNote.value = "";
+    props.onChanged();
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
 const detail = ref<any>(null);
 const threadView = ref<any[] | null>(null);
 const selected = ref<string[]>([]);
@@ -61,6 +103,8 @@ async function runSearch(target = 1) {
     busy.value = false;
   }
 }
+
+onMounted(loadCollections);
 
 function toggle(id: string) {
   const i = selected.value.indexOf(id);
@@ -179,6 +223,19 @@ async function exportSelected() {
       <input v-model="tagName" placeholder="Tag name" />
       <button @click="tagSelected">Tag selected</button>
       <button @click="exportSelected">Export selected</button>
+    </div>
+
+    <div v-if="results.length" class="row">
+      <select v-model="collectionId">
+        <option :value="null">Choose collection…</option>
+        <option v-for="collection in collections" :key="collection.id" :value="collection.id">
+          {{ collection.workspace }} / {{ collection.name }}
+        </option>
+      </select>
+      <input v-model="collectionNote" placeholder="Collection note (optional)" maxlength="2000" />
+      <button :disabled="!collectionId || !selected.length" @click="addSelectedToCollection">
+        Add selected to collection
+      </button>
     </div>
 
     <ul class="results">
