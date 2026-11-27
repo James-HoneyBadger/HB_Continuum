@@ -138,7 +138,7 @@ class Archive:
                         path=self.root/f'archive.v{version}.{stamp}-{suffix}.backup.sqlite3'
                         suffix+=1
                     migrations.snapshot(self.db,path)
-                migrations.apply(self.db,'archive')
+                migrations.apply(self.db,'archive',root=self.root)
         except SyncBusy:
             if migrations.current_version(self.db)<target:
                 raise
@@ -167,8 +167,9 @@ class Archive:
         sort_ts,precision=parse_timestamp(fields[2])
         with self.db:
             cur=self.db.execute(
-                'INSERT OR IGNORE INTO messages(hash,subject,sender,date,message_id,reply_to,body,sort_ts,date_precision) '
-                'VALUES(?,?,?,?,?,?,?,?,?)',(digest,*fields,body,sort_ts,precision))
+                'INSERT OR IGNORE INTO messages(hash,subject,sender,date,message_id,reply_to,body,'
+                'sort_ts,date_precision,size) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                (digest,*fields,body,sort_ts,precision,len(raw)))
             if cur.rowcount:
                 self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(digest,fields[0],fields[1],index_text(body,attachments)))
                 self.db.executemany('INSERT INTO attachment_index VALUES(?,?,?,?,?)',[(digest,*a) for a in attachments])

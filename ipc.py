@@ -239,16 +239,37 @@ def _dashboard(root):
     }
 
 def _storage_footprint(base):
-    """Bytes held by preserved originals and by the databases themselves."""
-    raw_bytes = 0
-    raw = Path(base) / 'raw'
-    if raw.is_dir():
-        for entry in raw.iterdir():
-            try:
-                if entry.is_file() and not entry.is_symlink():
-                    raw_bytes += entry.stat().st_size
-            except OSError:
-                continue
+    """Bytes held by preserved originals and by the databases themselves.
+
+    Original sizes are recorded at import, so a summary avoids walking the
+    raw directory. An archive predating that column, or containing records
+    whose original is missing, falls back to a filesystem scan.
+    """
+    base = Path(base)
+    raw_bytes = None
+    archive_path = base / 'archive.sqlite3'
+    if archive_path.is_file():
+        conn = _ro_connect(archive_path)
+        try:
+            total, missing = conn.execute(
+                'SELECT coalesce(sum(size),0), coalesce(sum(size IS NULL),0) FROM messages'
+            ).fetchone()
+            if not missing:
+                raw_bytes = total
+        except sqlite3.OperationalError:
+            raw_bytes = None
+        finally:
+            conn.close()
+    if raw_bytes is None:
+        raw_bytes = 0
+        raw = base / 'raw'
+        if raw.is_dir():
+            for entry in raw.iterdir():
+                try:
+                    if entry.is_file() and not entry.is_symlink():
+                        raw_bytes += entry.stat().st_size
+                except OSError:
+                    continue
     database_bytes = 0
     for name in ('archive.sqlite3', 'research.sqlite3', 'catalog.sqlite3',
                  'archive.sqlite3-wal', 'research.sqlite3-wal', 'catalog.sqlite3-wal',

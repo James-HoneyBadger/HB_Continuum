@@ -515,6 +515,13 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(self.server.handle(request('timeline',order='sideways'))['error']['code'],'INVALID_PARAMS')
         self.assertEqual(self.server.handle(request('timeline',offset=-1))['error']['code'],'INVALID_PARAMS')
 
+    def test_storage_footprint_prefers_recorded_sizes(self):
+        import ipc as ipc_module
+        expected=(self.root/'raw'/(self.h+'.eml')).stat().st_size
+        with mock.patch.object(Path,'iterdir',side_effect=AssertionError('scanned raw directory')):
+            footprint=ipc_module._storage_footprint(self.root)
+        self.assertEqual(footprint['raw_bytes'],expected)
+
     def test_dashboard_reports_coverage_and_storage(self):
         self.a.ingest(b'Date: Thu, 26 Nov 2026 09:00:00 +0000\r\n\r\ndated')
         result=self.server.handle(request('dashboard'))['result']

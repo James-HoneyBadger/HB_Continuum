@@ -35,10 +35,11 @@ class TimelineOrderingTests(unittest.TestCase):
         digest=self.a.ingest(message(date, body, sender))
         return digest
 
-    def test_ingest_records_a_normalized_timestamp(self):
-        digest=self.add('Tue, 02 Jan 2024 03:04:05 +0000','dated')
-        row=self.a.db.execute('SELECT sort_ts,date_precision FROM messages WHERE hash=?',(digest,)).fetchone()
-        self.assertEqual(row,(1704164645,'second'))
+    def test_ingest_records_a_normalized_timestamp_and_size(self):
+        raw=message('Tue, 02 Jan 2024 03:04:05 +0000','dated')
+        digest=self.a.ingest(raw)
+        row=self.a.db.execute('SELECT sort_ts,date_precision,size FROM messages WHERE hash=?',(digest,)).fetchone()
+        self.assertEqual(row,(1704164645,'second',len(raw)))
         unknown=self.add('not a date','undated')
         self.assertEqual(self.a.db.execute('SELECT sort_ts FROM messages WHERE hash=?',(unknown,)).fetchone()[0],None)
 
@@ -97,7 +98,7 @@ class BackfillMigrationTests(unittest.TestCase):
                        ('a'*64,'Hi','s','Tue, 02 Jan 2024 03:04:05 +0000','<m>',None,'body'))
             db.commit()
             apply(db,'archive')
-            self.assertEqual(current_version(db),4)
+            self.assertEqual(current_version(db),5)
             self.assertEqual(db.execute('SELECT sort_ts,date_precision FROM messages').fetchone(),
                              (1704164645,'second'))
         finally:

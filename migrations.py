@@ -47,7 +47,7 @@ ARCHIVE_V2 = (
     'hash TEXT PRIMARY KEY REFERENCES messages(hash), version INTEGER NOT NULL)',
 )
 
-def _backfill_archive_timestamps(db):
+def _backfill_archive_timestamps(db, root=None):
     """Populate normalized chronology for rows written before schema 3."""
     updates = []
     for digest, date in db.execute('SELECT hash,date FROM messages'):
@@ -55,11 +55,30 @@ def _backfill_archive_timestamps(db):
         updates.append((epoch, precision, digest))
     db.executemany('UPDATE messages SET sort_ts=?,date_precision=? WHERE hash=?', updates)
 
+def _backfill_message_sizes(db, root=None):
+    """Record original-file sizes so storage totals avoid a filesystem scan."""
+    if root is None:
+        return
+    updates = []
+    for digest, in db.execute('SELECT hash FROM messages').fetchall():
+        path = Path(root) / 'raw' / (digest + '.eml')
+        try:
+            size = path.stat().st_size if path.is_file() and not path.is_symlink() else None
+        except OSError:
+            size = None
+        updates.append((size, digest))
+    db.executemany('UPDATE messages SET size=? WHERE hash=?', updates)
+
 ARCHIVE_V3 = (
     'ALTER TABLE messages ADD COLUMN sort_ts INTEGER',
     'ALTER TABLE messages ADD COLUMN date_precision TEXT',
     'CREATE INDEX IF NOT EXISTS messages_sort_ts ON messages(sort_ts)',
     _backfill_archive_timestamps,
+)
+
+ARCHIVE_V5 = (
+    'ALTER TABLE messages ADD COLUMN size INTEGER',
+    _backfill_message_sizes,
 )
 
 ARCHIVE_V4 = (
@@ -141,7 +160,7 @@ CATALOG_V2 = (
 )
 
 MIGRATIONS = {
-    'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3, 4: ARCHIVE_V4},
+    'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3, 4: ARCHIVE_V4, 5: ARCHIVE_V5},
     'research': {1: RESEARCH_V1, 2: RESEARCH_V2},
     'catalog': {1: CATALOG_V1, 2: CATALOG_V2},
 }
@@ -173,7 +192,7 @@ def snapshot(db, path):
         destination.close()
     return str(path)
 
-def apply(db, name, snapshot_path=None):
+def apply(db, name, snapshot_path=None, root=None):
     """Bring `db` up to the newest known version for `name`.
 
     Returns a dict describing the transition. Pending DDL runs one version per
@@ -196,7 +215,7 @@ def apply(db, name, snapshot_path=None):
         with db:
             for statement in MIGRATIONS[name][step]:
                 if callable(statement):
-                    statement(db)
+                    statement(db, root)
                 else:
                     db.execute(statement)
             db.execute(f'PRAGMA user_version={step}')
@@ -224,7 +243,7 @@ def report(root, dry_run=False, snapshot_=True):
                                 'pending': pending(name, version)}
                 continue
             backup = path.with_name(f'{path.stem}.v{version}.backup.sqlite3') if snapshot_ else None
-            outcome = apply(conn, name, snapshot_path=backup)
+            outcome = apply(conn, name, snapshot_path=backup, root=root)
             outcome['present'] = True
             outcome['snapshot'] = str(backup) if backup is not None and backup.exists() else None
             result[name] = outcome
