@@ -12,3 +12,8 @@ evidence/
 *.mbox
 config.local.*
 .DS_Store
+
+node_modules/
+frontend/dist/
+src-tauri/target/
+src-tauri/gen/

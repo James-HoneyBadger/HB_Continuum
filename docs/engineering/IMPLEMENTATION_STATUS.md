@@ -41,6 +41,10 @@ Phase A — Stabilization (repository audit in progress).
   over stdin/stdout with `ping`, `stats`, paginated `search`, background
   `summarize` jobs with progress events and cancellation, and graceful
   `shutdown`; `dispatch serve` entry point (working tree, uncommitted).
+- Tauri 2 + Vue 3 desktop shell (`frontend/`, `src-tauri/`): a managed
+  Python subprocess client that drives `stats` and `search` through Rust
+  commands; frontend production build verified, Rust build in progress
+  (working tree, uncommitted).
 
 ## Pending capabilities
 
@@ -65,11 +69,12 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 ## Files changed
 
 - Working tree (uncommitted): `desktop.py`, `dispatch.py`, `preferences.py`,
-  `research.py`, `mypy.ini`, `.github/workflows/ci.yml` modified;
-  `search_worker.py`, `catalog.py`, `facebook.py`, `summarize.py`,
-  `unified.py`, `ipc.py`, `tests/test_search_worker.py`,
-  `tests/test_facebook.py`, `tests/test_summarize.py`,
-  `tests/test_unified.py`, `tests/test_ipc.py` added.
+  `research.py`, `mypy.ini`, `.github/workflows/ci.yml`, `.gitignore`
+  modified; `search_worker.py`, `catalog.py`, `facebook.py`, `summarize.py`,
+  `unified.py`, `ipc.py`, `frontend/`, `src-tauri/`,
+  `tests/test_search_worker.py`, `tests/test_facebook.py`,
+  `tests/test_summarize.py`, `tests/test_unified.py`, `tests/test_ipc.py`
+  added.
 - This session (documentation): `docs/engineering/BASELINE_AUDIT.md`,
   `docs/engineering/IMPLEMENTATION_STATUS.md`, `docs/FACEBOOK_IMPORT.md`,
   `docs/AI_SUMMARIZATION.md` added.
