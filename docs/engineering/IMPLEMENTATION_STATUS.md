@@ -37,6 +37,10 @@ Phase A — Stabilization (repository audit in progress).
 - Unified search (`unified.py`): keyword search across archived email and
   Facebook/catalog records via `dispatch search-all`, with source labels
   and plain-text snippets (working tree, uncommitted).
+- Desktop IPC engine (`ipc.py`): versioned newline-delimited JSON protocol
+  over stdin/stdout with `ping`, `stats`, paginated `search`, background
+  `summarize` jobs with progress events and cancellation, and graceful
+  `shutdown`; `dispatch serve` entry point (working tree, uncommitted).
 
 ## Pending capabilities
 
@@ -63,8 +67,9 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 - Working tree (uncommitted): `desktop.py`, `dispatch.py`, `preferences.py`,
   `research.py`, `mypy.ini`, `.github/workflows/ci.yml` modified;
   `search_worker.py`, `catalog.py`, `facebook.py`, `summarize.py`,
-  `unified.py`, `tests/test_search_worker.py`, `tests/test_facebook.py`,
-  `tests/test_summarize.py`, `tests/test_unified.py` added.
+  `unified.py`, `ipc.py`, `tests/test_search_worker.py`,
+  `tests/test_facebook.py`, `tests/test_summarize.py`,
+  `tests/test_unified.py`, `tests/test_ipc.py` added.
 - This session (documentation): `docs/engineering/BASELINE_AUDIT.md`,
   `docs/engineering/IMPLEMENTATION_STATUS.md`, `docs/FACEBOOK_IMPORT.md`,
   `docs/AI_SUMMARIZATION.md` added.
@@ -90,17 +95,17 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 61 tests, all pass (29 baseline
+- `python3 -m unittest discover -s tests`: 71 tests, all pass (29 baseline
   + 5 search-worker + 14 Facebook importer + 9 summarization + 4 unified
-  search).
+  search + 10 IPC).
 - End-to-end CLI smoke tests of `dispatch facebook preview/import/search/
-  list`, `dispatch summarize run --all` (fake loopback Ollama), and
-  `dispatch search-all`: pass.
+  list`, `dispatch summarize run --all` (fake loopback Ollama),
+  `dispatch search-all`, and `dispatch serve` (subprocess protocol): pass.
 - `mypy` not run locally (not installed); CI runs `mypy` on Python 3.13.
 
 ## Test results
 
-61 passed, 0 failed, 0 skipped (Python 3.12, Linux).
+71 passed, 0 failed, 0 skipped (Python 3.12, Linux).
 
 ## CI status
 
@@ -135,9 +140,10 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 
 ## Next recommended tasks
 
-1. Support Facebook post/comment revision entries and message attachments
+1. Scaffold the Tauri 2 + Vue 3 shell that spawns `dispatch serve` and
+   drives `stats`/`search` (Rust and Node toolchains are available).
+2. Support Facebook post/comment revision entries and message attachments
    metadata.
-2. Desktop framework PoC (Tauri 2, as chosen).
 3. Add versioned migrations to `research.sqlite3`/`archive.sqlite3` before
    further schema evolution (the catalog now demonstrates the pattern).
 4. Extend unified search with relevance-ranked cross-source fusion and
