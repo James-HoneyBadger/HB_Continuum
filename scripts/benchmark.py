@@ -11,7 +11,12 @@ empty, and temporary directories are removed unless --keep is given.
 Record the printed JSON (or --json output) with the machine description so
 results from different computers are not confused.
 """
-import argparse, json, os, platform, random, resource, shutil, statistics, sys, tempfile, time
+import argparse, json, os, platform, random, shutil, statistics, sys, tempfile, time
+
+try:
+    import resource
+except ImportError:  # Windows has no POSIX resource module.
+    resource = None
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -132,7 +137,9 @@ def run_size(count, base=None, seed=20261127, health=False, cleanup=False):
     return result
 
 def max_rss_mib():
-    """Peak resident memory, normalized across platforms (bytes on macOS, KiB elsewhere)."""
+    """Peak resident memory, or None where the platform cannot report it."""
+    if resource is None:
+        return None
     value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return round(value / (1024 * 1024) if sys.platform == 'darwin' else value / 1024, 1)
 
@@ -157,7 +164,8 @@ def render_table(results):
             round(item['storage']['database_bytes'] / mib, 1),
             item['find']['p50_ms'], item['find']['p95_ms'],
             item['timeline']['first_page_ms'], item['timeline']['deep_page_ms'],
-            item['dashboard']['ms'], item['max_rss_mib'])) + ' |')
+            item['dashboard']['ms'],
+            item['max_rss_mib'] if item['max_rss_mib'] is not None else 'n/a')) + ' |')
     return '\n'.join(lines)
 
 def main(argv=None):

@@ -86,3 +86,6 @@ regression baseline, not a specification.
    work.
 4. Update this file with the machine and results, and note any code change
    that explains a difference.
+
+
+On Windows the harness runs without POSIX `resource`; peak RSS is reported as `n/a` because the standard library cannot supply it.

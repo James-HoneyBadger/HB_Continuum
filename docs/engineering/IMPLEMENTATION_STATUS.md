@@ -578,15 +578,16 @@ until the shell's flows are exercised against real archives.
 ## Tests executed
 
 - `compileall` over `hb_engine/`, root wrappers, `tests/` and `scripts/`:
-  pass.
-- `python3 -m unittest discover -s tests`: 267 tests, 0 failures; optional
+  pass. CI uses explicit compileall paths because PowerShell does not expand
+  `*.py` globs.
+- `python3 -m unittest discover -s tests`: 268 tests, 0 failures; optional
   credential-backend tests skip when `keyring` or `cryptography` are not
   installed (1 skip on the project Python 3.13 interpreter, 2 on a local
   Python 3.15 interpreter). Includes 8 timestamp/chronology tests, 2 real-process lock
   tests, 5 import-run tests, 6 journal tests, 8 collection/draft tests,
   5 report tests, 11 source management/verification tests, 11 unified-search
   tests, 10 advanced-query tests, 5 saved-query tests, 8 relationship tests,
-  58 IPC tests, 19 Facebook tests and a packaging-smoke test.
+  58 IPC tests, 19 Facebook tests, 5 benchmark tests and a packaging-smoke test.
 - `mypy` 2.4.1 (matching CI): no issues in 23 source files, covering
   `hb_engine` and the Tk UI modules.
 - `cargo test` (src-tauri): 3 tests pass, covering bundled-sidecar
@@ -616,7 +617,7 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-267 Python tests ran: 0 failed; optional credential-backend tests skip when
+268 Python tests ran: 0 failed; optional credential-backend tests skip when
 `keyring` or `cryptography` are unavailable (1 skip on Python 3.13.6, 2 on
 Python 3.15). `npm run build` (vue-tsc + vite), `cargo check` and `cargo test`
 pass; background EML import, import history, sources, source removal, source
@@ -637,8 +638,11 @@ Scheduler verification status:
 
 ## CI status
 
-- Existing workflows: `ci.yml` (py_compile, unittest on 3.12/3.13, mypy on
-  3.13) and `codeql.yml` (Python analysis). Not re-run in this environment.
+- Existing workflows: `ci.yml` (compileall, unittest on 3.12/3.13, mypy
+  on 3.13, scheduler and packaged-engine matrices) and `codeql.yml` (Python
+  analysis). The Windows compile step and benchmark harness were fixed after
+  the first matrix run; see the latest branch run for the authoritative
+  result.
 - PR #4 (archive hardening) and PR #5 (branding) were closed as superseded
   on 2026-11-27. Their work is integrated in `develop/continuum-integration`
   (merges `0ce5454` and `6b83ffa` plus later fixes); the stale branches were

@@ -28,6 +28,10 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual(result['dashboard']['undated'],0)
         self.assertIsNotNone(result['find']['p50_ms'])
 
+    def test_peak_memory_is_reported_or_unavailable(self):
+        value=benchmark.max_rss_mib()
+        self.assertTrue(value is None or value > 0)
+
     def test_workdir_must_be_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp)/'keep.txt').write_text('x')
