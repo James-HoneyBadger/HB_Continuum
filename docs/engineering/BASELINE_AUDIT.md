@@ -67,6 +67,10 @@ Configuration (`preferences.py`):
 - CI adds a macOS matrix; `tests/test_hardening.py` added (PR reports 40
   local tests passing).
 
+Superseded: this work now lives on `develop/engine-expansion`, with the
+archive schema expressed as a versioned `archive` version 2 migration and
+the tests re-expressed as 15 hardening tests (see section 9).
+
 ### Open PR #5 — `chore/continuum-branding` (not merged)
 
 - Rebrands user-facing text from HB Dispatch to HB Continuum while keeping
@@ -208,12 +212,15 @@ Configuration (`preferences.py`):
 
 ## 9. Outstanding engineering work
 
-1. Integrate or supersede PR #4 (hardening) and PR #5 (branding) — they
-   change files also touched by this working tree (`desktop.py`, `mypy.ini`,
-   `ci.yml`).
-2. Reconcile the working-tree search-threading changes with PR #4/#5.
+1. PR #4 (hardening) is superseded: its MIME extraction, attachment index,
+   health/reindex/recovery, verified backup/restore, symlink rejection and
+   macOS CI matrix now live on `develop/engine-expansion` (`mime_index.py`,
+   `backup.py`, `archive` schema version 2). PR #5 (branding) is still open
+   and conflicts; reconcile it separately.
+2. ~~Reconcile the working-tree search-threading changes with PR #4/#5.~~
+   Done; the search worker is committed and covered by tests.
 3. ~~Extend the versioned migration mechanism to `research.sqlite3` and
-   `archive.sqlite3`.~~ Done in `migrations.py`.
+   `archive.sqlite3`.~~ Done in `migrations.py`; `archive` is at version 2.
 4. Extract the engine into a package while preserving the `dispatch.py` CLI.
 5. Decide the desktop framework (Tauri 2 vs PySide6/QML) via a working PoC.
 6. Implement optional local embeddings/hybrid search with fake-server tests

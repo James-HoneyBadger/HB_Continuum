@@ -48,7 +48,16 @@ Phase A — Stabilization (repository audit in progress).
 - Database migrations: shared versioned, transactional `migrations.py` for
   `archive.sqlite3`, `research.sqlite3` and `catalog.sqlite3`, with a
   newer-schema guard, pre-migration snapshots, and
-  `dispatch migrate [--dry-run] [--no-snapshot]` (working tree, uncommitted).
+  `dispatch migrate [--dry-run] [--no-snapshot]`.
+- Archive hardening (branch `develop/engine-expansion`, supersedes PR #4):
+  bounded offline MIME extraction (`mime_index.py`) that turns HTML into
+  plain text and indexes attachment names, MIME types and text; `archive`
+  schema version 2 for `attachment_index` and `extraction_versions`;
+  resumable `dispatch reindex`; `dispatch health` reconciliation of SQLite,
+  foreign keys, index coverage and raw hashes; `dispatch recover-orphans`;
+  verified `dispatch backup` / `verify-backup` / `restore` with SHA-256
+  manifests; symlink and busy archive rejection; cooperative locking across
+  ingest, sync, reindex, recovery and backup.
   Python subprocess client driving `stats`, `search`, `message`, `thread`,
   `record`, `verify`, `import_eml`, `preferences`, and the full research
   overlay (workspaces, saved searches, tags, fields, metadata, reports with
@@ -88,12 +97,19 @@ relationships explorers, and the documentation overhaul
 - This session (documentation): `docs/engineering/BASELINE_AUDIT.md`,
   `docs/engineering/IMPLEMENTATION_STATUS.md`, `docs/FACEBOOK_IMPORT.md`,
   `docs/AI_SUMMARIZATION.md` added.
+- Archive hardening (branch `develop/engine-expansion`): `mime_index.py`,
+  `backup.py`, `tests/test_hardening.py`, `docs/ARCHIVE_HARDENING.md` added;
+  `dispatch.py`, `desktop.py`, `migrations.py`, `mypy.ini`,
+  `.github/workflows/ci.yml`, `README.md`, `docs/MIGRATION.md`,
+  `tests/test_migrations.py` modified.
 
 ## Database changes
 
 - Schema versioning moved to `migrations.py`, shared by all three databases
-  and tracked with `PRAGMA user_version`; `archive` and `research` are at
-  version 1, `catalog` at version 2.
+  and tracked with `PRAGMA user_version`; `archive` and `catalog` are at
+  version 2 and `research` at version 1. Archive version 2 adds
+  `attachment_index` and `extraction_versions` (additive; existing rows are
+  untouched, and `dispatch reindex` upgrades older derived text).
 - New source-independent catalog database `catalog.sqlite3` with
   `source_files` and `records` tables plus a trigger-maintained FTS5
   `record_search` index, governed by a `PRAGMA user_version`-based migration
@@ -111,27 +127,30 @@ relationships explorers, and the documentation overhaul
   documented in `docs/MIGRATION.md`. Snapshots are written before modifying a
   database that already contains data, and databases from a newer build are
   refused rather than opened.
-- PR #4's `attachment_index` and `extraction_versions` tables should be
-  re-expressed as an `archive` version 2 migration when that work lands,
-  replacing its ad-hoc version marker.
+- PR #4's `attachment_index` and `extraction_versions` tables are now
+  `archive` version 2; its ad-hoc version marker and `executescript` schema
+  setup are superseded and that PR should be closed rather than merged.
 
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 127 tests, all pass (29 baseline
+- `python3 -m unittest discover -s tests`: 144 tests, all pass (29 baseline
   + 5 search-worker + 14 Facebook importer + 9 summarization + 4 unified
-  search + 24 IPC + 26 scheduler + 1 Windows-path tick + 15 migrations).
-- `mypy` (2.4.1, matching CI): no issues in 16 source files.
+  search + 24 IPC + 26 scheduler + 1 Windows-path tick + 17 migrations + 15
+  archive hardening).
+- `mypy` (2.4.1, matching CI): no issues in 19 source files.
 - End-to-end CLI smoke tests of `dispatch facebook preview/import/search/
   list`, `dispatch summarize run --all` (fake loopback Ollama),
   `dispatch search-all`, and `dispatch serve` (subprocess protocol): pass.
 - Frontend `npm run build` (vue-tsc + vite) and `cargo build` (Tauri):
   pass.
-- `mypy` not run locally (not installed); CI runs `mypy` on Python 3.13.
+- End-to-end hardening smoke test on a temporary archive: `dispatch health`
+  (clean exit 0), `dispatch backup`/`verify-backup`/`restore`, and
+  `dispatch reindex` over a legacy v1 archive: pass.
 
 ## Test results
 
-111 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
+144 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
 frontend and Rust builds pass; IPC surfaces smoke-tested end-to-end over the
 real subprocess protocol.
 
@@ -151,7 +170,9 @@ Scheduler verification status:
 
 - Existing workflows: `ci.yml` (py_compile, unittest on 3.12/3.13, mypy on
   3.13) and `codeql.yml` (Python analysis). Not re-run in this environment.
-- Open PR #4 adds a macOS test matrix.
+- PR #4 (archive hardening) is superseded by the hardening work on
+  `develop/engine-expansion`; PR #5 (branding) remains open and conflicts
+  with this branch.
 
 ## Security findings
 
@@ -162,8 +183,9 @@ Scheduler verification status:
   HTTP plugins).
 - Synchronization over IPC never accepts a password: the engine resolves
   credentials from the OS store at run time; no secret crosses the protocol.
-- Symlink/path hardening and read-only backup connections exist only on
-  PR #4; recommended for integration.
+- Symlink and path hardening now covers archive roots, raw originals,
+  databases, snapshots and exports; backup validation opens databases
+  read-only, and the Tauri shell still has no filesystem or HTTP plugin.
 
 ## Performance findings
 
@@ -172,26 +194,24 @@ Scheduler verification status:
 
 ## Known limitations
 
-- No encryption at rest; no OAuth; HTML not rendered on `main` (PR #4 adds
-  bounded HTML-to-text); no attachment search on `main`; no migrations.
+- No encryption at rest; no OAuth. HTML is reduced to offline text but never
+  rendered. PDF, Office and image attachment contents are not converted, so
+  only attachment names, MIME types and text payloads are searchable.
 - Cross-platform scheduling verified on all three operating systems via CI;
   Windows has no archive-level write lock (`sync_lock` is POSIX-only).
-- `sync_lock` is POSIX-only, so Windows has no archive-level write lock.
 
 ## Outstanding defects
 
-- No versioned migration system.
-- `sync_lock` is POSIX-only.
+- `sync_lock` is POSIX-only, so Windows has no archive-level write lock.
 - Documentation identity is split between HB Dispatch (`main`) and HB
   Continuum (PR #5).
 
 ## Next recommended tasks
 
-1. Scaffold the Tauri 2 + Vue 3 shell that spawns `dispatch serve` and
-   drives `stats`/`search` (Rust and Node toolchains are available).
+1. Surface attachment metadata and archive health through the IPC protocol
+   and the Tauri shell, which currently expose only message bodies.
 2. Support Facebook post/comment revision entries and message attachments
    metadata.
-3. Add versioned migrations to `research.sqlite3`/`archive.sqlite3` before
-   further schema evolution (the catalog now demonstrates the pattern).
+3. Close PR #4 as superseded and reconcile PR #5 branding with this branch.
 4. Extend unified search with relevance-ranked cross-source fusion and
    date/kind filtering.

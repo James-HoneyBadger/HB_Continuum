@@ -147,6 +147,30 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(target_version('catalog'),2)
         self.assertEqual(sorted(MIGRATIONS['catalog']),[1,2])
 
+    def test_archive_version_registry(self):
+        self.assertEqual(target_version('archive'),2)
+        self.assertEqual(sorted(MIGRATIONS['archive']),[1,2])
+
+    def test_archive_v1_upgrades_to_v2_keeping_rows(self):
+        db=sqlite3.connect(self.root/'archive.sqlite3')
+        try:
+            for statement in MIGRATIONS['archive'][1]:
+                db.execute(statement)
+            db.execute('PRAGMA user_version=1')
+            db.execute('INSERT INTO messages VALUES(?,?,?,?,?,?,?)',
+                       ('b'*64,'Subject','s@e','d','<m>',None,'body'))
+            db.execute('INSERT INTO search VALUES(?,?,?,?)',('b'*64,'Subject','s@e','body'))
+            db.commit()
+            result=apply(db,'archive')
+            self.assertEqual(result['applied'],[2])
+            tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            self.assertTrue({'attachment_index','extraction_versions'}<=tables)
+            self.assertEqual(db.execute('SELECT count(*) FROM messages').fetchone()[0],1)
+            self.assertEqual(db.execute("SELECT hash FROM search WHERE search MATCH 'body'").fetchone()[0],'b'*64)
+            self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(),[])
+        finally:
+            db.close()
+
     def test_catalog_upgrades_from_v1(self):
         db=sqlite3.connect(self.root/'catalog.sqlite3')
         for statement in MIGRATIONS['catalog'][1]:
@@ -179,7 +203,7 @@ class MigrationTests(unittest.TestCase):
         self.legacy_archive().close()
         result=report(self.root,dry_run=True)
         self.assertEqual(result['archive']['version'],0)
-        self.assertEqual(result['archive']['pending'],[1])
+        self.assertEqual(result['archive']['pending'],sorted(MIGRATIONS['archive']))
         self.assertFalse(result['research']['present'])
         db=sqlite3.connect(self.root/'archive.sqlite3')
         try:
@@ -192,7 +216,7 @@ class MigrationTests(unittest.TestCase):
         self.legacy_archive().close()
         result=report(self.root)
         self.assertEqual(result['archive']['from'],0)
-        self.assertEqual(result['archive']['to'],1)
+        self.assertEqual(result['archive']['to'],target_version('archive'))
         self.assertIsNotNone(result['archive']['snapshot'])
         self.assertTrue(Path(result['archive']['snapshot']).is_file())
         again=report(self.root)
@@ -208,7 +232,7 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(code,0)
         report_doc=_json.loads(out.getvalue())
         self.assertEqual(report_doc['archive']['version'],0)
-        self.assertEqual(report_doc['archive']['pending'],[1])
+        self.assertEqual(report_doc['archive']['pending'],sorted(MIGRATIONS['archive']))
 
 if __name__=='__main__':
     unittest.main()

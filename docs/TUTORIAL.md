@@ -75,7 +75,7 @@ python3 dispatch.py --archive ~/dispatch-practice search 'sender:accounts'
 python3 dispatch.py --archive ~/dispatch-practice gui
 ```
 
-Search uses SQLite FTS5 over subject, sender and plain-text body. Search returns up to 100 matches; it is not an exhaustive report. HTML-only messages may lack searchable body text; attachment contents and all headers are not indexed. The GUI lets you import EML files, search and select messages to read their plain-text content. It does not execute HTML or open attachments.
+Search uses SQLite FTS5 over subject, sender, the body and attachment metadata. Search returns up to 100 matches; it is not an exhaustive report. HTML bodies are reduced to offline text and attachment names, MIME types and text payloads are indexed; PDF, Office and image contents are not converted, and headers other than subject and sender are not indexed. The GUI lets you import EML files, search and select messages to read their plain-text content. It does not execute HTML or open attachments.
 
 ## 4. Connect a real mailbox, cautiously
 

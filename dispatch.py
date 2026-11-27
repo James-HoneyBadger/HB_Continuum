@@ -3,46 +3,126 @@
 """Local read-only email archive. No network access except explicit sync."""
 import shutil, argparse, hashlib, imaplib, sqlite3, ssl, json, os, tempfile
 from pathlib import Path
-from email import policy
-from email.parser import BytesParser
 
 __version__ = '0.3.0'
 
+def valid_hash(value):
+    return isinstance(value,str) and len(value)==64 and all(c in '0123456789abcdef' for c in value)
+
 class Archive:
     def __init__(self, root):
-        self.root = Path(root).expanduser(); self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        self.raw = self.root / 'raw'; self.raw.mkdir(mode=0o700, exist_ok=True)
+        self.root = Path(root).expanduser().resolve(); self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self.raw = self.root / 'raw'
+        if self.raw.is_symlink() or (self.root / 'archive.sqlite3').is_symlink(): raise ValueError('Unsafe archive path')
+        self.raw.mkdir(mode=0o700, exist_ok=True)
         self.db = sqlite3.connect(self.root / 'archive.sqlite3', timeout=30)
         self.db.execute('PRAGMA foreign_keys=ON')
+        self.db.execute('PRAGMA busy_timeout=30000')
         from migrations import apply as migrate
         migrate(self.db, 'archive')
-    @staticmethod
-    def _part_text(part):
-        try:
-            content=part.get_content()
-        except (LookupError,UnicodeError,ValueError,TypeError):
-            try: payload=part.get_payload(decode=True) or b''
-            except Exception: return ''
-            return payload.decode('utf-8','replace') if isinstance(payload,bytes) else str(payload)
-        return content.decode('utf-8','replace') if isinstance(content,bytes) else content
     def ingest(self, raw, origin=None):
+        from sync_lock import sync_lock
+        with sync_lock(self.root):
+            return self._ingest(raw,origin)
+    def _ingest(self, raw, origin=None):
         if len(raw) > 64 * 1024 * 1024: raise ValueError('Message exceeds 64 MiB limit')
         digest = hashlib.sha256(raw).hexdigest(); target = self.raw / (digest+'.eml')
+        if target.is_symlink(): raise ValueError('Unsafe raw file')
         if not target.exists():
-            with tempfile.NamedTemporaryFile(dir=self.raw, delete=False) as f:
-                f.write(raw); f.flush(); os.fsync(f.fileno()); tmp=f.name
-            os.replace(tmp,target)
+            tmp=None
+            try:
+                with tempfile.NamedTemporaryFile(dir=self.raw, delete=False) as f:
+                    tmp=Path(f.name)
+                    f.write(raw); f.flush(); os.fsync(f.fileno())
+                os.replace(tmp,target)
+            finally:
+                if tmp is not None: tmp.unlink(missing_ok=True)
         if hashlib.sha256(target.read_bytes()).hexdigest()!=digest: raise ValueError('Raw integrity mismatch')
-        msg=BytesParser(policy=policy.default).parsebytes(raw)
-        body='\n'.join(self._part_text(p) for p in msg.walk() if p.get_content_type()=='text/plain' and p.get_content_disposition()!='attachment')
+        from mime_index import extract, index_text
+        msg,body,attachments=extract(raw)
         fields=[str(msg.get(k,'')) for k in ('Subject','From','Date','Message-ID','In-Reply-To')]
         with self.db:
             cur=self.db.execute('INSERT OR IGNORE INTO messages VALUES(?,?,?,?,?,?,?)',(digest,*fields,body))
-            if cur.rowcount: self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(digest,fields[0],fields[1],body))
+            if cur.rowcount:
+                self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(digest,fields[0],fields[1],index_text(body,attachments)))
+                self.db.executemany('INSERT INTO attachment_index VALUES(?,?,?,?,?)',[(digest,*a) for a in attachments])
+                self.db.execute('INSERT INTO extraction_versions VALUES(?,2)',(digest,))
             if origin:
                 self.db.execute('INSERT OR IGNORE INTO origins VALUES(?,?,?,?,?)',(*origin,digest))
                 if self.db.execute('SELECT hash FROM origins WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone()[0]!=digest: raise ValueError('Origin conflict')
         return digest
+    def reindex(self):
+        """Repair derived index data from the preserved raw originals.
+
+        Messages extracted by an older build, messages with a missing search
+        row, and messages with duplicate search rows are re-extracted. Each
+        message is verified against its raw original and re-indexed in its own
+        transaction, so an interrupted run keeps its progress.
+        """
+        from mime_index import extract, index_text
+        from sync_lock import sync_lock
+        count=0
+        with sync_lock(self.root):
+            pending=self.db.execute(
+                'SELECT hash,subject,sender FROM messages '
+                'WHERE hash NOT IN (SELECT hash FROM extraction_versions WHERE version=2) '
+                'OR hash NOT IN (SELECT hash FROM search) '
+                'OR hash IN (SELECT hash FROM search GROUP BY hash HAVING count(*)>1)').fetchall()
+            rowids={}
+            for rowid,h in self.db.execute('SELECT rowid,hash FROM search'):
+                rowids.setdefault(h,[]).append(rowid)
+            for h,subject,sender in pending:
+                if not valid_hash(h): raise ValueError('Invalid stored message hash')
+                source=self.raw/(h+'.eml')
+                if source.is_symlink(): raise ValueError('Unsafe raw file')
+                raw=source.read_bytes()
+                if hashlib.sha256(raw).hexdigest()!=h: raise ValueError('Raw integrity mismatch: '+h)
+                _,body,attachments=extract(raw)
+                with self.db:
+                    self.db.execute('UPDATE messages SET body=? WHERE hash=?',(body,h))
+                    self.db.executemany('DELETE FROM search WHERE rowid=?',[(rid,) for rid in rowids.get(h,[])])
+                    self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(h,subject,sender,index_text(body,attachments)))
+                    self.db.execute('DELETE FROM attachment_index WHERE hash=?',(h,))
+                    self.db.executemany('INSERT INTO attachment_index VALUES(?,?,?,?,?)',[(h,*a) for a in attachments])
+                    self.db.execute('INSERT OR REPLACE INTO extraction_versions VALUES(?,2)',(h,))
+                count+=1
+        return count
+    def attachments(self,h):
+        return self.db.execute('SELECT filename,mime,length(content) FROM attachment_index WHERE hash=? ORDER BY part',(h,)).fetchall()
+    def health(self):
+        from sync_lock import sync_lock
+        with sync_lock(self.root):
+            return self._health()
+    def _health(self):
+        checks=self.db.execute('PRAGMA quick_check').fetchall()
+        foreign=self.db.execute('PRAGMA foreign_key_check').fetchall()
+        hashes={h for h, in self.db.execute('SELECT hash FROM messages')}
+        indexed={h for h, in self.db.execute('SELECT hash FROM search')}
+        raw={p.stem for p in self.raw.glob('*.eml') if p.is_file()}
+        duplicate=self.db.execute('SELECT count(*) FROM search').fetchone()[0]-len(indexed)
+        return {'sqlite_ok':checks==[('ok',)],'foreign_key_errors':len(foreign),'messages':len(hashes),
+                'index_missing':sorted(hashes-indexed),'index_extra':sorted(indexed-hashes),
+                'index_duplicate_rows':duplicate,'raw_missing':sorted(hashes-raw),
+                'raw_unindexed':sorted(raw-hashes),'raw_invalid':self.verify()}
+    def recover_orphans(self):
+        """Re-ingest valid raw originals left behind by an interrupted ingest.
+
+        Only byte-verified files with a valid hash are recovered; no origin is
+        invented, so a recovered message has no mailbox provenance.
+        """
+        from sync_lock import sync_lock
+        recovered=[]
+        with sync_lock(self.root):
+            for path in sorted(self.raw.glob('*.eml')):
+                h=path.stem
+                if not valid_hash(h) or path.is_symlink() or not path.is_file(): continue
+                if self.db.execute('SELECT 1 FROM messages WHERE hash=?',(h,)).fetchone(): continue
+                if path.stat().st_size>64*1024*1024: continue
+                raw=path.read_bytes()
+                if hashlib.sha256(raw).hexdigest()!=h: continue
+                self._ingest(raw)
+                recovered.append(h)
+        return recovered
     def find(self, query, limit=100):
         limit=max(1,min(int(limit),5000))
         try:
@@ -54,13 +134,22 @@ class Archive:
             except sqlite3.OperationalError:
                 return []
     def verify(self):
-        return [h for (h,) in self.db.execute('SELECT hash FROM messages') if not (p:=self.raw/(h+'.eml')).is_file() or hashlib.sha256(p.read_bytes()).hexdigest()!=h]
+        bad=[]
+        for h, in self.db.execute('SELECT hash FROM messages'):
+            if not valid_hash(h): bad.append(h); continue
+            path=self.raw/(h+'.eml')
+            try:
+                if path.is_symlink() or not path.is_file(): bad.append(h); continue
+                with path.open('rb') as f:
+                    if hashlib.file_digest(f,'sha256').hexdigest()!=h: bad.append(h)
+            except OSError: bad.append(h)
+        return bad
     def export(self, hashes, destination):
         dest=Path(destination)
         hashes=list(dict.fromkeys(hashes))
         if not hashes: raise ValueError('Select at least one message')
         for h in hashes:
-            if not isinstance(h,str) or len(h)!=64 or any(x not in '0123456789abcdef' for x in h):
+            if not valid_hash(h):
                 raise ValueError('Invalid message hash')
             if not self.db.execute('SELECT 1 FROM messages WHERE hash=?',(h,)).fetchone():
                 raise ValueError('Unknown message')
@@ -68,7 +157,9 @@ class Archive:
         try:
             manifest=[]
             for h in hashes:
-                raw=(self.raw/(h+'.eml')).read_bytes()
+                source=self.raw/(h+'.eml')
+                if source.is_symlink(): raise ValueError('Unsafe raw file')
+                raw=source.read_bytes()
                 if hashlib.sha256(raw).hexdigest()!=h: raise ValueError('Integrity mismatch')
                 with os.fdopen(os.open(dest/(h+'.eml'),os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'wb') as output:
                     output.write(raw)
@@ -155,22 +246,36 @@ class Archive:
                 if status!='OK': raise RuntimeError('Fetch failed')
                 payload=[p[1] for p in parts if isinstance(p,tuple)]
                 if len(payload)!=1: raise RuntimeError('Unexpected fetch response')
-                self.ingest(payload[0],origin); count+=1
+                self._ingest(payload[0],origin); count+=1
                 if prefs['batch_limit'] and count>=prefs['batch_limit']: break
             return count
 
 def main(argv=None):
     import getpass, sys
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version'); q=sub.add_parser('search-all'); q.add_argument('query'); q.add_argument('--limit',type=int,default=100); q.add_argument('--sources',default='email,facebook'); sub.add_parser('serve'); q=sub.add_parser('schedule'); q.add_argument('args',nargs=argparse.REMAINDER); q=sub.add_parser('migrate'); q.add_argument('--dry-run',action='store_true'); q.add_argument('--no-snapshot',action='store_true')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version'); q=sub.add_parser('search-all'); q.add_argument('query'); q.add_argument('--limit',type=int,default=100); q.add_argument('--sources',default='email,facebook'); sub.add_parser('serve'); sub.add_parser('health'); sub.add_parser('reindex'); sub.add_parser('recover-orphans'); q=sub.add_parser('backup'); q.add_argument('destination'); q=sub.add_parser('verify-backup'); q.add_argument('snapshot'); q=sub.add_parser('restore'); q.add_argument('snapshot'); q=sub.add_parser('schedule'); q.add_argument('args',nargs=argparse.REMAINDER); q=sub.add_parser('migrate'); q.add_argument('--dry-run',action='store_true'); q.add_argument('--no-snapshot',action='store_true')
     a=p.parse_args(argv)
     if a.cmd=='migrate':
         from migrations import report
         print(json.dumps(report(Path(a.archive).expanduser().resolve(),a.dry_run,not a.no_snapshot),indent=2))
         return 0
+    if a.cmd in ('backup','verify-backup','restore'):
+        import backup
+        try:
+            if a.cmd=='backup': result=backup.backup(a.archive,a.destination)
+            elif a.cmd=='verify-backup': result=backup.validate_snapshot(Path(a.snapshot).expanduser())
+            else: result=backup.restore(a.snapshot,a.archive)
+        except (ValueError,FileExistsError,OSError,sqlite3.Error) as exc:
+            print(f'{a.cmd}: {exc}',file=sys.stderr); return 1
+        print(json.dumps(result)); return 0
     ar=Archive(a.archive)
     if a.cmd=='import':
         for f in a.files: print(ar.ingest(Path(f).read_bytes()))
+    elif a.cmd=='reindex': print(ar.reindex())
+    elif a.cmd=='recover-orphans': print(json.dumps(ar.recover_orphans()))
+    elif a.cmd=='health':
+        diagnosis=ar.health(); print(json.dumps(diagnosis,indent=2))
+        return int(not diagnosis['sqlite_ok'] or any(diagnosis[k] for k in ('foreign_key_errors','index_missing','index_extra','index_duplicate_rows','raw_missing','raw_unindexed','raw_invalid')))
     elif a.cmd=='search': print(json.dumps(ar.find(a.query),indent=2))
     elif a.cmd=='search-all':
         from unified import search_unified

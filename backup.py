@@ -1,0 +1,179 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 Honey Badger Universe
+"""Independent, verified snapshots of an archive directory.
+
+A snapshot is a directory holding the databases, the configuration files and
+every raw original, plus a manifest of SHA-256 hashes. Snapshots are built in
+a staging directory, validated, and only then renamed into place, so a
+partial or tampered copy is never mistaken for a usable backup.
+"""
+import hashlib
+import json
+import shutil
+import sqlite3
+import tempfile
+from contextlib import closing
+from pathlib import Path
+
+from sync_lock import sync_lock
+
+DATABASES = ('archive.sqlite3', 'research.sqlite3')
+CONFIG = ('preferences.json', 'schedule.json', 'schedule-status.json')
+MANIFEST = 'backup-manifest.json'
+
+def digest(path):
+    with path.open('rb') as handle:
+        return hashlib.file_digest(handle, 'sha256').hexdigest()
+
+def connect(path):
+    """Open a database read-only through a file URI, so validation cannot write."""
+    return sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
+
+def copydb(source, target):
+    with closing(connect(source)) as src, closing(sqlite3.connect(target)) as dst:
+        src.backup(dst)
+        if dst.execute('PRAGMA journal_mode=DELETE').fetchone()[0].lower() != 'delete':
+            raise ValueError('Cannot normalize snapshot journal mode')
+
+def _entries(root):
+    """Every entry below `root`, refusing symlinks and special files."""
+    pending = [root]
+    entries = []
+    while pending:
+        for child in pending.pop().iterdir():
+            if child.is_symlink():
+                raise ValueError('Unsafe snapshot entry')
+            if child.is_dir():
+                pending.append(child)
+            elif not child.is_file():
+                raise ValueError('Unsafe snapshot entry')
+            entries.append(child)
+    return entries
+
+def _valid_raw_name(name):
+    stem, _, suffix = name.rpartition('.')
+    return (name.startswith('raw/') and suffix == 'eml' and len(stem) == 68
+            and all(c in '0123456789abcdef' for c in stem[4:]))
+
+def validate_snapshot(root):
+    """Raise ValueError unless `root` is a complete, unaltered snapshot."""
+    root = Path(root)
+    manifest_path = root / MANIFEST
+    if manifest_path.is_symlink():
+        raise ValueError('Unsafe manifest')
+    if not manifest_path.is_file():
+        raise ValueError('Missing backup manifest')
+    manifest = json.loads(manifest_path.read_text())
+    if manifest.get('version') != 1 or not isinstance(manifest.get('files'), dict):
+        raise ValueError('Invalid backup manifest')
+    expected = manifest['files']
+    entries = _entries(root)
+    if any(p.is_dir() and p.relative_to(root).as_posix() != 'raw' for p in entries):
+        raise ValueError('Unexpected snapshot directory')
+    actual = {p.relative_to(root).as_posix() for p in entries
+              if p.is_file() and p != root / MANIFEST}
+    allowed = set(DATABASES + CONFIG)
+    if any(name not in allowed and not _valid_raw_name(name) for name in actual):
+        raise ValueError('Unexpected snapshot file')
+    if set(expected) != actual:
+        raise ValueError('Backup file set mismatch')
+    for name, recorded in expected.items():
+        path = root / name
+        if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()) or digest(path) != recorded:
+            raise ValueError('Backup hash mismatch: ' + name)
+    for name in DATABASES:
+        if name not in expected:
+            if name == 'archive.sqlite3':
+                raise ValueError('Missing archive database')
+            continue
+        with closing(connect(root / name)) as db:
+            if db.execute('PRAGMA integrity_check').fetchall() != [('ok',)]:
+                raise ValueError('SQLite integrity failure')
+            if db.execute('PRAGMA foreign_key_check').fetchone():
+                raise ValueError('Foreign key failure')
+            if name == 'archive.sqlite3':
+                hashes = {h for h, in db.execute('SELECT hash FROM messages')}
+                indexed = [h for h, in db.execute('SELECT hash FROM search')]
+                if hashes != set(indexed) or len(set(indexed)) != len(indexed):
+                    raise ValueError('Search index mismatch')
+                for h in hashes:
+                    if expected.get('raw/' + h + '.eml') != h:
+                        raise ValueError('Original message missing or altered: ' + h)
+    return {'files': len(expected), 'verified': True}
+
+def publish_stage(stage, dest):
+    """Reserve the destination atomically; never replace an existing backup."""
+    dest.mkdir(mode=0o700)
+    try:
+        for child in stage.iterdir():
+            child.rename(dest / child.name)
+    except BaseException:
+        shutil.rmtree(dest)
+        raise
+
+def backup(root, destination):
+    root = Path(root).expanduser().resolve()
+    dest = Path(destination).expanduser().resolve()
+    if dest.is_relative_to(root) or root.is_relative_to(dest):
+        raise ValueError('Backup must be outside archive')
+    if dest.exists():
+        raise FileExistsError(f'Destination already exists: {dest}')
+    if not (root / 'archive.sqlite3').is_file():
+        raise ValueError('No archive database to back up')
+    if (root / 'raw').is_symlink():
+        raise ValueError('Unsafe source raw directory')
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with sync_lock(root), tempfile.TemporaryDirectory(dir=dest.parent, prefix='.hb-backup-') as tmp:
+        stage = Path(tmp)
+        (stage / 'raw').mkdir(mode=0o700)
+        for name in DATABASES:
+            if (root / name).is_file():
+                if (root / name).is_symlink():
+                    raise ValueError('Unsafe source database')
+                copydb(root / name, stage / name)
+        for name in CONFIG:
+            if (root / name).is_file():
+                if (root / name).is_symlink():
+                    raise ValueError('Unsafe source configuration')
+                shutil.copyfile(root / name, stage / name)
+        with closing(connect(stage / 'archive.sqlite3')) as db:
+            for h, in db.execute('SELECT hash FROM messages'):
+                if len(h) != 64 or any(c not in '0123456789abcdef' for c in h):
+                    raise ValueError('Invalid message hash')
+                source = root / 'raw' / (h + '.eml')
+                if source.is_symlink():
+                    raise ValueError('Unsafe source message')
+                shutil.copyfile(source, stage / 'raw' / (h + '.eml'))
+        files = {p.relative_to(stage).as_posix(): digest(p) for p in stage.rglob('*') if p.is_file()}
+        (stage / MANIFEST).write_text(json.dumps({'version': 1, 'files': files}, indent=2))
+        result = validate_snapshot(stage)
+        publish_stage(stage, dest)
+        return result
+
+def restore(snapshot, destination):
+    src = Path(snapshot).expanduser().resolve()
+    dest = Path(destination).expanduser().resolve()
+    if dest.is_relative_to(src) or src.is_relative_to(dest):
+        raise ValueError('Restore must use independent destination')
+    if dest.exists():
+        raise FileExistsError(f'Destination already exists: {dest}')
+    validate_snapshot(src)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=dest.parent, prefix='.hb-restore-') as tmp:
+        stage = Path(tmp)
+        for child in src.iterdir():
+            if child.is_dir():
+                shutil.copytree(child, stage / child.name)
+            else:
+                shutil.copyfile(child, stage / child.name)
+        result = validate_snapshot(stage)
+        # A restored copy must not resume background jobs on its own.
+        path = stage / 'schedule.json'
+        if path.exists():
+            profiles = json.loads(path.read_text())
+            for profile in profiles.values():
+                profile['enabled'] = False
+            path.write_text(json.dumps(profiles, indent=2))
+        (stage / MANIFEST).unlink()
+        publish_stage(stage, dest)
+        return result

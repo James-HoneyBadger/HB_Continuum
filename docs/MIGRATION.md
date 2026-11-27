@@ -6,7 +6,7 @@ sense that the previous database file is preserved before any migration.
 
 | Database | File | Purpose |
 |---|---|---|
-| `archive` | `archive.sqlite3` | Messages, FTS5 index, mailbox origins |
+| `archive` | `archive.sqlite3` | Messages, FTS5 index, mailbox origins, attachment index |
 | `research` | `research.sqlite3` | Workspaces, tags, fields, reports, summaries |
 | `catalog` | `catalog.sqlite3` | Source-independent records (e.g. Facebook) |
 
@@ -45,9 +45,22 @@ archive:
 
 ```
 MigrationError: The archive database was written by a newer version
-(schema 2, this build supports 1). Upgrade the application instead of
+(schema 3, this build supports 2). Upgrade the application instead of
 opening it with an older build.
 ```
+
+## Archive version 2: attachments and extraction tracking
+
+Version 2 adds `attachment_index` (filename, MIME type and bounded text for
+each MIME part) and `extraction_versions` (which messages were extracted by
+the current extractor). Both are additive; existing rows, hashes and mailbox
+origins are untouched.
+
+Messages stored by an older build keep their previous body text until they
+are re-extracted. `dispatch reindex` performs that upgrade from the preserved
+raw originals, verifying each SHA-256 and committing per message, so it can
+be interrupted and resumed. It also repairs search rows that are missing or
+duplicated. See `docs/ARCHIVE_HARDENING.md`.
 
 ## Inspecting and migrating
 
@@ -89,11 +102,13 @@ Snapshots are only taken when a migration actually applies; re-running
 
 ## Backup recommendations
 
-Schema snapshots are a migration safety net, not a backup strategy. Take a
-full backup of the archive directory — `raw/` plus every database and
-configuration file — with all writers stopped, on encrypted storage, and
-test the restoration. Migration snapshots contain no `raw/` files, so they
-cannot reconstruct an archive on their own.
+Schema snapshots are a migration safety net, not a backup strategy. Use
+`python3 dispatch.py --archive <archive> backup <destination>` for a full,
+verified snapshot (`raw/` plus databases and configuration) and
+`verify-backup` to re-check it later; see `docs/ARCHIVE_HARDENING.md`.
+Store backups on encrypted storage and test restoring them. Migration
+snapshots contain no `raw/` files, so they cannot reconstruct an archive on
+their own.
 
 ## Adding a migration
 

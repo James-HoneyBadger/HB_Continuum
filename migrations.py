@@ -34,6 +34,14 @@ ARCHIVE_V1 = (
     'PRIMARY KEY(account,folder,validity,uid))',
 )
 
+ARCHIVE_V2 = (
+    'CREATE TABLE IF NOT EXISTS attachment_index('
+    'hash TEXT NOT NULL REFERENCES messages(hash), part INTEGER, '
+    'filename TEXT, mime TEXT, content TEXT, PRIMARY KEY(hash,part))',
+    'CREATE TABLE IF NOT EXISTS extraction_versions('
+    'hash TEXT PRIMARY KEY REFERENCES messages(hash), version INTEGER NOT NULL)',
+)
+
 RESEARCH_V1 = (
     'CREATE TABLE IF NOT EXISTS workspaces('
     'name TEXT PRIMARY KEY, description TEXT NOT NULL)',
@@ -89,7 +97,7 @@ CATALOG_V2 = (
 )
 
 MIGRATIONS = {
-    'archive': {1: ARCHIVE_V1},
+    'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2},
     'research': {1: RESEARCH_V1},
     'catalog': {1: CATALOG_V1, 2: CATALOG_V2},
 }

@@ -92,7 +92,10 @@ def launch(archive):
             data=archive.details(h)
             keys=('subject','sender','date','message_id','reply_to') if prefs['show_message_ids'] else ('subject','sender','date')
             header='\n'.join(f"{k}: {data[k]}" for k in keys)
-            display(header+('\nSHA-256: '+h if prefs['show_hash'] else '')+'\n\n'+data['body'])
+            attachments=archive.attachments(h)
+            listing=('\nAttachments (indexed metadata):\n'+'\n'.join(
+                f'{name} | {mime} | {size} indexed characters' for name,mime,size in attachments)) if attachments else ''
+            display(header+('\nSHA-256: '+h if prefs['show_hash'] else '')+listing+'\n\n'+data['body'])
         except Exception as e: messagebox.showerror('Message',str(e))
     def show_thread():
         selected=rows.selection()
