@@ -615,6 +615,22 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(self.server.handle(request('timeline',sender=5))['error']['code'],'INVALID_PARAMS')
         self.assertEqual(self.server.handle(request('correspondents',limit=0))['error']['code'],'INVALID_PARAMS')
 
+    def test_relationships_over_ipc(self):
+        self.a.ingest(b'From: b@example.invalid\r\nSubject: Re: Silver invoice\r\n'
+                      b'Message-ID: <reply@example.invalid>\r\n'
+                      b'In-Reply-To: <test@example.invalid>\r\n\r\nAgreed')
+        graph=self.server.handle(request('relationships'))['result']
+        self.assertEqual({(e['source_actor'],e['target_actor']) for e in graph['edges']},
+                         {('a@example.invalid','b@example.invalid')})
+        self.assertEqual(len(graph['nodes']),2)
+        self.assertIn('definitions',graph)
+        self.assertEqual(self.server.handle(request('relationships',limit_nodes=1))['error']['code'],
+                         'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request('relationships',max_edges=0))['error']['code'],
+                         'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request('relationships',after='yesterday'))['error']['code'],
+                         'INVALID_PARAMS')
+
     def test_timeline_pagination_and_reverse_order(self):
         for hour in range(1,5):
             self.a.ingest(f'From: t@example.invalid\r\nSubject: H{hour}\r\n'

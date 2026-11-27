@@ -14,6 +14,7 @@ import PreferencesView from "./components/PreferencesView.vue";
 import HealthView from "./components/HealthView.vue";
 import BackupView from "./components/BackupView.vue";
 import TimelineView from "./components/TimelineView.vue";
+import RelationshipsView from "./components/RelationshipsView.vue";
 
 interface Stats {
   archive: { messages: number; origins: number };
@@ -23,6 +24,7 @@ interface Stats {
 const tabs = [
   "Overview",
   "Timeline",
+  "Relationships",
   "Search",
   "Sources",
   "Import",
@@ -114,6 +116,7 @@ onMounted(refreshStats);
         <OverviewView v-if="tab === 'Overview'" :on-error="reportError" :on-changed="refreshStats" />
         <SearchView v-else-if="tab === 'Search'" :on-error="reportError" :on-changed="refreshStats" />
         <TimelineView v-else-if="tab === 'Timeline'" :on-error="reportError" :on-changed="refreshStats" />
+        <RelationshipsView v-else-if="tab === 'Relationships'" :on-error="reportError" :on-changed="refreshStats" />
         <SourcesView v-else-if="tab === 'Sources'" :on-error="reportError" :on-changed="refreshStats" />
         <ImportView v-else-if="tab === 'Import'" :on-error="reportError" :on-changed="refreshStats" />
         <ResearchView v-else-if="tab === 'Research'" :on-error="reportError" :on-changed="refreshStats" />

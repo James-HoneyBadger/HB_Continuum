@@ -66,7 +66,8 @@ landed (Overview dashboard, design tokens, timeline pagination).
   engine events through a shared job composable; the Import tab offers
   Facebook export preview and background import alongside EML import; the
   Timeline tab shows chronological messages with per-correspondent counts
-  and a reader.
+  and a reader; a Relationships tab shows observed co-participation in shared
+  threads.
 - Packaged engine (branch `develop/engine-expansion`):
   `scripts/build_engine.py` builds `dispatch.py` with PyInstaller into
   `dist/hb-engine` and copies it to `src-tauri/binaries/hb-engine-<host-triple>`
@@ -75,7 +76,7 @@ landed (Overview dashboard, design tokens, timeline pagination).
   startup error when none exists. A `--smoke` mode exercises the built binary,
   and CI builds and smoke-tests it on Ubuntu, macOS and Windows.
 - Desktop shell client: drives `stats`, `search`, `message`, `thread`,
-  `timeline`, `correspondents`, `record`, `verify`, `health`, `import_eml`,
+  `timeline`, `correspondents`, `relationships`, `record`, `verify`, `health`, `import_eml`,
   `facebook_preview`/`facebook_import`, `preferences`, the full research
   overlay (workspaces, saved searches, tags, fields, metadata, reports with
   CSV export, rule rebuild), evidence export, synchronization profiles and
@@ -174,6 +175,28 @@ landed (Overview dashboard, design tokens, timeline pagination).
   the active query and filters is shown above the results.
 - Tests cover sender/kind/tag filters, exact counts, inexact tag totals,
   query validation and IPC validation.
+
+### Relationship explorer (2026-11-27)
+
+- `relationships` builds a graph from observed co-participation only: two
+  participants are linked when they appear in the same archived email thread
+  (Message-ID / In-Reply-To component) or the same catalog conversation key
+  (`record_kind='message'` grouped by `source_key`). Shared subjects, similar
+  dates and address-book matches are never used as links.
+- Node ids are prefixed with their source (`email|addr`,
+  `facebook|name`), so an email address and a catalog actor are never merged
+  into one identity. Each edge carries the number of shared threads, the
+  messages involved and up to three example records.
+- Caps keep the query bounded: 12 participants per thread, 100 nodes and 500
+  edges. `truncated` reports when participants or edges were omitted. Date
+  filters use normalized `sort_ts` and catalog `occurred_at`.
+- The Relationships workspace shows a small SVG for up to 16 participants,
+  a sortable-by-count table with examples, date and limit controls, and the
+  definitions as visible text.
+- Tests cover pairwise thread links, same-sender non-edges, separate
+  threads, date filters, catalog conversations, cross-source identity
+  separation, participant/edge truncation, an empty archive and IPC
+  validation.
 
 ### Report drafts from collections (2026-11-27)
 
@@ -309,6 +332,10 @@ until the shell's flows are exercised against real archives.
 
 ## Files changed
 
+- Relationship increment (2026-11-27): `dispatch.py`, `ipc.py`,
+  `src-tauri/src/lib.rs`, `frontend/src/App.vue`,
+  `frontend/src/components/RelationshipsView.vue` (new),
+  `tests/test_relationships.py` (new), `tests/test_ipc.py`, `README.md`.
 - Draft increment (2026-11-27): `migrations.py`, `research.py`,
   `reporting.py`, `ipc.py`, `src-tauri/src/lib.rs`,
   `frontend/src/components/CollectionsView.vue`, `tests/test_collections.py`,
@@ -420,12 +447,12 @@ until the shell's flows are exercised against real archives.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 232 tests, 231 pass and 1 is
+- `python3 -m unittest discover -s tests`: 241 tests, 240 pass and 1 is
   skipped on this machine (the optional `keyring` backend is not
   installed). Includes 8 timestamp/chronology tests, 2 real-process lock
   tests, 5 import-run tests, 6 journal tests, 8 collection/draft tests,
   5 report tests, 11 source management/verification tests, 10 unified-search
-  tests and 54 IPC tests.
+  tests, 8 relationship tests and 55 IPC tests.
 - `mypy` (2.4.1, matching CI): no issues in 19 source files.
 - `cargo test` (src-tauri): 3 tests pass, covering bundled-sidecar
   preference, the development script fallback and resolution from a bare

@@ -470,6 +470,27 @@ def _correspondents(root, limit=100):
         conn.close()
     return [{'sender': sender or '', 'count': count} for sender, count in rows]
 
+def _relationships(root, limit_nodes=30, max_edges=200, after=None, before=None):
+    from dispatch import relationship_graph
+    base = Path(root)
+    path = base / 'archive.sqlite3'
+    if not path.is_file():
+        raise IPCError('ARCHIVE_NOT_AVAILABLE', 'The selected archive has no archive.sqlite3')
+    if not isinstance(limit_nodes, int) or isinstance(limit_nodes, bool) \
+            or not 2 <= limit_nodes <= 100:
+        raise IPCError('INVALID_PARAMS', 'limit_nodes must be an integer between 2 and 100')
+    if not isinstance(max_edges, int) or isinstance(max_edges, bool) \
+            or not 1 <= max_edges <= 500:
+        raise IPCError('INVALID_PARAMS', 'max_edges must be an integer between 1 and 500')
+    for name, value in (('after', after), ('before', before)):
+        if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
+            raise IPCError('INVALID_PARAMS', f'{name} must be a UTC epoch integer')
+    conn = _ro_connect(path)
+    try:
+        return relationship_graph(conn, base, limit_nodes, max_edges, after, before)
+    finally:
+        conn.close()
+
 def _migration_report(root):
     """Report on-disk schema versions and pending steps without migrating."""
     from migrations import report
@@ -1282,6 +1303,10 @@ class IPCServer:
                 return _result(request_id, _dashboard(self.root))
             if method == 'correspondents':
                 return _result(request_id, _correspondents(self.root, params.get('limit', 100)))
+            if method == 'relationships':
+                return _result(request_id, _relationships(
+                    self.root, params.get('limit_nodes', 30), params.get('max_edges', 200),
+                    params.get('after'), params.get('before')))
             if method == 'record':
                 return _result(request_id, _record(self.root, params.get('record_id')))
             if method == 'verify':

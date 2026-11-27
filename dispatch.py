@@ -85,6 +85,171 @@ def timeline_rows(conn, sender=None, limit=100, offset=0, order='asc', after=Non
     except sqlite3.OperationalError:
         return _legacy_timeline(conn,sender,limit,offset,order,after,before)
 
+def _thread_groups(rows):
+    """Group messages that share Message-ID / In-Reply-To links.
+
+    `rows` is an iterable of `(hash, message_id, reply_to)`. Only links among
+    the supplied messages are followed; no subject or time-based guesses.
+    """
+    rows = list(rows)
+    parent = {}
+    def find(value):
+        while parent[value] != value:
+            parent[value] = parent[parent[value]]
+            value = parent[value]
+        return value
+    def union(first, second):
+        left, right = find(first), find(second)
+        if left != right:
+            parent[right] = left
+    by_message_id = {}
+    for digest, message_id, _ in rows:
+        parent[digest] = digest
+        if message_id:
+            by_message_id.setdefault(message_id, []).append(digest)
+    for digest, message_id, reply_to in rows:
+        if message_id:
+            for other in by_message_id.get(message_id, ()):
+                union(digest, other)
+        if reply_to:
+            for target in by_message_id.get(reply_to, ()):
+                union(digest, target)
+    groups = {}
+    for digest in parent:
+        groups.setdefault(find(digest), []).append(digest)
+    return list(groups.values())
+
+def relationship_graph(conn, root, limit_nodes=30, max_edges=200, after=None, before=None):
+    """Observed co-participation in shared email threads or catalog conversations.
+
+    An edge means two participants appear in the same archived thread
+    (Message-ID / In-Reply-To) or the same catalog conversation key. It is
+    not a claim about the nature of any relationship. Isolated
+    correspondents and pairs beyond the requested limits are omitted and
+    reported as truncated.
+    """
+    from collections import Counter
+    from itertools import combinations
+    limit_nodes = max(2, min(int(limit_nodes), 100))
+    max_edges = max(1, min(int(max_edges), 500))
+    node_stats = {}
+    edge_data = {}
+
+    def add_group(source, counter, example):
+        people = sorted(counter)[:12]
+        size = sum(counter.values())
+        for person in people:
+            stats = node_stats.setdefault((source, person), {'messages': 0, 'threads': 0})
+            stats['messages'] += counter[person]
+            stats['threads'] += 1
+        for first, second in combinations(people, 2):
+            entry = edge_data.setdefault((source, first, second),
+                                         {'threads': 0, 'messages': 0, 'examples': []})
+            entry['threads'] += 1
+            entry['messages'] += size
+            if example and len(entry['examples']) < 3:
+                entry['examples'].append(example)
+
+    try:
+        clauses = []
+        params = []
+        if after is not None:
+            clauses.append('sort_ts>=?'); params.append(int(after))
+        if before is not None:
+            clauses.append('sort_ts<?'); params.append(int(before))
+        sql = ('SELECT hash,message_id,reply_to,sender,subject,date FROM messages'
+               + (' WHERE ' + ' AND '.join(clauses) if clauses else ''))
+        rows = conn.execute(sql, params).fetchall()
+    except sqlite3.OperationalError:
+        from timestamps import parse_timestamp
+        rows = []
+        for row in conn.execute(
+                'SELECT hash,message_id,reply_to,sender,subject,date FROM messages'):
+            epoch, _ = parse_timestamp(row[5])
+            if after is not None and (epoch is None or epoch < after):
+                continue
+            if before is not None and (epoch is None or epoch >= before):
+                continue
+            rows.append(row)
+    info = {row[0]: {'sender': row[3] or '', 'subject': row[4] or '',
+                     'date': row[5] or ''} for row in rows}
+    for group in _thread_groups((row[0], row[1], row[2]) for row in rows):
+        people = Counter(info[digest]['sender'] for digest in group
+                         if info[digest]['sender'])
+        example = None
+        for digest in group:
+            if info[digest]['subject']:
+                example = {'kind': 'email', 'id': digest,
+                           'title': info[digest]['subject'],
+                           'date': info[digest]['date']}
+                break
+        if people:
+            add_group('email', people, example)
+
+    catalog_path = root / 'catalog.sqlite3'
+    if catalog_path.is_file():
+        from datetime import datetime, timezone
+        clauses = ["record_kind='message'", 'actor IS NOT NULL', "actor<>''"]
+        params = []
+        if after is not None:
+            clauses.append('occurred_at>=?')
+            params.append(datetime.fromtimestamp(after, timezone.utc).isoformat())
+        if before is not None:
+            clauses.append('occurred_at<?')
+            params.append(datetime.fromtimestamp(before, timezone.utc).isoformat())
+        with closing(sqlite3.connect(str(catalog_path), timeout=30)) as conn:
+            conn.execute('PRAGMA query_only=ON')
+            catalog_rows = conn.execute(
+                'SELECT source_type,source_key,actor,record_id,occurred_at '
+                'FROM records WHERE ' + ' AND '.join(clauses), params).fetchall()
+        conversations = {}
+        for source_type, source_key, actor, record_id, occurred in catalog_rows:
+            conversations.setdefault((source_type, source_key), []).append(
+                (actor, record_id, occurred))
+        for (source_type, source_key), members in conversations.items():
+            people = Counter(actor for actor, _, _ in members)
+            example = {'kind': 'catalog', 'id': members[0][1],
+                       'title': source_key or '', 'date': members[0][2] or ''}
+            add_group(source_type, people, example)
+
+    node_truncated = len(node_stats) > limit_nodes
+    edges = []
+    for (source, first, second), data in edge_data.items():
+        edges.append({'source': f'{source}|{first}', 'target': f'{source}|{second}',
+                      'source_type': source, 'source_actor': first,
+                      'target_actor': second, 'threads': data['threads'],
+                      'messages': data['messages'], 'examples': data['examples']})
+    edges.sort(key=lambda edge: (-edge['threads'], -edge['messages'],
+                                 edge['source_actor'], edge['target_actor']))
+    edge_truncated = len(edges) > max_edges
+    edges = edges[:max_edges]
+    used = {edge['source'] for edge in edges} | {edge['target'] for edge in edges}
+    nodes = [{'id': f'{source}|{actor}', 'source': source, 'actor': actor,
+              'messages': stats['messages'], 'shared_threads': stats['threads']}
+             for (source, actor), stats in node_stats.items()
+             if f'{source}|{actor}' in used]
+    nodes.sort(key=lambda node: (-node['shared_threads'], -node['messages'], node['actor']))
+    nodes = nodes[:limit_nodes]
+    allowed = {node['id'] for node in nodes}
+    edges = [edge for edge in edges
+             if edge['source'] in allowed and edge['target'] in allowed]
+    return {
+        'nodes': nodes, 'edges': edges,
+        'truncated': node_truncated or edge_truncated,
+        'definitions': [
+            'Edges mean two participants appear in the same archived email thread '
+            '(Message-ID / In-Reply-To) or the same catalog conversation key.',
+            'A shared thread does not imply any personal, professional or causal '
+            'relationship.',
+            'Only participants with at least one shared thread are listed; isolated '
+            'correspondents are omitted.',
+            f'At most 12 participants per thread are compared; at most {max_edges} edges '
+            f'and {limit_nodes} nodes are returned, and anything beyond is truncated.',
+            'Email addresses and catalog actor names are never merged across sources.',
+        ],
+    }
+
+
 def correspondent_counts(conn, limit=100):
     return conn.execute(
         "SELECT sender, count(*) FROM messages GROUP BY sender ORDER BY count(*) DESC, sender LIMIT ?",
@@ -617,6 +782,9 @@ class Archive:
         return timeline_rows(self.db,sender,limit,offset,order,after,before)
     def correspondents(self, limit=100):
         return correspondent_counts(self.db,limit)
+    def relationship_graph(self, limit_nodes=30, max_edges=200, after=None, before=None):
+        return relationship_graph(self.db, self.root, limit_nodes, max_edges, after, before)
+
     def thread(self, digest):
         """Return linked messages using Message-ID and In-Reply-To, not subject guesses."""
         row=self.db.execute('SELECT message_id,reply_to FROM messages WHERE hash=?',(digest,)).fetchone()

@@ -118,6 +118,10 @@ Group selected records into named collections inside a research workspace. Items
 
 A collection can also hold **report drafts**: titled notes that render a chronology ordered by declared date, evidence gaps for records that have gone missing, and explicit limitations. Drafts export as Markdown, JSON or standalone HTML, are stored as user annotations rather than evidence, and never replace an existing file.
 
+## Relationship explorer
+
+The Relationships workspace links participants only when they appear together in the same archived email thread (Message-ID / In-Reply-To) or the same catalog conversation. It never infers a relationship from a shared subject, a similar date or an address-book match. Email addresses and catalog actor names stay separate identities, each edge lists the shared threads, message counts and example records, and 12 participants per thread, 100 nodes and 500 edges are hard caps with explicit truncation. A shared thread is co-participation, not proof of any personal or causal connection.
+
 ## Journal and archive reports
 
 The Journal stores your own retrospective entries in the research overlay, separate from preserved evidence. Every edit adds a revision; saving without changes adds nothing. Removal is soft, so history stays inspectable and the entry can be restored.

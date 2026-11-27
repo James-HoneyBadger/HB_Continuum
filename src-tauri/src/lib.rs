@@ -268,6 +268,26 @@ fn correspondents(state: State<AppState>, limit: Option<u32>) -> Result<Value, S
 }
 
 #[tauri::command]
+fn relationships(
+    state: State<AppState>,
+    limit_nodes: Option<u32>,
+    max_edges: Option<u32>,
+    after: Option<i64>,
+    before: Option<i64>,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "relationships",
+        json!({
+            "limit_nodes": limit_nodes.unwrap_or(30),
+            "max_edges": max_edges.unwrap_or(200),
+            "after": after,
+            "before": before,
+        }),
+    )
+}
+
+#[tauri::command]
 fn record(state: State<AppState>, record_id: String) -> Result<Value, String> {
     call(&state, "record", json!({ "record_id": record_id }))
 }
@@ -811,7 +831,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ping, stats, search, search_validate, message, thread, timeline, dashboard,
-            correspondents,
+            correspondents, relationships,
             record, verify, health,
             reindex, recover_orphans, migrate_status, backup, verify_backup, restore,
             facebook_preview, facebook_import,
