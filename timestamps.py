@@ -10,6 +10,7 @@ timeline can place them deterministically without inventing chronology.
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
+
 def _epoch(value):
     """Epoch seconds for a datetime, treating naive values as UTC."""
     if value.tzinfo is None:
@@ -22,6 +23,7 @@ def _epoch(value):
 def _precision(text):
     """`second` when the text carries a time of day, else `day`."""
     return 'second' if ':' in text else 'day'
+
 
 def parse_timestamp(value):
     """Return `(epoch_seconds, precision)` for an archived date string.
