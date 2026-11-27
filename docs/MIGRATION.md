@@ -86,6 +86,25 @@ recomputes them from the stored date text while it re-extracts a message. A
 read-only client that opens an older archive without migrating still gets a
 correct (in-memory) order as a fallback.
 
+## Archive version 4: import history
+
+Version 4 adds `import_runs`, an append-only log of import attempts:
+
+| Column | Meaning |
+|---|---|
+| `source` | `eml`, `imap` or `facebook` |
+| `source_key` | Account, mailbox (with folder), or the selected paths |
+| `started_at`, `finished_at` | UTC ISO 8601 timestamps; `finished_at` is empty while running or after a crash |
+| `status` | `running`, `ok`, `cancelled` or `error` |
+| `files_seen`, `records_seen` | What the run examined |
+| `records_new`, `records_existing`, `records_failed` | Outcome counts |
+| `detail` | Exception type for a failed run |
+
+The log records observed counts only. A process killed mid-run leaves
+`running`, which is reported as an interrupted attempt rather than being
+silently rewritten as success. Nothing is backfilled for imports performed
+before version 4; the UI reports history as unavailable for those runs.
+
 ## Inspecting and migrating
 
 Opening the archive at all (`dispatch`, `dispatch gui`) migrates
