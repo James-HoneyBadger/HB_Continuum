@@ -90,6 +90,16 @@ ARCHIVE_V5 = (
     _backfill_message_sizes,
 )
 
+ARCHIVE_V6 = (
+    'CREATE TABLE IF NOT EXISTS source_settings('
+    'source TEXT NOT NULL, source_key TEXT NOT NULL, disabled_at TEXT, note TEXT, '
+    'PRIMARY KEY(source, source_key))',
+    'CREATE TABLE IF NOT EXISTS source_events('
+    'id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL, '
+    'source_key TEXT NOT NULL, action TEXT NOT NULL, at TEXT NOT NULL, detail TEXT)',
+    'CREATE INDEX IF NOT EXISTS source_events_by_time ON source_events(at DESC)',
+)
+
 RESEARCH_V1 = (
     'CREATE TABLE IF NOT EXISTS workspaces('
     'name TEXT PRIMARY KEY, description TEXT NOT NULL)',
@@ -159,10 +169,21 @@ CATALOG_V2 = (
     'INSERT INTO record_search(rowid, body, actor) SELECT rowid, body, actor FROM records',
 )
 
+CATALOG_V3 = (
+    'DROP TRIGGER IF EXISTS records_ad',
+    'DROP TRIGGER IF EXISTS records_au',
+    'CREATE TRIGGER IF NOT EXISTS records_ad AFTER DELETE ON records BEGIN '
+    'DELETE FROM record_search WHERE rowid = old.rowid; END',
+    'CREATE TRIGGER IF NOT EXISTS records_au AFTER UPDATE ON records BEGIN '
+    'DELETE FROM record_search WHERE rowid = old.rowid; '
+    'INSERT INTO record_search(rowid, body, actor) VALUES (new.rowid, new.body, new.actor); END',
+)
+
 MIGRATIONS = {
-    'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3, 4: ARCHIVE_V4, 5: ARCHIVE_V5},
+    'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3, 4: ARCHIVE_V4,
+                5: ARCHIVE_V5, 6: ARCHIVE_V6},
     'research': {1: RESEARCH_V1, 2: RESEARCH_V2},
-    'catalog': {1: CATALOG_V1, 2: CATALOG_V2},
+    'catalog': {1: CATALOG_V1, 2: CATALOG_V2, 3: CATALOG_V3},
 }
 
 def target_version(name):

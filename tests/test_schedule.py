@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (c) 2026 Honey Badger Universe
-import os, tempfile, unittest
+import tempfile, unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 from dispatch import Archive
-from schedule import profile,due,tick,write_json,read_json,service
+from schedule import profile,due,tick,write_json
 import schedule
-from sync_lock import LOCK_SUPPORTED, sync_lock, SyncBusy
+from sync_lock import LOCK_SUPPORTED, sync_lock
 
 class SchedulingTests(unittest.TestCase):
     def setUp(self):
@@ -58,6 +58,17 @@ class SchedulingTests(unittest.TestCase):
         with sync_lock(self.root):
             result=tick(self.root,now=self.now,get_password=lambda p:'fake')
         self.assertEqual(result['mail']['status'],'deferred: archive busy')
+        self.assertNotIn('last_attempt',result['mail'])
+
+    def test_disabled_source_is_skipped_without_an_attempt(self):
+        write_json(self.root/'schedule.json',{'mail':self.p})
+        archive=Archive(self.root)
+        try: archive.source_set_enabled('email','imap.gmail.com|user@example.invalid',False)
+        finally: archive.db.close()
+        with mock.patch.object(Archive,'sync',return_value=1) as sync:
+            result=tick(self.root,now=self.now,get_password=lambda p:'fake')
+        sync.assert_not_called()
+        self.assertEqual(result['mail']['status'],'disabled')
         self.assertNotIn('last_attempt',result['mail'])
 
     def test_tick_without_flock_runs_unescorted(self):

@@ -139,6 +139,34 @@ class IPCServerTests(unittest.TestCase):
         self.assertIsNotNone(run['finished_at'])
         self.assertEqual(self.server.handle(request('import_history',limit=0))['error']['code'],'INVALID_PARAMS')
 
+    def test_source_settings_and_removal_over_ipc(self):
+        with self.a.db:
+            self.a.db.execute('INSERT INTO origins VALUES(?,?,?,?,?)',
+                              ('imap.example|me','INBOX','1','1',self.h))
+        disabled=self.server.handle(request(
+            'source_set_enabled',source='email',source_key='imap.example|me',
+            enabled=False,note='paused'))['result']
+        self.assertFalse(disabled['enabled'])
+        account=self.server.handle(request('sources'))['result']['email_accounts'][0]
+        self.assertTrue(account['disabled'])
+        self.assertEqual(account['note'],'paused')
+        events=self.server.handle(request('source_events'))['result']['events']
+        self.assertEqual(events[0]['action'],'disabled')
+        preview=self.server.handle(request(
+            'source_removal_preview',source='email',source_key='imap.example|me'))['result']
+        self.assertEqual(preview['records_removed'],1)
+        unconfirmed=self.server.handle(request(
+            'source_remove',source='email',source_key='imap.example|me'))
+        self.assertEqual(unconfirmed['error']['code'],'CONFIRMATION_REQUIRED')
+        removed=self.server.handle(request(
+            'source_remove',source='email',source_key='imap.example|me',confirm=True))['result']
+        self.assertTrue(removed['removed'])
+        self.assertEqual(self.server.handle(request('sources'))['result']['email_accounts'],[])
+        self.assertEqual(self.server.handle(request('message',hash=self.h))['error']['code'],'NOT_FOUND')
+        self.assertEqual(self.server.handle(request(
+            'source_set_enabled',source='email',source_key='x',enabled='yes'))['error']['code'],
+            'INVALID_PARAMS')
+
     def test_sources_reports_accounts_and_footprint(self):
         with self.a.db:
             self.a.db.execute('INSERT INTO origins VALUES(?,?,?,?,?)',

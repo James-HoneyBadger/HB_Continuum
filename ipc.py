@@ -319,6 +319,11 @@ def _sources(root):
         except sqlite3.OperationalError:
             runs = []
             history_available = False
+        try:
+            settings = {(row[0], row[1]): (row[2], row[3]) for row in conn.execute(
+                'SELECT source,source_key,disabled_at,note FROM source_settings')}
+        except sqlite3.OperationalError:
+            settings = {}
     finally:
         conn.close()
 
@@ -336,7 +341,9 @@ def _sources(root):
         {'account': account, 'messages': messages, 'origins': origins,
          'folders': folders, 'earliest': iso(coverage.get(account, (None, None))[0]),
          'latest': iso(coverage.get(account, (None, None))[1]),
-         'last_import': last_run.get(account)}
+         'last_import': last_run.get(account),
+         'disabled': settings.get(('email', account), (None, None))[0] is not None,
+         'note': settings.get(('email', account), (None, None))[1]}
         for account, messages, origins, folders in accounts]
 
     catalog_sources = []
@@ -355,7 +362,11 @@ def _sources(root):
                     'WHERE source_type=? AND occurred_at IS NOT NULL', (source_type,)).fetchone()
                 catalog_sources.append({'source_type': source_type, 'files': files,
                                         'records': records, 'bytes': size,
-                                        'earliest': earliest, 'latest': latest})
+                                        'earliest': earliest, 'latest': latest,
+                                        'disabled': settings.get(
+                                            ('catalog', source_type), (None, None))[0] is not None,
+                                        'note': settings.get(
+                                            ('catalog', source_type), (None, None))[1]})
             catalog = _catalog_stats(base)
         finally:
             cat.close()
@@ -363,6 +374,46 @@ def _sources(root):
     return {'email_accounts': email_accounts, 'catalog_sources': catalog_sources,
             'catalog': catalog, 'storage': _storage_footprint(base),
             'history_available': history_available}
+
+def _with_archive(root, action):
+    """Run an archive mutation through the documented Archive API."""
+    from dispatch import Archive
+    archive = Archive(root)
+    try:
+        return action(archive)
+    finally:
+        archive.db.close()
+
+def _source_set_enabled(root, params):
+    source = _text(params.get('source'), 'source', 20)
+    key = _text(params.get('source_key'), 'source_key', 500)
+    enabled = params.get('enabled')
+    if not isinstance(enabled, bool):
+        raise IPCError('INVALID_PARAMS', 'enabled must be a boolean')
+    note = params.get('note')
+    if note is not None and not isinstance(note, str):
+        raise IPCError('INVALID_PARAMS', 'note must be a string or null')
+    return _with_archive(root, lambda a: a.source_set_enabled(source, key, enabled, note))
+
+def _source_preview(root, params):
+    source = _text(params.get('source'), 'source', 20)
+    key = _text(params.get('source_key'), 'source_key', 500)
+    return _with_archive(root, lambda a: a.source_removal_preview(source, key))
+
+def _source_remove(root, params):
+    source = _text(params.get('source'), 'source', 20)
+    key = _text(params.get('source_key'), 'source_key', 500)
+    if params.get('confirm') is not True:
+        raise IPCError('CONFIRMATION_REQUIRED',
+                       'Review the removal preview and pass confirm=true')
+    return _with_archive(root, lambda a: a.source_remove(source, key, confirm=True))
+
+def _source_events(root, limit=100):
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 500:
+        raise IPCError('INVALID_PARAMS', 'limit must be an integer between 1 and 500')
+    keys = ('id', 'source', 'source_key', 'action', 'at', 'detail')
+    return _with_archive(root, lambda a: {
+        'events': [dict(zip(keys, row)) for row in a.source_events(limit)]})
 
 def _import_history(root, limit=50):
     if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 500:
@@ -1062,6 +1113,15 @@ class IPCServer:
                 return _result(request_id, _import_history(self.root, params.get('limit', 50)))
             if method == 'sources':
                 return _result(request_id, _sources(self.root))
+            if method == 'source_set_enabled':
+                return _result(request_id, _source_set_enabled(self.root, params))
+            if method == 'source_removal_preview':
+                return _result(request_id, _source_preview(self.root, params))
+            if method == 'source_remove':
+                return _result(request_id, _source_remove(self.root, params))
+            if method == 'source_events':
+                return _result(request_id, _source_events(
+                    self.root, params.get('limit', 100)))
             if method == 'report_archive':
                 return _result(request_id, self._start_report(params))
             if method == 'preferences':

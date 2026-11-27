@@ -358,6 +358,58 @@ fn sources(state: State<AppState>) -> Result<Value, String> {
 }
 
 #[tauri::command]
+fn source_set_enabled(
+    state: State<AppState>,
+    source: String,
+    source_key: String,
+    enabled: bool,
+    note: Option<String>,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "source_set_enabled",
+        json!({
+            "source": source,
+            "source_key": source_key,
+            "enabled": enabled,
+            "note": note,
+        }),
+    )
+}
+
+#[tauri::command]
+fn source_removal_preview(
+    state: State<AppState>,
+    source: String,
+    source_key: String,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "source_removal_preview",
+        json!({ "source": source, "source_key": source_key }),
+    )
+}
+
+#[tauri::command]
+fn source_remove(
+    state: State<AppState>,
+    source: String,
+    source_key: String,
+    confirm: bool,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "source_remove",
+        json!({ "source": source, "source_key": source_key, "confirm": confirm }),
+    )
+}
+
+#[tauri::command]
+fn source_events(state: State<AppState>, limit: Option<u32>) -> Result<Value, String> {
+    call(&state, "source_events", json!({ "limit": limit.unwrap_or(100) }))
+}
+
+#[tauri::command]
 fn journal_list(
     state: State<AppState>,
     limit: Option<u32>,
@@ -597,6 +649,7 @@ pub fn run() {
             reindex, recover_orphans, migrate_status, backup, verify_backup, restore,
             facebook_preview, facebook_import,
             import_eml, import_history, sources, report_archive, cancel,
+            source_set_enabled, source_removal_preview, source_remove, source_events,
             journal_list, journal_get, journal_save, journal_delete, journal_restore,
             preferences, preferences_set, research_list, research_results,
             research_workspace_save, research_search_save, research_tag, research_untag,

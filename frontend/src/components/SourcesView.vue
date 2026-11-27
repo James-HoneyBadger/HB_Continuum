@@ -17,6 +17,8 @@ interface EmailAccount {
   earliest: string | null;
   latest: string | null;
   last_import: LastImport | null;
+  disabled: boolean;
+  note: string | null;
 }
 interface CatalogSource {
   source_type: string;
@@ -25,6 +27,27 @@ interface CatalogSource {
   bytes: number;
   earliest: string | null;
   latest: string | null;
+  disabled: boolean;
+  note: string | null;
+}
+interface SourceEvent {
+  id: number;
+  source: string;
+  source_key: string;
+  action: string;
+  at: string;
+  detail: string | null;
+}
+interface RemovalPreview {
+  source: string;
+  source_key: string;
+  records_removed: number;
+  records_retained: number;
+  origins_removed: number;
+  raw_bytes_freed: number;
+  catalog_records_removed: number;
+  catalog_files_removed: number;
+  explanation: string[];
 }
 interface Sources {
   email_accounts: EmailAccount[];
@@ -36,6 +59,9 @@ interface Sources {
 
 const data = ref<Sources | null>(null);
 const loading = ref(false);
+const busy = ref(false);
+const events = ref<SourceEvent[]>([]);
+const pending = ref<RemovalPreview | null>(null);
 
 function bytes(value: number): string {
   if (!value) return "0 B";
@@ -49,15 +75,66 @@ function bytes(value: number): string {
   return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
+async function loadEvents() {
+  try {
+    const response = (await invoke("source_events", { limit: 12 })) as { events: SourceEvent[] };
+    events.value = response.events;
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
 async function refresh() {
   loading.value = true;
   try {
     data.value = (await invoke("sources")) as Sources;
+    await loadEvents();
     props.onChanged();
   } catch (e) {
     props.onError(String(e));
   } finally {
     loading.value = false;
+  }
+}
+
+async function toggle(source: "email" | "catalog", sourceKey: string, enabled: boolean) {
+  busy.value = true;
+  try {
+    await invoke("source_set_enabled", { source, sourceKey, enabled });
+    await refresh();
+  } catch (e) {
+    props.onError(String(e));
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function previewRemoval(source: "email" | "catalog", sourceKey: string) {
+  try {
+    pending.value = (await invoke("source_removal_preview", {
+      source,
+      sourceKey,
+    })) as RemovalPreview;
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
+async function confirmRemoval() {
+  if (!pending.value) return;
+  busy.value = true;
+  try {
+    await invoke("source_remove", {
+      source: pending.value.source,
+      sourceKey: pending.value.source_key,
+      confirm: true,
+    });
+    pending.value = null;
+    await refresh();
+  } catch (e) {
+    props.onError(String(e));
+  } finally {
+    busy.value = false;
   }
 }
 
@@ -86,6 +163,8 @@ onMounted(refresh);
           <th>Earliest</th>
           <th>Latest</th>
           <th>Last import</th>
+          <th>Status</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -105,6 +184,20 @@ onMounted(refresh);
             </template>
             <span v-else class="meta">{{ data.history_available ? "not recorded" : "unavailable" }}</span>
           </td>
+          <td :class="{ disabled: account.disabled }" :title="account.note || ''">
+            {{ account.disabled ? "Disabled" : "Enabled" }}
+          </td>
+          <td class="actions">
+            <button
+              :disabled="busy"
+              @click="toggle('email', account.account, account.disabled)"
+            >
+              {{ account.disabled ? "Enable" : "Disable" }}
+            </button>
+            <button :disabled="busy" @click="previewRemoval('email', account.account)">
+              Remove…
+            </button>
+          </td>
         </tr>
       </tbody>
     </table>
@@ -123,6 +216,8 @@ onMounted(refresh);
           <th>Size</th>
           <th>Earliest</th>
           <th>Latest</th>
+          <th>Status</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -133,10 +228,63 @@ onMounted(refresh);
           <td>{{ bytes(source.bytes) }}</td>
           <td>{{ source.earliest?.slice(0, 10) ?? "—" }}</td>
           <td>{{ source.latest?.slice(0, 10) ?? "—" }}</td>
+          <td :class="{ disabled: source.disabled }" :title="source.note || ''">
+            {{ source.disabled ? "Disabled" : "Enabled" }}
+          </td>
+          <td class="actions">
+            <button
+              :disabled="busy"
+              @click="toggle('catalog', source.source_type, source.disabled)"
+            >
+              {{ source.disabled ? "Enable" : "Disable" }}
+            </button>
+            <button :disabled="busy" @click="previewRemoval('catalog', source.source_type)">
+              Remove…
+            </button>
+          </td>
         </tr>
       </tbody>
     </table>
     <p v-else-if="data" class="meta">No catalog sources have been imported yet.</p>
+
+    <section v-if="pending" class="removal" role="alertdialog" aria-label="Confirm source removal">
+      <h3>Remove {{ pending.source_key }}?</h3>
+      <ul>
+        <li v-for="line in pending.explanation" :key="line">{{ line }}</li>
+      </ul>
+      <p class="meta">
+        Records deleted: {{ pending.records_removed.toLocaleString() }} ·
+        shared records retained: {{ pending.records_retained.toLocaleString() }} ·
+        originals freed: {{ bytes(pending.raw_bytes_freed) }}
+      </p>
+      <div class="row">
+        <button class="danger" :disabled="busy" @click="confirmRemoval">
+          Confirm removal
+        </button>
+        <button :disabled="busy" @click="pending = null">Cancel</button>
+      </div>
+    </section>
+
+    <h2>Source activity</h2>
+    <p class="meta">
+      Disabling a source stops new automatic imports; its historical records stay searchable and
+      visible. Removal deletes only the records described in the preview.
+    </p>
+    <table v-if="events.length" class="events">
+      <thead>
+        <tr><th>When</th><th>Action</th><th>Source</th><th>Target</th><th>Note</th></tr>
+      </thead>
+      <tbody>
+        <tr v-for="event in events" :key="event.id">
+          <td>{{ event.at }}</td>
+          <td>{{ event.action }}</td>
+          <td>{{ event.source }}</td>
+          <td class="target" :title="event.source_key">{{ event.source_key }}</td>
+          <td>{{ event.detail || "—" }}</td>
+        </tr>
+      </tbody>
+    </table>
+    <p v-else class="meta">No source activity recorded yet.</p>
 
     <h2>Storage</h2>
     <div v-if="data" class="cards">
@@ -206,6 +354,44 @@ td.account {
 }
 .bad {
   color: var(--hb-error-text);
+}
+.disabled {
+  color: var(--hb-warning-text);
+  font-weight: 600;
+}
+td.actions {
+  white-space: nowrap;
+}
+td.actions button {
+  padding: 3px 8px;
+  margin-right: 4px;
+  font-size: 12px;
+}
+.removal {
+  background: var(--hb-panel-alt);
+  border: 1px solid var(--hb-error);
+  border-radius: var(--hb-radius);
+  padding: 10px 12px;
+}
+.removal h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--hb-error-text);
+}
+.removal ul {
+  margin: 0 0 6px;
+  padding-left: 18px;
+  font-size: 12px;
+}
+.danger {
+  border-color: var(--hb-error);
+  color: var(--hb-error-text);
+}
+.events td.target {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .meta {
   color: var(--hb-text-secondary);

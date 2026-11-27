@@ -85,6 +85,10 @@ def tick(root,force=None,now=None,get_password=None):
             for name,p in profiles.items():
                 p=profile(**p); stamp=now or utcnow()
                 if not (name==force or (force is None and due(p,states.get(name,{}),stamp))): continue
+                if not ar.source_enabled('email', f"{p['host']}|{p['user']}"):
+                    states.setdefault(name,{})['status']='disabled'
+                    write_json(root/'schedule-status.json',states)
+                    continue
                 previous=states.get(name,{}).copy()
                 state=states.setdefault(name,{})
                 state.update(last_attempt=stamp.isoformat(),status='running',imported=0)

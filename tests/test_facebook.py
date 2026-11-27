@@ -183,7 +183,7 @@ class FacebookImportTests(unittest.TestCase):
         conn.close()
         catalog=Catalog(self.root)
         try:
-            self.assertEqual(catalog.db.execute('PRAGMA user_version').fetchone()[0],2)
+            self.assertEqual(catalog.db.execute('PRAGMA user_version').fetchone()[0],3)
             self.assertEqual(catalog.stats()['records'],1)
             self.assertEqual(len(catalog.search_records('hello')),1)
         finally:

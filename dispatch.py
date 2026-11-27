@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Honey Badger Universe
 """Local read-only email archive. No network access except explicit sync."""
 import shutil, argparse, hashlib, imaplib, sqlite3, ssl, json, os, tempfile
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -116,7 +117,11 @@ class Archive:
         self.db = sqlite3.connect(self.root / 'archive.sqlite3', timeout=30)
         self.db.execute('PRAGMA foreign_keys=ON')
         self.db.execute('PRAGMA busy_timeout=30000')
-        self._migrate_safely()
+        try:
+            self._migrate_safely()
+        except BaseException:
+            self.db.close()
+            raise
     def _migrate_safely(self):
         """Migrate under the archive lock, snapshotting an existing archive first.
 
@@ -204,6 +209,167 @@ class Archive:
             'records_seen,records_new,records_existing,records_failed,detail '
             'FROM import_runs ORDER BY COALESCE(finished_at,started_at) DESC, id DESC LIMIT ?',
             (limit,)).fetchall()
+    def source_enabled(self, source, source_key):
+        """False when a source is explicitly disabled for new ingestion."""
+        if source not in ('email','catalog'): raise ValueError('Unknown source type')
+        row=self.db.execute(
+            'SELECT disabled_at FROM source_settings WHERE source=? AND source_key=?',
+            (source,source_key)).fetchone()
+        return row is None or row[0] is None
+    def source_set_enabled(self, source, source_key, enabled, note=None):
+        """Enable or disable a source without touching its historical records."""
+        self._validate_source(source, source_key, note)
+        now=datetime.now(timezone.utc).isoformat(timespec='seconds')
+        with self.db:
+            self.db.execute(
+                'INSERT INTO source_settings(source,source_key,disabled_at,note) VALUES(?,?,?,?) '
+                'ON CONFLICT(source,source_key) DO UPDATE SET '
+                'disabled_at=excluded.disabled_at, note=excluded.note',
+                (source,source_key,None if enabled else now,note))
+            self.db.execute(
+                'INSERT INTO source_events(source,source_key,action,at,detail) VALUES(?,?,?,?,?)',
+                (source,source_key,'enabled' if enabled else 'disabled',now,note))
+        return {'source':source,'source_key':source_key,'enabled':bool(enabled),'note':note}
+    def source_events(self, limit=100):
+        limit=max(1,min(int(limit),500))
+        return self.db.execute(
+            'SELECT id,source,source_key,action,at,detail FROM source_events '
+            'ORDER BY at DESC, id DESC LIMIT ?',(limit,)).fetchall()
+    def _validate_source(self, source, source_key, note=None):
+        if source not in ('email','catalog'):
+            raise ValueError('Unknown source type')
+        if (not isinstance(source_key,str) or not source_key or len(source_key)>500
+                or any(ord(c)<32 for c in source_key)):
+            raise ValueError('Invalid source key')
+        if note is not None and (not isinstance(note,str) or len(note)>1000
+                                 or any(ord(c)<32 and c not in '\n\t' for c in note)):
+            raise ValueError('Invalid note')
+    def _unique_hashes(self, account):
+        """Hashes whose only mailbox account is `account`."""
+        return [h for h, in self.db.execute(
+            'SELECT o.hash FROM origins o WHERE o.account=? GROUP BY o.hash '
+            'HAVING (SELECT count(DISTINCT x.account) FROM origins x WHERE x.hash=o.hash)=1',
+            (account,))]
+    def _settings_exist(self, source, source_key):
+        return self.db.execute(
+            'SELECT 1 FROM source_settings WHERE source=? AND source_key=?',
+            (source,source_key)).fetchone() is not None
+    def source_removal_preview(self, source, source_key):
+        """Describe exactly what removing a source would delete and retain."""
+        self._validate_source(source,source_key)
+        if source=='email':
+            origins=self.db.execute('SELECT count(*) FROM origins WHERE account=?',
+                                    (source_key,)).fetchone()[0]
+            messages=self.db.execute('SELECT count(DISTINCT hash) FROM origins WHERE account=?',
+                                     (source_key,)).fetchone()[0]
+            unique=self._unique_hashes(source_key)
+            raw_bytes=self.db.execute(
+                'SELECT coalesce(sum(m.size),0) FROM messages m WHERE m.hash IN ('
+                'SELECT o.hash FROM origins o WHERE o.account=? GROUP BY o.hash '
+                'HAVING (SELECT count(DISTINCT x.account) FROM origins x WHERE x.hash=o.hash)=1)',
+                (source_key,)).fetchone()[0] if unique else 0
+            if origins==0 and messages==0 and not self._settings_exist(source,source_key):
+                raise ValueError('Unknown email account')
+            retained=messages-len(unique)
+            return {
+                'source':source,'source_key':source_key,'removable':True,
+                'origins_removed':origins,'records_removed':len(unique),
+                'records_retained':retained,'shared_duplicates_retained':retained,
+                'raw_bytes_freed':raw_bytes,'catalog_records_removed':0,
+                'catalog_files_removed':0,'catalog_bytes':0,
+                'research_annotations_retained':True,
+                'explanation':[
+                    f'{origins} mailbox-origin records will be deleted.',
+                    f'{len(unique)} unique messages and their preserved EML originals will be deleted.',
+                    f'{retained} messages also exist in another account and will be retained.',
+                    'Messages imported from .eml files have no account and are never affected.',
+                    'Research tags, metadata and summaries keyed by removed message hashes stay in '
+                    'the research overlay; the same original re-imports under the same hash.',
+                ]}
+        catalog_path=self.root/'catalog.sqlite3'
+        if not catalog_path.is_file():
+            if self._settings_exist(source,source_key): catalog_path=None
+            else: raise ValueError('Unknown catalog source')
+        files=records=size=0
+        if catalog_path is not None:
+            with closing(sqlite3.connect(str(catalog_path),timeout=30)) as conn:
+                conn.execute('PRAGMA query_only=ON')
+                files,size=conn.execute(
+                    'SELECT count(*),coalesce(sum(size),0) FROM source_files WHERE source_type=?',
+                    (source_key,)).fetchone()
+                records=conn.execute('SELECT count(*) FROM records WHERE source_type=?',
+                                     (source_key,)).fetchone()[0]
+        if files==0 and records==0 and not self._settings_exist(source,source_key):
+            raise ValueError('Unknown catalog source')
+        return {
+            'source':source,'source_key':source_key,'removable':True,
+            'origins_removed':0,'records_removed':records,'records_retained':0,
+            'shared_duplicates_retained':0,'raw_bytes_freed':0,
+            'catalog_records_removed':records,'catalog_files_removed':files,
+            'catalog_bytes':size,'research_annotations_retained':False,
+            'explanation':[
+                f'{records} catalog records will be deleted.',
+                f'{files} catalog source-file references will be deleted.',
+                'Original export files on disk are not modified or deleted.',
+                'Archived email and other catalog sources are unaffected.',
+            ]}
+    def source_remove(self, source, source_key, confirm=False):
+        """Remove a source after an explicit confirmation, reporting what was kept."""
+        if confirm is not True:
+            raise ValueError('Removal requires explicit confirmation')
+        preview=self.source_removal_preview(source,source_key)
+        now=datetime.now(timezone.utc).isoformat(timespec='seconds')
+        if source=='email':
+            from sync_lock import sync_lock
+            unique=self._unique_hashes(source_key)
+            with sync_lock(self.root):
+                with self.db:
+                    self.db.execute('DELETE FROM origins WHERE account=?',(source_key,))
+                    self.db.executemany('DELETE FROM attachment_index WHERE hash=?',
+                                        [(h,) for h in unique])
+                    self.db.executemany('DELETE FROM extraction_versions WHERE hash=?',
+                                        [(h,) for h in unique])
+                    self.db.executemany('DELETE FROM search WHERE hash=?',[(h,) for h in unique])
+                    self.db.executemany('DELETE FROM messages WHERE hash=?',[(h,) for h in unique])
+                    self.db.execute('DELETE FROM source_settings WHERE source=? AND source_key=?',
+                                    (source,source_key))
+                    self.db.execute(
+                        'INSERT INTO source_events(source,source_key,action,at,detail) '
+                        'VALUES(?,?,?,?,?)',
+                        (source,source_key,'removed',now,
+                         f"removed {len(unique)} messages; retained "
+                         f"{preview['records_retained']} shared"))
+            removed=0; failures=[]
+            for h in unique:
+                path=self.raw/(h+'.eml')
+                try:
+                    if path.is_symlink():
+                        raise ValueError('Unsafe raw file')
+                    path.unlink(missing_ok=True)
+                    removed+=1
+                except (OSError,ValueError) as exc:
+                    failures.append({'hash':h,'error':type(exc).__name__})
+            return {**preview,'removed':True,'raw_files_removed':removed,
+                    'raw_file_errors':failures}
+        from catalog import Catalog
+        from sync_lock import sync_lock
+        with sync_lock(self.root):
+            catalog=Catalog(self.root)
+            try:
+                with catalog.db:
+                    catalog.db.execute('DELETE FROM records WHERE source_type=?',(source_key,))
+                    catalog.db.execute('DELETE FROM source_files WHERE source_type=?',(source_key,))
+            finally:
+                catalog.close()
+            with self.db:
+                self.db.execute('DELETE FROM source_settings WHERE source=? AND source_key=?',
+                                (source,source_key))
+                self.db.execute(
+                    'INSERT INTO source_events(source,source_key,action,at,detail) '
+                    'VALUES(?,?,?,?,?)',
+                    (source,source_key,'removed',now,
+                     f"removed {preview['catalog_records_removed']} catalog records"))
+        return {**preview,'removed':True}
     def import_files(self, paths, progress=None, cancel_event=None):
         """Import .eml files or directories with progress, cancellation and history.
 
@@ -402,6 +568,8 @@ class Archive:
                 'origins':self.db.execute('SELECT count(*) FROM origins').fetchone()[0]}
     def sync(self, host, user, password, folder='INBOX'):
         from sync_lock import sync_lock
+        if not self.source_enabled('email', f'{host}|{user}'):
+            raise ValueError('Source is disabled; enable it before synchronizing')
         with sync_lock(self.root):
             run=self.begin_import_run('imap', f'{host}|{user}|{folder}')
             try:
