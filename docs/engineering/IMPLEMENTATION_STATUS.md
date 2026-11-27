@@ -26,8 +26,8 @@ landed (Overview dashboard, design tokens, timeline pagination).
   an encrypted-file fallback; `dispatch schedule install|status|uninstall|
   credential` (working tree, uncommitted).
 - Backup/recovery, health/reindex/orphan recovery, bounded MIME/attachment
-  extraction (open PR #4, unmerged).
-- HB Continuum branding (open PR #5, unmerged).
+  extraction (integrated from closed PR #4).
+- HB Continuum branding (integrated from closed PR #5).
 - Source-independent catalog (`catalog.sqlite3`) with versioned migrations
   and an FTS5 search index, plus an offline Facebook JSON importer: posts,
   comments, group posts, messages, events, photos/videos, and reactions,
@@ -640,9 +640,10 @@ Scheduler verification status:
 
 - Existing workflows: `ci.yml` (py_compile, unittest on 3.12/3.13, mypy on
   3.13) and `codeql.yml` (Python analysis). Not re-run in this environment.
-- PR #4 (archive hardening) is superseded by the hardening work on
-  `develop/engine-expansion`; PR #5 (branding) remains open and conflicts
-  with this branch.
+- PR #4 (archive hardening) and PR #5 (branding) were closed as superseded
+  on 2026-11-27. Their work is integrated in `develop/continuum-integration`
+  (merges `0ce5454` and `6b83ffa` plus later fixes); the stale branches were
+  not merged again.
 
 ## Security findings
 
@@ -690,8 +691,9 @@ Scheduler verification status:
   this environment.
 - The desktop shell now has a Source Manager with enable/disable, per-source
   verification and preview-first removal, import history, Collections with
-  report drafts, a Journal and archive reports, but still lacks the
-  relationship explorer and full nested boolean query groups.
+  report drafts, a Journal, archive reports, the relationship explorer and
+  nested boolean query groups. Paged unified search beyond the current
+  candidate cap remains pending.
 - Disabling a source stops new automatic imports; it does not hide that
   source's historical records from search or the timeline.
 - Import history is best-effort for Facebook imports: a completed import
@@ -699,17 +701,14 @@ Scheduler verification status:
 
 ## Outstanding defects
 
-- Documentation identity is split between HB Dispatch (`main`) and HB
-  Continuum (PR #5).
 - No encryption at rest and no OAuth; both are documented limits, not
   regressions.
 
 ## Next recommended tasks
 
-1. Close PR #4 as superseded and reconcile PR #5 branding with this branch.
-2. Extend unified search with a paged FTS contract so results are not
+1. Extend unified search with a paged FTS contract so results are not
    capped at 5000.
-3. Add collection selection from the timeline and record reader, and an
+2. Add collection selection from the timeline and record reader, and an
    optional "hide disabled sources from default views" preference.
-4. Run the benchmark harness on Windows and Linux and add a 1M-record run
+3. Run the benchmark harness on Windows and Linux and add a 1M-record run
    before making large-archive claims.

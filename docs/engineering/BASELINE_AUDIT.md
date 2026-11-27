@@ -9,10 +9,11 @@ Status: 2026-11-26. Author: engineering audit per the master directive.
 > history, and the desktop shell has Source Manager, Journal and Reports
 > workspaces. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for the
 > current verified state; do not treat this audit's limitations as current.
-Scope: repository state on `main` (v0.3.0), the two open pull requests
+Scope: repository state on `main` (v0.3.0), the two then-open pull requests
 (#4 archive hardening, #5 continuum branding), and the uncommitted working
-tree in the audit environment. This document records observed behavior, not
-aspirational behavior.
+tree in the audit environment. Both pull requests were closed as superseded
+on 2026-11-27; their work is integrated in `develop/continuum-integration`.
+This document records observed behavior at audit time, not current behavior.
 
 ## 1. Existing functional capabilities
 
@@ -61,7 +62,7 @@ Configuration (`preferences.py`):
 - Versioned, validated, flat JSON preferences with defaults; GUI editor
   and portable export/import. No credentials in preferences.
 
-### Open PR #4 — `develop/archive-hardening` (not merged)
+### Then-open PR #4 — `develop/archive-hardening` (closed 2026-11-27)
 
 - `backup.py`: offline archive snapshots (SQLite via backup API, raw EML,
   research overlay, config), SHA-256 manifest, integrity/foreign-key/index
@@ -79,7 +80,7 @@ Superseded: this work now lives on `develop/engine-expansion`, with the
 archive schema expressed as a versioned `archive` version 2 migration and
 the tests re-expressed as 15 hardening tests (see section 9).
 
-### Open PR #5 — `chore/continuum-branding` (not merged)
+### Then-open PR #5 — `chore/continuum-branding` (closed 2026-11-27)
 
 - Rebrands user-facing text from HB Dispatch to HB Continuum while keeping
   `dispatch.py` as the mail-engine entry point, preserving archive paths and
@@ -220,11 +221,10 @@ the tests re-expressed as 15 hardening tests (see section 9).
 
 ## 9. Outstanding engineering work
 
-1. PR #4 (hardening) is superseded: its MIME extraction, attachment index,
-   health/reindex/recovery, verified backup/restore, symlink rejection and
-   macOS CI matrix now live on `develop/engine-expansion` (`mime_index.py`,
-   `backup.py`, `archive` schema version 2). PR #5 (branding) is still open
-   and conflicts; reconcile it separately.
+1. PR #4 (hardening) and PR #5 (branding) are closed as superseded and
+   integrated in `develop/continuum-integration`. The hardening work lives in
+   `hb_engine/mime_index.py`, `hb_engine/backup.py` and the archive schema;
+   branding is part of the current product identity.
 2. ~~Reconcile the working-tree search-threading changes with PR #4/#5.~~
    Done; the search worker is committed and covered by tests.
 3. ~~Extend the versioned migration mechanism to `research.sqlite3` and
