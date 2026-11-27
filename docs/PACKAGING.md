@@ -34,9 +34,10 @@ It produces:
 The build passes `--collect-submodules hb_engine`, so adding an engine module
 cannot leave it out of the sidecar. `--no-copy` builds without copying,
 `--print-command` shows the PyInstaller invocation, and `--smoke` runs the
-built binary against a temporary archive
-(`--version`, `import`, `search`, `health`). CI runs `--no-copy --smoke` on
-Ubuntu, macOS and Windows.
+built binary against a temporary archive: `--version`, `import`, `search`,
+`health`, then a real IPC session covering `search_advanced` and
+`relationships`. The IPC step fails if either packaged module is missing or
+returns no result. CI runs `--no-copy --smoke` on Ubuntu, macOS and Windows.
 
 The binary is **host-specific**: build it on each target platform, and per
 architecture for macOS universal builds. Cross-compiling is not supported by

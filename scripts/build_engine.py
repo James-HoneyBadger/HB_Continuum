@@ -17,6 +17,7 @@ architecture for macOS universal builds) before packaging the app.
 """
 import argparse
 import importlib.util
+import json
 import shutil
 import subprocess
 import sys
@@ -60,28 +61,75 @@ def pyinstaller_command():
     return command
 
 
+def _ipc_smoke(command, archive):
+    """Exercise packaged engine modules over the real IPC protocol."""
+    requests = [
+        {'protocol_version': 1, 'request_id': 'advanced', 'method': 'search_advanced',
+         'params': {'query': {'type': 'rule', 'kind': 'text', 'value': 'smokeword'},
+                    'limit': 10}},
+        {'protocol_version': 1, 'request_id': 'graph', 'method': 'relationships',
+         'params': {}},
+        {'protocol_version': 1, 'request_id': 'shutdown', 'method': 'shutdown',
+         'params': {}},
+    ]
+    payload = '\n'.join(json.dumps(request) for request in requests) + '\n'
+    completed = subprocess.run([*command, '--archive', str(archive), 'serve'],
+                               input=payload, capture_output=True, text=True,
+                               timeout=120)
+    if completed.returncode != 0:
+        raise SystemExit('engine IPC session failed: ' + completed.stderr)
+    responses = {}
+    for line in completed.stdout.splitlines():
+        try:
+            response = json.loads(line)
+        except json.JSONDecodeError:
+            raise SystemExit('engine IPC produced a non-JSON line: ' + line) from None
+        if response.get('request_id'):
+            responses[response['request_id']] = response
+    for request_id in ('advanced', 'graph'):
+        response = responses.get(request_id)
+        if response is None:
+            raise SystemExit(f'engine IPC returned no {request_id} response')
+        if 'error' in response:
+            raise SystemExit(f'engine IPC {request_id} failed: {response["error"]}')
+    if responses['advanced']['result']['total'] < 2:
+        raise SystemExit('search_advanced did not return both imported messages')
+    if not responses['graph']['result']['edges']:
+        raise SystemExit('relationships did not link the two message senders')
+    return responses
+
+
 def smoke(binary):
     """Exercise the built binary against a temporary archive."""
-    version = subprocess.run([str(binary), '--version'], capture_output=True,
+    command = [str(binary)]
+    version = subprocess.run([*command, '--version'], capture_output=True,
                              text=True, check=True)
     if '0.3.0' not in version.stdout:
         raise SystemExit(f'unexpected --version output: {version.stdout!r}')
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        message = root / 'smoke.eml'
-        message.write_bytes(b'From: smoke@example.invalid\r\nSubject: Smoke\r\n\r\nsmokeword')
+        first = root / 'smoke.eml'
+        first.write_bytes(b'From: smoke@example.invalid\r\nSubject: Smoke\r\n'
+                          b'Date: Mon, 01 Jan 2024 10:00:00 +0000\r\n'
+                          b'Message-ID: <smoke-1@example.invalid>\r\n\r\nsmokeword')
+        second = root / 'smoke-reply.eml'
+        second.write_bytes(b'From: reply@example.invalid\r\nSubject: Re: Smoke\r\n'
+                           b'Date: Mon, 01 Jan 2024 11:00:00 +0000\r\n'
+                           b'Message-ID: <smoke-2@example.invalid>\r\n'
+                           b'In-Reply-To: <smoke-1@example.invalid>\r\n\r\nsmokeword')
         archive = str(root / 'archive')
-        subprocess.run([str(binary), '--archive', archive, 'import', str(message)],
+        subprocess.run([*command, '--archive', archive, 'import', str(first), str(second)],
                        check=True, capture_output=True)
-        search = subprocess.run([str(binary), '--archive', archive, 'search', 'smokeword'],
+        search = subprocess.run([*command, '--archive', archive, 'search', 'smokeword'],
                                 check=True, capture_output=True, text=True)
         if 'Smoke' not in search.stdout:
             raise SystemExit(f'imported message not searchable: {search.stdout!r}')
-        health = subprocess.run([str(binary), '--archive', archive, 'health'],
+        health = subprocess.run([*command, '--archive', archive, 'health'],
                                 capture_output=True, text=True)
         if health.returncode != 0:
             raise SystemExit('health failed for the bundled engine: ' + health.stdout)
-    print('bundled engine smoke test passed')
+        _ipc_smoke(command, archive)
+    print('bundled engine smoke test passed (CLI, search, health and IPC)')
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])

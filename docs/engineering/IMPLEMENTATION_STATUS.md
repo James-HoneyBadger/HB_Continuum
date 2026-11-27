@@ -197,12 +197,13 @@ landed (Overview dashboard, design tokens, timeline pagination).
   engine modules are always included in the sidecar. CI compiles the package,
   root wrappers, tests and scripts, and mypy checks the package plus the Tk
   UI modules.
-- Verified: 252 tests with no failures, CLI `--version`/`import`/`search`,
+- Verified: 253 tests with no failures, CLI `--version`/`import`/`search`,
   a subprocess IPC `ping`/`shutdown` session, and a fresh PyInstaller 6.22.3
   sidecar built on macOS ARM64 with Python 3.13.7. `build_engine.py
-  --no-copy --smoke` passed, and the frozen binary served `search_advanced`
-  and `relationships` over IPC. Tkinter was absent from the build
-  environment; the Tauri shell does not use it.
+  --no-copy --smoke` passed, including a real IPC session that asserts
+  `search_advanced` returns both messages and `relationships` builds the
+  thread edge. Tkinter was absent from the build environment; the Tauri shell
+  does not use it.
 
 ### Advanced boolean queries (2026-11-27)
 
@@ -391,7 +392,8 @@ until the shell's flows are exercised against real archives.
   modules plus `__init__.py`), top-level compatibility aliases for every
   moved module, `dispatch.py`, `desktop.py`, `preferences_ui.py`,
   `research_ui.py`, `schedule_ui.py`, `scripts/build_engine.py`,
-  `.github/workflows/ci.yml`, `mypy.ini`, `docs/PACKAGING.md`, `README.md`.
+  `.github/workflows/ci.yml`, `mypy.ini`, `docs/PACKAGING.md`, `README.md`,
+  `tests/test_build_engine.py`.
 - Advanced-query increment (2026-11-27): `advanced_search.py` (new), `ipc.py`,
   `src-tauri/src/lib.rs`, `frontend/src/App.vue`,
   `frontend/src/components/AdvancedSearchView.vue` (new),
@@ -514,13 +516,14 @@ until the shell's flows are exercised against real archives.
 
 - `compileall` over `hb_engine/`, root wrappers, `tests/` and `scripts/`:
   pass.
-- `python3 -m unittest discover -s tests`: 252 tests, 0 failures; optional
+- `python3 -m unittest discover -s tests`: 253 tests, 0 failures; optional
   credential-backend tests skip when `keyring` or `cryptography` are not
   installed (1 skip on the project Python 3.13 interpreter, 2 on a local
   Python 3.15 interpreter). Includes 8 timestamp/chronology tests, 2 real-process lock
   tests, 5 import-run tests, 6 journal tests, 8 collection/draft tests,
   5 report tests, 11 source management/verification tests, 10 unified-search
-  tests, 10 advanced-query tests, 8 relationship tests and 56 IPC tests.
+  tests, 10 advanced-query tests, 8 relationship tests, 56 IPC tests and a
+  packaging-smoke test.
 - `mypy` (2.4.1, matching CI) is configured for `hb_engine` and the Tk UI
   modules. It was not available in this environment, so the CI type-check job
   is the verification.
@@ -531,8 +534,8 @@ until the shell's flows are exercised against real archives.
   smoke-tested outside the repository: `--version`, `import`, `search`,
   `health` and an IPC `ping`/`health`/`shutdown` session all pass.
 - Engine package sidecar rebuilt with PyInstaller 6.22.3 on macOS ARM64
-  (Python 3.13.7): `--no-copy --smoke` passed, and the frozen binary served
-  `search_advanced` and `relationships` over IPC.
+  (Python 3.13.7): `--no-copy --smoke` passed, including the new IPC checks
+  for `search_advanced` and `relationships`.
 - Packaging layout verified with `tauri build --debug --no-bundle --config
   src-tauri/tauri.bundle.conf.json`: Tauri copied `hb-engine` next to the
   application, and the app launched under Xvfb spawned that engine and served
@@ -551,7 +554,7 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-252 Python tests ran: 0 failed; optional credential-backend tests skip when
+253 Python tests ran: 0 failed; optional credential-backend tests skip when
 `keyring` or `cryptography` are unavailable (1 skip on Python 3.13.6, 2 on
 Python 3.15). `npm run build` (vue-tsc + vite), `cargo check` and `cargo test`
 pass; background EML import, import history, sources, source removal, source
