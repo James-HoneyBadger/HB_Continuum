@@ -94,6 +94,40 @@ class IPCServerTests(unittest.TestCase):
         (self.root/'raw'/(self.h+'.eml')).write_bytes(b'changed')
         self.assertEqual(self.server.handle(request('verify'))['result']['bad'],[self.h])
 
+    def test_import_eml(self):
+        inbox=self.root/'inbox'
+        inbox.mkdir()
+        (inbox/'one.eml').write_bytes(b'From: c@example.invalid\r\nSubject: Imported\r\n\r\nHello import')
+        resp=self.server.handle(request('import_eml',paths=[str(inbox)]))
+        self.assertEqual(resp['result']['imported'],1)
+        self.assertEqual(len(resp['result']['hashes']),1)
+        resp=self.server.handle(request('import_eml',paths=[str(inbox)]))
+        self.assertEqual(resp['result']['imported'],0)
+        self.assertEqual(self.server.handle(request('import_eml',paths='not-a-list'))['error']['code'],'INVALID_PARAMS')
+
+    def test_preferences_get_set(self):
+        resp=self.server.handle(request('preferences'))
+        self.assertIn('values',resp['result'])
+        self.assertTrue(resp['result']['fields'])
+        self.assertFalse(resp['result']['values']['ai_enabled'])
+        resp=self.server.handle(request('preferences_set',values={'theme':'Dark'}))
+        self.assertEqual(resp['result']['values']['theme'],'Dark')
+        self.assertTrue((self.root/'preferences.json').is_file())
+
+    def test_research_list_and_results(self):
+        from research import Research
+        research=Research(self.a)
+        try:
+            research.save_search('General','Invoices','invoice')
+        finally:
+            research.close()
+        resp=self.server.handle(request('research_list',table='searches'))
+        self.assertTrue(any(row[0]=='General' and row[1]=='Invoices' for row in resp['result']['rows']))
+        resp=self.server.handle(request('research_results',workspace='General',name='Invoices'))
+        self.assertEqual(resp['result']['count'],1)
+        self.assertEqual(resp['result']['results'][0]['hash'],self.h)
+        self.assertEqual(self.server.handle(request('research_list',table='evil'))['error']['code'],'INVALID_PARAMS')
+
     def test_summarize_disabled(self):
         resp=self.server.handle(request('summarize',hashes=[self.h]))
         self.assertEqual(resp['error']['code'],'AI_DISABLED')

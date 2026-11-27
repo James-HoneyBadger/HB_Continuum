@@ -119,7 +119,74 @@ async function runVerify() {
   }
 }
 
-onMounted(refreshStats);
+const importPath = ref("");
+const importResult = ref<any>(null);
+const prefsValues = ref<Record<string, any>>({});
+const prefsFields = ref<any[]>([]);
+const researchTables = ref<{ searches: any[][] }>({ searches: [] });
+const researchResults = ref<any[]>([]);
+const researchName = ref("");
+
+async function loadPreferences() {
+  try {
+    const response = (await invoke("preferences")) as { values: Record<string, any>; fields: any[] };
+    prefsValues.value = response.values;
+    prefsFields.value = response.fields;
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function savePreferences() {
+  error.value = "";
+  try {
+    const response = (await invoke("preferences_set", { values: prefsValues.value })) as {
+      values: Record<string, any>;
+    };
+    prefsValues.value = response.values;
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function runImport() {
+  error.value = "";
+  importResult.value = null;
+  try {
+    importResult.value = (await invoke("import_eml", { paths: [importPath.value] })) as any;
+    await refreshStats();
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function loadSearches() {
+  try {
+    const response = (await invoke("research_list", { table: "searches" })) as { rows: any[][] };
+    researchTables.value.searches = response.rows;
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function runResearch(row: any[]) {
+  const workspace = row[0];
+  const name = row[1];
+  researchName.value = name;
+  error.value = "";
+  try {
+    const response = (await invoke("research_results", { workspace, name })) as { results: any[] };
+    researchResults.value = response.results;
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+onMounted(() => {
+  refreshStats();
+  loadPreferences();
+  loadSearches();
+});
 </script>
 
 <template>
@@ -188,6 +255,53 @@ onMounted(refreshStats);
         <p class="meta">{{ m.sender }} {{ m.date }}</p>
         <p class="title">{{ m.subject }}</p>
         <pre class="body">{{ m.body }}</pre>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Import EML</h2>
+      <div class="row">
+        <input class="grow" v-model="importPath" placeholder="/path/to/mail.eml or a directory" />
+        <button @click="runImport">Import</button>
+      </div>
+      <p v-if="importResult" class="meta">
+        {{ importResult.imported }} imported · {{ importResult.errors.length }} errors
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>Preferences</h2>
+      <div v-for="field in prefsFields" :key="field.key" class="pref-row">
+        <label>{{ field.label }}</label>
+        <input v-if="field.kind === 'bool'" type="checkbox" v-model="prefsValues[field.key]" />
+        <input
+          v-else-if="field.kind === 'int'"
+          type="number"
+          v-model.number="prefsValues[field.key]"
+        />
+        <select v-else-if="field.kind === 'choice'" v-model="prefsValues[field.key]">
+          <option v-for="opt in field.allowed" :key="opt" :value="opt">{{ opt }}</option>
+        </select>
+        <input v-else v-model="prefsValues[field.key]" />
+      </div>
+      <button @click="savePreferences">Save preferences</button>
+    </section>
+
+    <section class="panel">
+      <h2>Research searches</h2>
+      <ul class="results">
+        <li v-for="row in researchTables.searches" :key="row[0] + row[1]">
+          <button @click="runResearch(row)">{{ row[0] }} / {{ row[1] }}</button>
+          <span class="meta">{{ row[2] }}</span>
+        </li>
+      </ul>
+      <div v-if="researchResults.length">
+        <h3>{{ researchName }} — {{ researchResults.length }} results</h3>
+        <ul class="results">
+          <li v-for="r in researchResults" :key="r.hash">
+            <span class="meta">{{ r.date }}</span> {{ r.subject }}
+          </li>
+        </ul>
       </div>
     </section>
   </main>
@@ -285,5 +399,24 @@ button {
 }
 .title {
   font-weight: 600;
+}
+.panel {
+  border-top: 2px solid #ccc;
+  margin-top: 20px;
+  padding-top: 12px;
+}
+.pref-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.pref-row label {
+  flex: 0 0 260px;
+}
+.pref-row input,
+.pref-row select {
+  flex: 1;
+  max-width: 420px;
 }
 </style>

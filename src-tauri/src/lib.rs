@@ -174,6 +174,31 @@ fn verify(state: State<AppState>) -> Result<Value, String> {
 }
 
 #[tauri::command]
+fn import_eml(state: State<AppState>, paths: Vec<String>) -> Result<Value, String> {
+    call(&state, "import_eml", json!({ "paths": paths }))
+}
+
+#[tauri::command]
+fn preferences(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "preferences", json!({}))
+}
+
+#[tauri::command]
+fn preferences_set(state: State<AppState>, values: Value) -> Result<Value, String> {
+    call(&state, "preferences_set", json!({ "values": values }))
+}
+
+#[tauri::command]
+fn research_list(state: State<AppState>, table: String) -> Result<Value, String> {
+    call(&state, "research_list", json!({ "table": table }))
+}
+
+#[tauri::command]
+fn research_results(state: State<AppState>, workspace: String, name: String) -> Result<Value, String> {
+    call(&state, "research_results", json!({ "workspace": workspace, "name": name }))
+}
+
+#[tauri::command]
 fn set_archive(state: State<AppState>, path: String) -> Result<(), String> {
     let mut guard = state.engine.lock().expect("engine lock");
     if let Some(mut engine) = guard.take() {
@@ -210,7 +235,11 @@ pub fn run() {
             archive: Mutex::new(default_archive),
             engine: Mutex::new(None),
         })
-        .invoke_handler(tauri::generate_handler![ping, stats, search, message, thread, record, verify, set_archive, shutdown])
+        .invoke_handler(tauri::generate_handler![
+            ping, stats, search, message, thread, record, verify,
+            import_eml, preferences, preferences_set, research_list, research_results,
+            set_archive, shutdown
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

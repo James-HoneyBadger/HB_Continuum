@@ -141,6 +141,115 @@ def _verify(root):
             bad.append(h)
     return {'checked': len(hashes), 'bad': bad}
 
+def _import_eml(root, paths):
+    from dispatch import Archive
+    if not isinstance(paths, list):
+        raise IPCError('INVALID_PARAMS', 'paths must be a list')
+    files = []
+    for raw in paths:
+        path = Path(raw).expanduser()
+        if path.is_dir():
+            files.extend(sorted(q for q in path.glob('*.eml') if q.is_file() and not q.name.startswith('.')))
+        elif path.is_file():
+            files.append(path)
+    archive = Archive(root)
+    imported = []
+    errors = []
+    try:
+        before = {h for h, in archive.db.execute('SELECT hash FROM messages')}
+        for f in files:
+            try:
+                digest = archive.ingest(f.read_bytes())
+                if digest not in before:
+                    imported.append(digest)
+            except Exception as exc:
+                errors.append({'path': str(f), 'error': type(exc).__name__ + ': ' + str(exc)})
+    finally:
+        archive.db.close()
+    return {'files_seen': len(files), 'imported': len(imported), 'hashes': imported, 'errors': errors}
+
+def _preferences(root):
+    from preferences import FIELDS, load as load_prefs
+    values = load_prefs(root)
+    fields = []
+    for key, (group, label, default, allowed) in FIELDS.items():
+        if isinstance(default, bool):
+            kind = 'bool'
+        elif isinstance(default, int):
+            kind = 'int'
+        elif allowed:
+            kind = 'choice'
+        else:
+            kind = 'text'
+        fields.append({'key': key, 'group': group, 'label': label, 'kind': kind,
+                       'default': default, 'allowed': list(allowed) if allowed else None})
+    return {'values': values, 'fields': fields}
+
+def _preferences_set(root, values):
+    from preferences import save as save_prefs, validate
+    if not isinstance(values, dict):
+        raise IPCError('INVALID_PARAMS', 'values must be an object')
+    validated = validate(values)
+    save_prefs(root, validated)
+    return {'values': validated}
+
+RESEARCH_TABLES = ('workspaces', 'searches', 'tags', 'fields', 'reports')
+
+def _research_list(root, table):
+    if table not in RESEARCH_TABLES:
+        raise IPCError('INVALID_PARAMS', 'table must be one of ' + ', '.join(RESEARCH_TABLES))
+    path = Path(root) / 'research.sqlite3'
+    if not path.is_file():
+        return {'table': table, 'rows': []}
+    conn = _ro_connect(path)
+    try:
+        rows = conn.execute('SELECT * FROM ' + table).fetchall()
+    finally:
+        conn.close()
+    return {'table': table, 'rows': [list(r) for r in rows]}
+
+def _research_results(root, workspace, name):
+    research_path = Path(root) / 'research.sqlite3'
+    archive_path = Path(root) / 'archive.sqlite3'
+    if not research_path.is_file():
+        raise IPCError('NOT_FOUND', 'no research overlay')
+    conn = _ro_connect(research_path)
+    try:
+        row = conn.execute('SELECT query,tag,limit_n FROM searches WHERE workspace=? AND name=?',
+                           (workspace, name)).fetchone()
+        if row is None:
+            raise IPCError('NOT_FOUND', 'unknown saved search')
+        query, tag, limit_n = row
+        tagged = None if not tag else {h for h, in conn.execute(
+            'SELECT DISTINCT hash FROM tags WHERE tag=?', (tag,))}
+    finally:
+        conn.close()
+    if not archive_path.is_file():
+        raise IPCError('ARCHIVE_NOT_AVAILABLE', 'The selected archive has no archive.sqlite3')
+    aconn = _ro_connect(archive_path)
+    try:
+        if query:
+            sql = ('SELECT m.hash,m.subject,m.sender,m.date,m.message_id,m.reply_to '
+                   'FROM search JOIN messages m ON m.hash=search.hash '
+                   'WHERE search MATCH ? ORDER BY m.rowid DESC')
+            params = (query,)
+        else:
+            sql = 'SELECT hash,subject,sender,date,message_id,reply_to FROM messages ORDER BY rowid DESC'
+            params = ()
+        rows = []
+        try:
+            cursor = aconn.execute(sql, params)
+        except sqlite3.OperationalError:
+            cursor = iter(())
+        for r in cursor:
+            if tagged is None or r[0] in tagged:
+                rows.append(dict(zip(('hash', 'subject', 'sender', 'date', 'message_id', 'reply_to'), r)))
+                if len(rows) >= limit_n:
+                    break
+    finally:
+        aconn.close()
+    return {'workspace': workspace, 'name': name, 'count': len(rows), 'results': rows}
+
 class IPCError(RuntimeError):
     def __init__(self, code, message):
         super().__init__(message)
@@ -273,6 +382,16 @@ class IPCServer:
                 return _result(request_id, _record(self.root, params.get('record_id')))
             if method == 'verify':
                 return _result(request_id, _verify(self.root))
+            if method == 'import_eml':
+                return _result(request_id, _import_eml(self.root, params.get('paths', [])))
+            if method == 'preferences':
+                return _result(request_id, _preferences(self.root))
+            if method == 'preferences_set':
+                return _result(request_id, _preferences_set(self.root, params.get('values')))
+            if method == 'research_list':
+                return _result(request_id, _research_list(self.root, params.get('table')))
+            if method == 'research_results':
+                return _result(request_id, _research_results(self.root, params.get('workspace'), params.get('name')))
             if method == 'summarize':
                 return _result(request_id, self._start_summarize(params))
             if method == 'cancel':

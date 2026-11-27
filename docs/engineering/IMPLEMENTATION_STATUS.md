@@ -43,7 +43,8 @@ Phase A — Stabilization (repository audit in progress).
   `shutdown`; `dispatch serve` entry point (working tree, uncommitted).
 - Tauri 2 + Vue 3 desktop shell (`frontend/`, `src-tauri/`): a managed
   Python subprocess client that drives `stats`, `search`, `message`,
-  `thread`, `record`, and `verify` through Rust commands; frontend
+  `thread`, `record`, `verify`, `import_eml`, `preferences` (view/edit),
+  and `research_list`/`research_results` through Rust commands; frontend
   production build and Rust build verified (working tree, uncommitted).
 
 ## Pending capabilities
@@ -100,9 +101,9 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 75 tests, all pass (29 baseline
+- `python3 -m unittest discover -s tests`: 78 tests, all pass (29 baseline
   + 5 search-worker + 14 Facebook importer + 9 summarization + 4 unified
-  search + 14 IPC).
+  search + 17 IPC).
 - End-to-end CLI smoke tests of `dispatch facebook preview/import/search/
   list`, `dispatch summarize run --all` (fake loopback Ollama),
   `dispatch search-all`, and `dispatch serve` (subprocess protocol): pass.
@@ -112,7 +113,7 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 
 ## Test results
 
-75 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
+78 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
 frontend and Rust builds pass.
 
 ## CI status
