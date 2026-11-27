@@ -138,6 +138,21 @@ on the contentful `record_search` table, so deleting a catalog record raised
 contentful table. Existing catalogs are repaired on next open; search rows
 stay consistent.
 
+## Catalog version 4: revisions and attachments
+
+Version 4 adds five columns to `records`:
+
+- `updated_at` — a declared post/comment update timestamp.
+- `revision_kind` — `post_update` or `comment_update` when an update
+  timestamp was present.
+- `revision_key` and `revision_index` — a grouping key and import-order index
+  for versions of the same post/comment.
+- `attachments_json` — normalized attachment metadata, defaulting to `[]`.
+
+The migration is additive; existing catalog records keep their identifiers,
+search rows, source-file references and original JSON. A new
+`records_revision_key` index supports grouping versions.
+
 ## Research version 2: journal entries
 
 Version 2 adds two tables to `research.sqlite3`:

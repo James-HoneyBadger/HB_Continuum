@@ -360,11 +360,20 @@ async function exportSelected() {
     <section v-if="detail" class="detail">
       <h2>{{ detail.subject || detail.source_key }}</h2>
       <p class="meta">{{ detail.sender || detail.actor }} {{ detail.date || detail.occurred_at }}</p>
+      <p v-if="detail.updated_at" class="meta">
+        Updated {{ detail.updated_at }}
+        <span v-if="detail.revision_kind"> · {{ detail.revision_kind }}</span>
+        <span v-if="detail.revision_index"> · version {{ detail.revision_index }}</span>
+      </p>
       <div v-if="detail.attachments?.length" class="attachments">
-        <h3>Attachments (indexed metadata)</h3>
+        <h3>Attachments (stored metadata)</h3>
         <ul>
           <li v-for="(a, i) in detail.attachments" :key="i">
-            {{ a.filename }} · {{ a.mime }} · {{ a.characters }} indexed characters
+            <span class="attachment-kind">{{ a.kind || a.mime || "file" }}</span>
+            {{ a.filename || a.name || a.title || a.uri || a.url || a.link }}
+            <span v-if="a.mime"> · {{ a.mime }}</span>
+            <span v-if="a.characters"> · {{ a.characters }} indexed characters</span>
+            <span v-if="a.created_at"> · {{ a.created_at }}</span>
           </li>
         </ul>
       </div>
@@ -501,6 +510,13 @@ button {
 .attachments ul {
   margin: 4px 0 0;
   padding-left: 20px;
+}
+.attachment-kind {
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--hb-text-secondary);
+  margin-right: 4px;
 }
 .body {
   white-space: pre-wrap;

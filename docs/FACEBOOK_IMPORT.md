@@ -26,12 +26,22 @@ Each record is stored in the source-independent catalog
 - `source_key` — the conversation title for messages, or the export list
   key for posts/comments (so group posts and timeline posts stay distinct).
 - `record_kind` — `post`, `comment`, or `message`.
-- `actor` — the sender for messages; posts/comments are the account owner
-  and have no actor.
+- `actor` — the sender for messages, the reaction actor for reactions, and
+  the comment author for comments when the export declares it; posts have no
+  actor because the export identifies them as the account owner's.
 - `occurred_at` and `occurred_precision` — normalized UTC timestamp and
   `second`, `ms`, or `unknown`.
 - `body` — extracted text.
 - `original_json` — the original record object, preserved verbatim.
+- `updated_at` — the latest declared `update_timestamp`, `update_timestamp_ms`,
+  `updated_timestamp` or `edited_timestamp` found in the record data.
+- `revision_kind` — `post_update` or `comment_update` when an update
+  timestamp was present; otherwise null.
+- `revision_key` and `revision_index` — a deterministic grouping key and an
+  import-order index for post/comment versions that share a source key and
+  original timestamp. Distinct content versions remain separate records.
+- `attachments_json` — normalized attachment metadata, up to 100 entries per
+  record. Media files themselves are not copied.
 
 ## Provenance
 
@@ -74,14 +84,25 @@ by `--kind` and `--actor`.
 - `records_duplicate` — records already present (overlapping exports).
 - `records_unsupported` — items in supported files that could not be
   normalized (e.g. non-object entries).
+- `records_revised` — inserted records that carried a declared update
+  timestamp.
+- `attachments_indexed` — normalized attachment metadata entries stored on
+  inserted records.
 - `parse_errors` — files that failed JSON/UTF-8 parsing.
 
 ## Limitations
 
 - Only posts, comments, messages, events, photos/videos, and reactions are
-  imported. Post/comment revision entries and some newer reaction layouts
-  are detected as records where the shape matches; unrecognized shapes are
-  reported as unsupported.
+  imported. Some newer reaction layouts are detected where the shape matches;
+  unrecognized shapes are reported as unsupported.
+- Facebook exports often contain only the latest text plus an update
+  timestamp. HB Continuum preserves that timestamp and keeps distinct
+  exported versions as separate records, but it cannot reconstruct text
+  that Facebook did not export.
+- Attachment metadata is stored, not the attachment files. URIs, names,
+  titles, descriptions, thumbnail URIs and timestamps are preserved; media
+  files are not downloaded or copied. Attachment metadata is not currently
+  part of the FTS index, so search covers the record body and actor.
 - Whole JSON files are parsed into memory; very large single files (many
   hundreds of MB) may be slow or memory-heavy.
 - Timestamps are taken as declared by the export; they are not verified

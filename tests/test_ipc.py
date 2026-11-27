@@ -142,7 +142,10 @@ class IPCServerTests(unittest.TestCase):
         from catalog import Catalog
         posts=self.root/'posts.json'
         posts.write_text(json.dumps({'your_posts':[
-            {'timestamp': 1700000000, 'data': [{'post': 'Hello world'}]},
+            {'timestamp': 1700000000,
+             'data': [{'post': 'Hello world'}, {'update_timestamp': 1700000100}],
+             'attachments': [{'data': [
+                 {'external_context': {'name': 'Article', 'url': 'https://example.invalid'}}]}]},
         ]}))
         import_files([str(posts)], self.root)
         catalog=Catalog(self.root)
@@ -153,6 +156,33 @@ class IPCServerTests(unittest.TestCase):
         resp=self.server.handle(request('record',record_id=rid))
         self.assertEqual(resp['result']['record_kind'],'post')
         self.assertIn('Hello world',resp['result']['body'])
+        self.assertTrue(resp['result']['updated_at'])
+        self.assertEqual(resp['result']['revision_kind'],'post_update')
+        self.assertEqual(resp['result']['attachments'][0]['kind'],'external_link')
+        self.assertEqual(resp['result']['attachments'][0]['name'],'Article')
+
+    def test_record_tolerates_catalog_without_metadata_columns(self):
+        from migrations import MIGRATIONS
+        legacy=self.root/'legacy-catalog'
+        legacy.mkdir()
+        db=sqlite3.connect(legacy/'catalog.sqlite3')
+        try:
+            for version in (1,2,3):
+                for statement in MIGRATIONS['catalog'][version]:
+                    db.execute(statement)
+            db.execute("INSERT INTO source_files VALUES('h','facebook','posts','p',1,'now')")
+            db.execute("INSERT INTO records VALUES('r','facebook','posts','post',NULL,"
+                       "NULL,'second','hello',NULL,'h','now')")
+            db.execute('PRAGMA user_version=3')
+            db.commit()
+        finally:
+            db.close()
+        server=IPCServer(legacy,out=io.StringIO())
+        result=server.handle(request('record',record_id='r'))['result']
+        self.assertEqual(result['body'],'hello')
+        self.assertEqual(result['attachments'],[])
+        self.assertIsNone(result['revision_index'])
+        self.assertEqual(result['updated_at'],'')
 
     def test_verify(self):
         resp=self.server.handle(request('verify'))

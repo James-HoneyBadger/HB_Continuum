@@ -169,6 +169,112 @@ class FacebookImportTests(unittest.TestCase):
         finally:
             catalog.close()
 
+    def test_post_revisions_preserve_versions_and_update_time(self):
+        first=self.write('posts_a.json',{'your_posts':[
+            {'timestamp': 1700000000,
+             'data': [{'post': 'First version'}, {'update_timestamp': 1700000100}]},
+        ]})
+        second=self.write('posts_b.json',{'your_posts':[
+            {'timestamp': 1700000000, 'data': [{'post': 'Second version'}]},
+        ]})
+        result=import_files([str(first), str(second)], self.root)
+        self.assertEqual(result['records_imported'],2)
+        self.assertEqual(result['records_revised'],1)
+        catalog=Catalog(self.root)
+        try:
+            rows=catalog.db.execute(
+                'SELECT body,revision_key,revision_index,updated_at,revision_kind '
+                'FROM records ORDER BY revision_index').fetchall()
+            self.assertEqual([row[0] for row in rows],['First version','Second version'])
+            self.assertEqual(len({row[1] for row in rows}),1)
+            self.assertEqual([row[2] for row in rows],[1,2])
+            self.assertIsNotNone(rows[0][3])
+            self.assertIsNone(rows[1][3])
+            self.assertEqual(rows[0][4],'post_update')
+            self.assertIsNone(rows[1][4])
+        finally:
+            catalog.close()
+
+    def test_comment_actor_and_revision_metadata(self):
+        path=self.write('comments.json',{'comments':[
+            {'timestamp': 1700000000,
+             'data': [{'comment': {'author': 'Alice', 'comment': 'Nice post',
+                                   'timestamp': 1700000000,
+                                   'update_timestamp': 1700000200}}]},
+        ]})
+        result=import_files([str(path)], self.root)
+        self.assertEqual(result['records_revised'],1)
+        catalog=Catalog(self.root)
+        try:
+            row=catalog.db.execute(
+                'SELECT actor,updated_at,revision_kind,revision_key FROM records').fetchone()
+            self.assertEqual(row[0],'Alice')
+            self.assertIn('T',row[1])
+            self.assertEqual(row[2],'comment_update')
+            self.assertTrue(row[3].startswith('comment|comments|1700000000|Alice'))
+        finally:
+            catalog.close()
+
+    def test_message_attachment_metadata(self):
+        path=self.write('messages/inbox/Chat/message_1.json',{
+            'title': 'Chat',
+            'messages': [{
+                'sender_name': 'Alice', 'timestamp_ms': 1700000000000, 'content': 'Look',
+                'photos': [{'uri': 'photos/a.jpg', 'creation_timestamp': 1700000000}],
+                'videos': [{'uri': 'videos/b.mp4', 'thumbnail': {'uri': 'photos/thumb.jpg'}}],
+                'files': [{'uri': 'files/doc.pdf'}],
+                'share': {'link': 'https://example.invalid/post'},
+                'sticker': {'uri': 'stickers/s.png'},
+                'reactions': [{'reaction': 'LIKE', 'actor': 'Bob'}],
+            }],
+        })
+        result=import_files([str(path)], self.root)
+        self.assertEqual(result['attachments_indexed'],6)
+        catalog=Catalog(self.root)
+        try:
+            row=catalog.db.execute('SELECT attachments_json,updated_at,revision_key FROM records').fetchone()
+            attachments=json.loads(row[0])
+            self.assertEqual({item['kind'] for item in attachments},
+                             {'photo','video','file','share','sticker','reaction'})
+            photo=next(item for item in attachments if item['kind']=='photo')
+            self.assertEqual(photo['uri'],'photos/a.jpg')
+            self.assertIsNone(row[1])
+            self.assertIsNone(row[2])
+        finally:
+            catalog.close()
+
+    def test_post_attachment_metadata(self):
+        path=self.write('your_posts_1.json',{'your_posts':[{
+            'timestamp': 1700000000,
+            'data': [{'post': 'With attachments'}],
+            'attachments': [{'data': [
+                {'external_context': {'name': 'Article', 'source': 'Example',
+                                      'url': 'https://example.invalid/article'}},
+                {'media': {'title': 'Photo', 'uri': 'photos/p.jpg',
+                           'media_metadata': {'photo_metadata': {'upload_ip': '127.0.0.1'}}}},
+                {'place': {'name': 'Home', 'coordinate': {'latitude': 1, 'longitude': 2}}},
+            ]}],
+        }]})
+        result=import_files([str(path)], self.root)
+        self.assertEqual(result['attachments_indexed'],3)
+        catalog=Catalog(self.root)
+        try:
+            raw=catalog.db.execute('SELECT attachments_json FROM records').fetchone()[0]
+            attachments=json.loads(raw)
+            self.assertEqual({item['kind'] for item in attachments},
+                             {'external_link','photo','place'})
+            place=next(item for item in attachments if item['kind']=='place')
+            self.assertEqual(place['latitude'],1)
+            self.assertEqual(place['longitude'],2)
+        finally:
+            catalog.close()
+
+    def test_attachment_metadata_is_capped(self):
+        item={'sender_name': 'Alice', 'timestamp_ms': 1700000000000,
+              'photos': [{'uri': f'photos/{index}.jpg'} for index in range(105)]}
+        record=_normalize('messages', item, 'Chat')
+        self.assertEqual(len(record['attachments']),100)
+
     def test_migration_upgrades_v1(self):
         import sqlite3
         from catalog import MIGRATIONS
@@ -183,7 +289,7 @@ class FacebookImportTests(unittest.TestCase):
         conn.close()
         catalog=Catalog(self.root)
         try:
-            self.assertEqual(catalog.db.execute('PRAGMA user_version').fetchone()[0],3)
+            self.assertEqual(catalog.db.execute('PRAGMA user_version').fetchone()[0],4)
             self.assertEqual(catalog.stats()['records'],1)
             self.assertEqual(len(catalog.search_records('hello')),1)
         finally:

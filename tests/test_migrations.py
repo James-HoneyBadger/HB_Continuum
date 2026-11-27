@@ -144,8 +144,8 @@ class MigrationTests(unittest.TestCase):
             research.close();archive.db.close()
 
     def test_catalog_version_registry(self):
-        self.assertEqual(target_version('catalog'),3)
-        self.assertEqual(sorted(MIGRATIONS['catalog']),[1,2,3])
+        self.assertEqual(target_version('catalog'),4)
+        self.assertEqual(sorted(MIGRATIONS['catalog']),[1,2,3,4])
 
     def test_archive_version_registry(self):
         self.assertEqual(target_version('archive'),6)
@@ -228,8 +228,12 @@ class MigrationTests(unittest.TestCase):
         db.commit();db.close()
         catalog=Catalog(self.root)
         try:
-            self.assertEqual(current_version(catalog.db),3)
+            self.assertEqual(current_version(catalog.db),target_version('catalog'))
             self.assertEqual(len(catalog.search_records('hello')),1)
+            record=catalog.record('r')
+            self.assertEqual(record['attachments'],[])
+            self.assertIsNone(record['revision_index'])
+            self.assertIsNone(record['updated_at'])
         finally:
             catalog.close()
 

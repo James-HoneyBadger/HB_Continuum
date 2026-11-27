@@ -218,12 +218,21 @@ CATALOG_V3 = (
     'INSERT INTO record_search(rowid, body, actor) VALUES (new.rowid, new.body, new.actor); END',
 )
 
+CATALOG_V4 = (
+    'ALTER TABLE records ADD COLUMN updated_at TEXT',
+    "ALTER TABLE records ADD COLUMN revision_kind TEXT",
+    'ALTER TABLE records ADD COLUMN revision_key TEXT',
+    'ALTER TABLE records ADD COLUMN revision_index INTEGER',
+    "ALTER TABLE records ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'",
+    'CREATE INDEX IF NOT EXISTS records_revision_key ON records(revision_key)',
+)
+
 MIGRATIONS = {
     'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3, 4: ARCHIVE_V4,
                 5: ARCHIVE_V5, 6: ARCHIVE_V6},
     'research': {1: RESEARCH_V1, 2: RESEARCH_V2, 3: RESEARCH_V3, 4: RESEARCH_V4,
                  5: RESEARCH_V5},
-    'catalog': {1: CATALOG_V1, 2: CATALOG_V2, 3: CATALOG_V3},
+    'catalog': {1: CATALOG_V1, 2: CATALOG_V2, 3: CATALOG_V3, 4: CATALOG_V4},
 }
 
 def target_version(name):

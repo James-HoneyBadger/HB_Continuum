@@ -116,16 +116,35 @@ def _record(root, record_id):
         raise IPCError('CATALOG_NOT_AVAILABLE', 'The selected archive has no catalog.sqlite3')
     conn = _ro_connect(path)
     try:
-        row = conn.execute(
-            'SELECT record_id,source_type,source_key,record_kind,actor,occurred_at,body,original_json '
-            'FROM records WHERE record_id=?', (record_id,)).fetchone()
+        try:
+            row = conn.execute(
+                'SELECT record_id,source_type,source_key,record_kind,actor,occurred_at,'
+                'occurred_precision,body,original_json,updated_at,revision_kind,'
+                'revision_key,revision_index,attachments_json '
+                'FROM records WHERE record_id=?', (record_id,)).fetchone()
+        except sqlite3.OperationalError:
+            old = conn.execute(
+                'SELECT record_id,source_type,source_key,record_kind,actor,occurred_at,'
+                'body,original_json FROM records WHERE record_id=?',
+                (record_id,)).fetchone()
+            row = ((old[0], old[1], old[2], old[3], old[4], old[5], None,
+                    old[6], old[7], None, None, None, None, '[]')
+                   if old else None)
     finally:
         conn.close()
     if row is None:
         raise IPCError('NOT_FOUND', 'record not found')
+    try:
+        attachments = json.loads(row[13] or '[]')
+    except (TypeError, ValueError):
+        attachments = []
     return {'record_id': row[0], 'source_type': row[1], 'source_key': row[2],
             'record_kind': row[3], 'actor': row[4] or '', 'occurred_at': row[5] or '',
-            'body': row[6] or '', 'original_json': row[7] or ''}
+            'occurred_precision': row[6] or '', 'body': row[7] or '',
+            'original_json': row[8] or '', 'updated_at': row[9] or '',
+            'revision_kind': row[10] or '', 'revision_key': row[11] or '',
+            'revision_index': row[12], 'attachments': attachments
+            if isinstance(attachments, list) else []}
 
 def _verify(root):
     root = Path(root)

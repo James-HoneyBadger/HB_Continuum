@@ -32,8 +32,9 @@ landed (Overview dashboard, design tokens, timeline pagination).
   and an FTS5 search index, plus an offline Facebook JSON importer: posts,
   comments, group posts, messages, events, photos/videos, and reactions,
   with import preview, SHA-256 provenance, per-record original JSON
-  preservation, idempotent resumable import, duplicate detection, and
-  `facebook search`/`facebook list` surfaces (working tree, uncommitted).
+  preservation, idempotent resumable import, duplicate detection,
+  post/comment revision metadata, attachment metadata, and `facebook
+  search`/`facebook list` surfaces.
 - Opt-in local AI summarization (`summarize.py`): loopback-only Ollama
   backend, strict `ai.enabled`/`ai.backend` gate, message and thread
   summaries with prompt versioning, input-digest staleness detection,
@@ -175,6 +176,31 @@ landed (Overview dashboard, design tokens, timeline pagination).
   the active query and filters is shown above the results.
 - Tests cover sender/kind/tag filters, exact counts, inexact tag totals,
   query validation and IPC validation.
+
+### Facebook revisions and attachment metadata (2026-11-27)
+
+- Catalog schema 4 adds `updated_at`, `revision_kind`, `revision_key`,
+  `revision_index` and `attachments_json` to `records`, plus a
+  `records_revision_key` index. Existing records keep their identifiers and
+  search rows; the migration only adds columns.
+- Posts and comments preserve declared `update_timestamp` (and `_ms`,
+  `updated_timestamp`, `edited_timestamp`) as `updated_at`, with
+  `post_update`/`comment_update` revision kinds. Distinct exported content
+  versions remain separate records; a stable key based on source key and
+  original timestamp groups them and an import-order index distinguishes
+  versions. Comment authors are now stored as actors when present.
+- Message, post and comment attachment metadata is normalized into compact
+  objects: photo/video/audio/file/gif/sticker/share/reaction, external link,
+  place, event and marketplace. URIs, names, descriptions, thumbnails and
+  timestamps are preserved; files are not copied. Each record stores at most
+  100 attachment entries.
+- The catalog record IPC response returns the new revision fields and parsed
+  attachments, and the Search detail view labels attachment kinds and shows
+  update/version metadata.
+- Tests cover post versions and update times, comment actors and revisions,
+  message attachments, post external/media/place attachments, the 100-entry
+  cap, catalog migration defaults and the IPC record response. Attachment
+  metadata is not yet in the FTS index.
 
 ### Saved advanced queries (2026-11-27)
 
@@ -380,9 +406,8 @@ landed (Overview dashboard, design tokens, timeline pagination).
 ## Pending capabilities
 
 See `BASELINE_AUDIT.md` section 9. In brief: local embeddings/hybrid
-search, Second Me, Facebook post revisions and message attachment metadata,
-and the documentation overhaul
-(ROADMAP/SECURITY/ARCHITECTURE/CHANGELOG).
+search, Second Me, attachment full-text indexing, and the documentation
+overhaul (ROADMAP/SECURITY/ARCHITECTURE/CHANGELOG).
 
 Archive hardening, verified backup/restore, desktop health/backup surfaces,
 Facebook import and the timeline explorer are implemented on
@@ -405,6 +430,11 @@ until the shell's flows are exercised against real archives.
 
 ## Files changed
 
+- Facebook-metadata increment (2026-11-27): `hb_engine/migrations.py`,
+  `hb_engine/catalog.py`, `hb_engine/facebook.py`, `hb_engine/ipc.py`,
+  `frontend/src/components/SearchView.vue`, `tests/test_facebook.py`,
+  `tests/test_ipc.py`, `tests/test_migrations.py`,
+  `docs/FACEBOOK_IMPORT.md`, `docs/MIGRATION.md`, `README.md`.
 - Saved-query increment (2026-11-27): `hb_engine/migrations.py`,
   `hb_engine/research.py`, `hb_engine/ipc.py`, `src-tauri/src/lib.rs`,
   `frontend/src/components/AdvancedSearchView.vue`,
@@ -503,7 +533,7 @@ until the shell's flows are exercised against real archives.
 
 - Schema versioning lives in `migrations.py`, shared by all three databases
   and tracked with `PRAGMA user_version`; `archive` is at version 6, `catalog`
-  at version 3 and `research` at version 5. Archive version 2 adds
+  at version 4 and `research` at version 5. Archive version 2 adds
   `attachment_index` and `extraction_versions`; version 3 adds `sort_ts`,
   `date_precision` and the `messages_sort_ts` index (additive, with a
   transactional backfill); version 4 adds `import_runs` and its time index;
@@ -512,8 +542,8 @@ until the shell's flows are exercised against real archives.
   adds `journal_entries` and `journal_revisions`; research version 3 adds
   `collections` and `collection_items`; research version 4 adds
   `report_drafts`; research version 5 adds `advanced_queries`. Catalog
-  version 3 repairs the
-  delete/update FTS triggers.
+  version 3 repairs the delete/update FTS triggers; version 4 adds revision
+  and attachment metadata to `records`.
 - New source-independent catalog database `catalog.sqlite3` with
   `source_files` and `records` tables plus a trigger-maintained FTS5
   `record_search` index, governed by a `PRAGMA user_version`-based migration
@@ -539,14 +569,14 @@ until the shell's flows are exercised against real archives.
 
 - `compileall` over `hb_engine/`, root wrappers, `tests/` and `scripts/`:
   pass.
-- `python3 -m unittest discover -s tests`: 258 tests, 0 failures; optional
+- `python3 -m unittest discover -s tests`: 264 tests, 0 failures; optional
   credential-backend tests skip when `keyring` or `cryptography` are not
   installed (1 skip on the project Python 3.13 interpreter, 2 on a local
   Python 3.15 interpreter). Includes 8 timestamp/chronology tests, 2 real-process lock
   tests, 5 import-run tests, 6 journal tests, 8 collection/draft tests,
   5 report tests, 11 source management/verification tests, 10 unified-search
   tests, 10 advanced-query tests, 5 saved-query tests, 8 relationship tests,
-  56 IPC tests and a packaging-smoke test.
+  57 IPC tests, 19 Facebook tests and a packaging-smoke test.
 - `mypy` (2.4.1, matching CI) is configured for `hb_engine` and the Tk UI
   modules. It was not available in this environment, so the CI type-check job
   is the verification.
@@ -577,7 +607,7 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-258 Python tests ran: 0 failed; optional credential-backend tests skip when
+264 Python tests ran: 0 failed; optional credential-backend tests skip when
 `keyring` or `cryptography` are unavailable (1 skip on Python 3.13.6, 2 on
 Python 3.15). `npm run build` (vue-tsc + vite), `cargo check` and `cargo test`
 pass; background EML import, import history, sources, source removal, source
@@ -666,12 +696,11 @@ Scheduler verification status:
 
 ## Next recommended tasks
 
-1. Support Facebook post/comment revision entries and message attachments
-   metadata.
-2. Close PR #4 as superseded and reconcile PR #5 branding with this branch.
-3. Extend unified search with a paged FTS contract so results are not
+1. Close PR #4 as superseded and reconcile PR #5 branding with this branch.
+2. Extend unified search with a paged FTS contract so results are not
    capped at 5000.
-4. Add collection selection from the timeline and record reader, and an
+3. Add collection selection from the timeline and record reader, and an
    optional "hide disabled sources from default views" preference.
+4. Index Facebook attachment names and titles in the catalog FTS index.
 5. Run the benchmark harness on Windows and Linux and add a 1M-record run
    before making large-archive claims.

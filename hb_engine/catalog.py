@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (c) 2026 Honey Badger Universe
 """Source-independent catalog database with versioned, additive migrations."""
-import sqlite3
+import json, sqlite3
 from pathlib import Path
 
 from .migrations import MIGRATIONS as _MIGRATIONS, apply as migrate, target_version
@@ -40,12 +40,39 @@ class Catalog:
         return self.db.execute('SELECT 1 FROM records WHERE record_id=?', (record_id,)).fetchone() is not None
 
     def add_record(self, record_id, source_type, source_key, record_kind, actor,
-                   occurred_at, precision, body, original_json, file_hash, created_at):
+                   occurred_at, precision, body, original_json, file_hash, created_at,
+                   updated_at=None, revision_kind=None, revision_key=None,
+                   revision_index=None, attachments_json='[]'):
         cur = self.db.execute(
-            'INSERT OR IGNORE INTO records VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+            'INSERT OR IGNORE INTO records(record_id,source_type,source_key,record_kind,'
+            'actor,occurred_at,occurred_precision,body,original_json,file_hash,created_at,'
+            'updated_at,revision_kind,revision_key,revision_index,attachments_json) '
+            'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
             (record_id, source_type, source_key, record_kind, actor, occurred_at,
-             precision, body, original_json, file_hash, created_at))
+             precision, body, original_json, file_hash, created_at, updated_at,
+             revision_kind, revision_key, revision_index, attachments_json))
         return cur.rowcount == 1
+
+    def record(self, record_id):
+        """Full stored record with parsed attachment metadata, or None."""
+        row = self.db.execute(
+            'SELECT record_id,source_type,source_key,record_kind,actor,occurred_at,'
+            'occurred_precision,body,original_json,file_hash,created_at,updated_at,'
+            'revision_kind,revision_key,revision_index,attachments_json '
+            'FROM records WHERE record_id=?', (record_id,)).fetchone()
+        if row is None:
+            return None
+        keys = ('record_id', 'source_type', 'source_key', 'record_kind', 'actor',
+                'occurred_at', 'occurred_precision', 'body', 'original_json',
+                'file_hash', 'created_at', 'updated_at', 'revision_kind',
+                'revision_key', 'revision_index', 'attachments_json')
+        result = dict(zip(keys, row))
+        try:
+            attachments = json.loads(result.pop('attachments_json') or '[]')
+        except (TypeError, ValueError):
+            attachments = []
+        result['attachments'] = attachments if isinstance(attachments, list) else []
+        return result
 
     def list_records(self, source_type='facebook', record_kind=None, actor=None, limit=100):
         limit = max(1, min(int(limit), 5000))
