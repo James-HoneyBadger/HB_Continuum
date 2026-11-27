@@ -45,9 +45,13 @@ archive:
 
 ```
 MigrationError: The archive database was written by a newer version
-(schema 3, this build supports 2). Upgrade the application instead of
+(schema 4, this build supports 3). Upgrade the application instead of
 opening it with an older build.
 ```
+
+A migration step may be a SQL statement or a Python callable that receives
+the connection. Callables run inside the same transaction as the DDL and the
+version bump, so a backfill and the schema that supports it commit together.
 
 ## Archive version 2: attachments and extraction tracking
 
@@ -61,6 +65,26 @@ are re-extracted. `dispatch reindex` performs that upgrade from the preserved
 raw originals, verifying each SHA-256 and committing per message, so it can
 be interrupted and resumed. It also repairs search rows that are missing or
 duplicated. See `docs/ARCHIVE_HARDENING.md`.
+
+## Archive version 3: normalized chronology
+
+Version 3 adds two nullable columns to `messages`:
+
+| Column | Meaning |
+|---|---|
+| `sort_ts` | The declared date normalized to UTC epoch seconds, or `NULL` when it cannot be parsed |
+| `date_precision` | `second`, `day`, or `NULL` for an unknown date |
+
+An index (`messages_sort_ts`) supports chronological queries and pagination.
+The migration backfills both columns from the preserved `date` text, so an
+existing archive gains ordered timelines without re-importing anything. The
+original `date` string is never rewritten; unknown or ambiguous dates remain
+`NULL` rather than being guessed, and the timeline sorts them last.
+
+New messages populate these columns during import. `dispatch reindex`
+recomputes them from the stored date text while it re-extracts a message. A
+read-only client that opens an older archive without migrating still gets a
+correct (in-memory) order as a fallback.
 
 ## Inspecting and migrating
 

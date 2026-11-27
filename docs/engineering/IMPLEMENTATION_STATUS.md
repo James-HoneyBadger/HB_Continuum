@@ -1,11 +1,12 @@
 # Implementation status — HB Continuum
 
 Maintained per the master engineering directive (section 41). Updated
-2026-11-26.
+2026-11-27 on `develop/continuum-integration`.
 
 ## Current phase
 
-Phase A — Stabilization (repository audit in progress).
+Phase I — Consolidation and correctness, with the first Phase II shell work
+landed (Overview dashboard, design tokens, timeline pagination).
 
 ## Implemented capabilities
 
@@ -81,6 +82,42 @@ Phase A — Stabilization (repository audit in progress).
   backup/restore, with native open/save dialogs; frontend and Rust builds
   verified.
 
+### Consolidation increment (2026-11-27)
+
+- Fixed a real macOS defect found by a baseline run: a WAL-mode source could
+  leave an empty `archive.sqlite3-shm` in a backup stage, so
+  `validate_snapshot` rejected a correct snapshot. `copydb` now removes the
+  normalized journal sidecars.
+- Cross-platform archive write lock (`sync_lock.py`): POSIX `flock` and
+  Windows `msvcrt.locking` on `sync.lock`, released by the operating system
+  when a process dies. `schedule.tick` now uses the same primitive for its
+  overlapping-run guard. Covered by real two-process tests, including a
+  killed holder that must not leave a stale lock.
+- Archive schema version 3 (`migrations.py`, `timestamps.py`): `sort_ts`
+  (UTC epoch) and `date_precision` columns with an index, backfilled from the
+  preserved date text by a migration callable. Timeline ordering moved from
+  a Python sort over every row to indexed SQL with UTC-epoch date-range
+  filters and pagination; unknown dates remain `NULL` and sort last. Unmigrated
+  archives fall back to the previous in-memory order.
+- Timeline pagination, oldest/newest ordering and a date range are exposed
+  through IPC (`timeline` with `offset`, `order`, `after`, `before`), the
+  Tauri command, and the Timeline workspace.
+- `dashboard` IPC method and Overview workspace: unique messages, mailbox
+  occurrences, undated records, earliest/latest normalized dates, catalog
+  records, raw/database storage footprint, and records by year. Every figure
+  has a documented definition; duplicates are not presented as unique
+  records.
+- Unified search now ranks each source with FTS5 `bm25` and fuses the two
+  ranked lists with reciprocal rank fusion, instead of concatenating results
+  and sorting by date. Optional `after`/`before` filters apply to both
+  sources; the desktop Search workspace exposes a date range and page
+  navigation.
+- Honey Badger Contemporary Classic tokens (`frontend/src/theme.css`) and a
+  shell (header, sidebar navigation, workspace, status bar). All component
+  colours now come from the token file, and the Overview workspace is the
+  default landing view. Text tokens were chosen to meet WCAG AA contrast on
+  the workspace and panel backgrounds.
+
 ## Pending capabilities
 
 See `BASELINE_AUDIT.md` section 9. In brief: local embeddings/hybrid
@@ -107,6 +144,16 @@ until the shell's flows are exercised against real archives.
 
 ## Files changed
 
+- Consolidation increment (2026-11-27): `sync_lock.py`, `schedule.py`,
+  `backup.py`, `migrations.py`, `dispatch.py`, `ipc.py`, `catalog.py`,
+  `unified.py`, `mypy.ini`, `.github/workflows/ci.yml`,
+  `src-tauri/src/lib.rs`, `frontend/src/App.vue`, `frontend/src/main.ts`,
+  `frontend/src/theme.css` (new), `frontend/src/components/OverviewView.vue`
+  (new), `SearchView.vue`, `TimelineView.vue`, `HealthView.vue`, and every
+  component's colour declarations; `timestamps.py` (new),
+  `tests/test_timeline.py` (new), `tests/test_concurrency.py` (new),
+  `tests/test_unified.py`, `tests/test_ipc.py`, `tests/test_hardening.py`,
+  `tests/test_schedule.py`, `docs/MIGRATION.md`.
 - Working tree (uncommitted): `desktop.py`, `dispatch.py`, `preferences.py`,
   `research.py`, `schedule.py`, `mypy.ini`, `.github/workflows/ci.yml`,
   `.gitignore` modified; `search_worker.py`, `catalog.py`, `facebook.py`,
@@ -133,11 +180,12 @@ until the shell's flows are exercised against real archives.
 
 ## Database changes
 
-- Schema versioning moved to `migrations.py`, shared by all three databases
-  and tracked with `PRAGMA user_version`; `archive` and `catalog` are at
-  version 2 and `research` at version 1. Archive version 2 adds
-  `attachment_index` and `extraction_versions` (additive; existing rows are
-  untouched, and `dispatch reindex` upgrades older derived text).
+- Schema versioning lives in `migrations.py`, shared by all three databases
+  and tracked with `PRAGMA user_version`; `archive` is at version 3, `catalog`
+  at version 2 and `research` at version 1. Archive version 2 adds
+  `attachment_index` and `extraction_versions`; archive version 3 adds
+  `sort_ts`, `date_precision` and the `messages_sort_ts` index (additive,
+  with a transactional backfill from the preserved date text).
 - New source-independent catalog database `catalog.sqlite3` with
   `source_files` and `records` tables plus a trigger-maintained FTS5
   `record_search` index, governed by a `PRAGMA user_version`-based migration
@@ -146,8 +194,8 @@ until the shell's flows are exercised against real archives.
 - New `summaries` table in `research.sqlite3` (additive, via
   `CREATE TABLE IF NOT EXISTS`) with `input_digest` and `thread_members`
   companion columns for staleness detection and provenance.
-- No schema change for scheduling; `write_json` now closes the temp file
-  before `os.replace` (Windows requires this).
+- No schema change for scheduling; `write_json` closes the temp file before
+  `os.replace` (Windows requires this).
 
 ## Migration considerations
 
@@ -162,10 +210,10 @@ until the shell's flows are exercised against real archives.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 160 tests, all pass (29 baseline
-  + 5 search-worker + 14 Facebook importer + 9 summarization + 4 unified
-  search + 40 IPC + 26 scheduler + 1 Windows-path tick + 17 migrations + 15
-  archive hardening).
+- `python3 -m unittest discover -s tests`: 176 tests, 175 pass and 1 is
+  skipped on this machine (macOS has no `systemd`, so one scheduler smoke
+  assertion is skipped). Includes the new 8 timestamp/chronology tests, 2
+  real-process lock tests, 6 unified-search tests and 42 IPC tests.
 - `mypy` (2.4.1, matching CI): no issues in 19 source files.
 - `cargo test` (src-tauri): 3 tests pass, covering bundled-sidecar
   preference, the development script fallback and resolution from a bare
@@ -191,9 +239,9 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-160 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
-frontend and Rust builds pass; IPC surfaces smoke-tested end-to-end over the
-real subprocess protocol.
+176 Python tests ran: 175 passed, 0 failed, 1 skipped (Python 3.13.6,
+macOS ARM64); `npm run build` (vue-tsc + vite) and `cargo check` pass; IPC
+surfaces smoke-tested end-to-end over the real subprocess protocol.
 
 Scheduler verification status:
 
@@ -230,22 +278,35 @@ Scheduler verification status:
 
 ## Performance findings
 
-- No benchmarks recorded. `timeline` performs a Python sort over filtered
-  rows and is a known scaling risk beyond ~100k records.
+- Chronological navigation now uses indexed SQL over `messages.sort_ts`
+  instead of a Python sort over every matching row. A page reads only its
+  window; the unknown-date section is appended from an indexed `sort_ts IS
+  NULL` lookup, and a count is taken only when a page starts past the dated
+  records.
+- Unified search still materializes at most `SEARCH_CAP` (5000) fused
+  results per query before paginating; that cap, not archive size, bounds
+  memory. Raising it needs a paged FTS contract.
+- No reproducible benchmark suite yet; 10k/100k/1M synthetic runs remain
+  outstanding.
 
 ## Known limitations
 
 - No encryption at rest; no OAuth. HTML is reduced to offline text but never
   rendered. PDF, Office and image attachment contents are not converted, so
   only attachment names, MIME types and text payloads are searchable.
-- Cross-platform scheduling verified on all three operating systems via CI;
-  Windows has no archive-level write lock (`sync_lock` is POSIX-only).
+- Cross-platform scheduling verified on all three operating systems via CI.
+- Archive locking is implemented for POSIX and Windows and tested with real
+  processes on macOS; the Windows code path has not yet run on Windows in
+  this environment.
+- The desktop shell still lacks Source Manager, journal and report
+  workspaces; those remain Phase II work.
 
 ## Outstanding defects
 
-- `sync_lock` is POSIX-only, so Windows has no archive-level write lock.
 - Documentation identity is split between HB Dispatch (`main`) and HB
   Continuum (PR #5).
+- No encryption at rest and no OAuth; both are documented limits, not
+  regressions.
 
 ## Next recommended tasks
 
@@ -254,5 +315,8 @@ Scheduler verification status:
 2. Support Facebook post/comment revision entries and message attachments
    metadata.
 3. Close PR #4 as superseded and reconcile PR #5 branding with this branch.
-4. Extend unified search with relevance-ranked cross-source fusion and
-   date/kind filtering.
+4. Extend unified search with a paged FTS contract so results are not
+   capped at 5000, and add record-kind filters to the advanced query UI.
+5. Implement the Source Manager (per-source coverage, integrity and
+   footprint) and the Import Center's resumable/cancelable progress views.
+6. Add a reproducible 10k/100k synthetic benchmark suite.
