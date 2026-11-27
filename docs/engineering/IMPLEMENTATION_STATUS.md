@@ -19,7 +19,11 @@ Phase A — Stabilization (repository audit in progress).
   research centers (`main`).
 - Background-thread GUI search with cancellation and progress indicator
   (working tree, uncommitted).
-- macOS launchd + Keychain scheduling (`main`).
+- macOS launchd + Keychain scheduling (`main`), extended to a portable
+  scheduler (`schedulers.py`): systemd --user timers on Linux, Task Scheduler
+  on Windows, and keyring/SecretService/Credential Manager credentials with
+  an encrypted-file fallback; `dispatch schedule install|status|uninstall|
+  credential` (working tree, uncommitted).
 - Backup/recovery, health/reindex/orphan recovery, bounded MIME/attachment
   extraction (open PR #4, unmerged).
 - HB Continuum branding (open PR #5, unmerged).
@@ -72,12 +76,12 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 ## Files changed
 
 - Working tree (uncommitted): `desktop.py`, `dispatch.py`, `preferences.py`,
-  `research.py`, `mypy.ini`, `.github/workflows/ci.yml`, `.gitignore`
-  modified; `search_worker.py`, `catalog.py`, `facebook.py`, `summarize.py`,
-  `unified.py`, `ipc.py`, `frontend/`, `src-tauri/`,
-  `tests/test_search_worker.py`, `tests/test_facebook.py`,
-  `tests/test_summarize.py`, `tests/test_unified.py`, `tests/test_ipc.py`
-  added.
+  `research.py`, `schedule.py`, `mypy.ini`, `.github/workflows/ci.yml`,
+  `.gitignore` modified; `search_worker.py`, `catalog.py`, `facebook.py`,
+  `summarize.py`, `unified.py`, `ipc.py`, `schedulers.py`, `frontend/`,
+  `src-tauri/`, `tests/test_search_worker.py`, `tests/test_facebook.py`,
+  `tests/test_summarize.py`, `tests/test_unified.py`, `tests/test_ipc.py`,
+  `tests/test_schedulers.py` added.
 - This session (documentation): `docs/engineering/BASELINE_AUDIT.md`,
   `docs/engineering/IMPLEMENTATION_STATUS.md`, `docs/FACEBOOK_IMPORT.md`,
   `docs/AI_SUMMARIZATION.md` added.
@@ -103,9 +107,9 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 85 tests, all pass (29 baseline
+- `python3 -m unittest discover -s tests`: 107 tests, all pass (29 baseline
   + 5 search-worker + 14 Facebook importer + 9 summarization + 4 unified
-  search + 24 IPC).
+  search + 24 IPC + 22 scheduler).
 - End-to-end CLI smoke tests of `dispatch facebook preview/import/search/
   list`, `dispatch summarize run --all` (fake loopback Ollama),
   `dispatch search-all`, and `dispatch serve` (subprocess protocol): pass.
@@ -115,10 +119,12 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 
 ## Test results
 
-85 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
+107 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
 frontend and Rust builds pass; IPC surfaces smoke-tested end-to-end over the
 real subprocess protocol (import, tag, workspace, saved search, field,
-metadata, report preview, schedule profile).
+metadata, report preview, schedule profile). Scheduler strategies are tested
+with mocked subprocess calls for all three platforms; real systemd/launchd/
+schtasks installation was not exercised in this environment.
 
 ## CI status
 
@@ -145,9 +151,12 @@ metadata, report preview, schedule profile).
 
 ## Known limitations
 
-- No encryption at rest; no OAuth; scheduling macOS-only on `main`; HTML
-  not rendered; no attachment search on `main`; no migrations; GUI
-  long-running operations beyond search are synchronous.
+- No encryption at rest; no OAuth; HTML not rendered on `main` (PR #4 adds
+  bounded HTML-to-text); no attachment search on `main`; no migrations.
+- Cross-platform scheduling is implemented but only verified against mocked
+  `launchctl`/`systemctl`/`schtasks`; real installation needs a desktop
+  session (and a Windows runner for Task Scheduler).
+- `sync_lock` is POSIX-only, so Windows has no archive-level write lock.
 
 ## Outstanding defects
 

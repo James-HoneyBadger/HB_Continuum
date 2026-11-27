@@ -1,10 +1,37 @@
-# Local scheduled synchronization (macOS)
+# Local scheduled synchronization
 
 HB Dispatch's synchronization center maintains an existing archive without
-a hosted scheduler or a permanent terminal window. It uses a
-per-user macOS LaunchAgent, the login Keychain and the existing read-only
-IMAP importer. Nothing is uploaded except the standard IMAP authentication
-and requests sent to your selected mail provider.
+a hosted scheduler or a permanent terminal window. It uses a per-user
+platform scheduler, the operating system credential store and the existing
+read-only IMAP importer. Nothing is uploaded except the standard IMAP
+authentication and requests sent to your selected mail provider.
+
+| Platform | Scheduler | Credential store |
+|---|---|---|
+| macOS | launchd agent (`LaunchAgents/*.plist`) | login Keychain (`security`) |
+| Linux | `systemd --user` service + timer | SecretService via `keyring`; Fernet-encrypted file fallback |
+| Windows | Task Scheduler (`schtasks`) | Windows Credential Manager via `keyring` |
+| other | not supported (clear error) | `keyring`, else encrypted file |
+
+Generated unit files, task definitions and profiles never contain a password.
+Only the synchronization command line is written; credentials are resolved
+from the store when a job runs.
+
+## Platform notes and limitations
+
+- **Linux** requires a running systemd user session. Install from the account
+  that owns that session; overriding `HOME` or `XDG_CONFIG_HOME` desynchronizes
+  the unit path from the user manager. Headless servers need
+  `loginctl enable-linger $USER`. Units live in
+  `$XDG_CONFIG_HOME/systemd/user` (default `~/.config/systemd/user`).
+- **Encrypted-file fallback** stores a Fernet key and ciphertext as `0600`
+  files inside the archive directory. It protects against casual inspection
+  and accidental copying, not against an attacker who can already read your
+  home directory. Prefer `keyring` (install with `pip install keyring`).
+- **Windows** tasks run as the logged-in user; `schtasks` definitions are
+  visible to other administrators. `keyring` uses Credential Manager.
+- **Locking** between overlapping runs is POSIX-only (`sync_lock.py`); Windows
+  relies on the single task instance rather than an archive lock.
 
 ## First-time setup
 
@@ -33,6 +60,22 @@ and requests sent to your selected mail provider.
    per minute, and runs accounts sequentially. Intervals and daily times
    are editable without reinstalling. Pause/resume affects future runs,
    not a currently running transfer.
+
+## Command-line installation
+
+```sh
+python3 dispatch.py --archive ~/HB_Mail_Archive schedule add work imap.example.invalid user@example.invalid --folder INBOX --minutes 30
+python3 dispatch.py --archive ~/HB_Mail_Archive schedule credential set work
+python3 dispatch.py --archive ~/HB_Mail_Archive schedule install --account work
+python3 dispatch.py --archive ~/HB_Mail_Archive schedule status
+python3 dispatch.py --archive ~/HB_Mail_Archive schedule uninstall
+```
+
+`install` accepts `--interval minutes --every N` or `--interval daily --at HH:MM`.
+With no interval given it adopts the account's profile schedule, and otherwise
+defaults to daily. `schedule credential set` prompts for the password and
+writes it to the platform store; it is never echoed or stored in a file on
+macOS or when `keyring` is available.
 
 ## Typical profile values
 
@@ -87,8 +130,9 @@ credentials, original EML files, or database rows.
   completed-folder imports during the most recent attempt, not a full
   reconciliation. Exceptions are recorded by type, without raw provider responses.
 - Keep the repository checkout and Python executable at their installed
-  paths; moving them requires removing and reinstalling the LaunchAgent.
-  Background scheduling requires macOS and a logged-in user session.
+  paths; moving them requires reinstalling the scheduler entry.
+  Background scheduling requires a logged-in user session (macOS, Linux) or
+  an available Task Scheduler service (Windows).
 - The schedule is not a backup. Back up the archive to independent,
   encrypted storage when synchronization is stopped and test restoration.
   Use the existing verify command for raw SHA-256 verification.

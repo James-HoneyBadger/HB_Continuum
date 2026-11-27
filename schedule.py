@@ -34,11 +34,9 @@ def profile(name,host,user,folders,minutes=None,daily=None,enabled=True):
 
 def service(p): return 'HB Dispatch IMAP '+p['host'].lower()
 
-def credential(p):
-    if sys.platform!='darwin': raise RuntimeError('Keychain requires macOS')
-    r=subprocess.run(['/usr/bin/security','find-generic-password','-s',service(p),'-a',p['user'],'-w'],capture_output=True,timeout=30)
-    if r.returncode: raise RuntimeError('Keychain credential unavailable')
-    return r.stdout.decode().rstrip('\r\n')
+def credential(p, root=None):
+    from schedulers import get_credential_store
+    return get_credential_store(root).get(service(p), p['user'], root)
 
 def due(p,state,now):
     if not p['enabled']: return False
@@ -50,8 +48,10 @@ def due(p,state,now):
 
 def config(root): return read_json(root/'schedule.json',{})
 
-def tick(root,force=None,now=None,get_password=credential):
+def tick(root,force=None,now=None,get_password=None):
     import fcntl
+    if get_password is None:
+        get_password=lambda p: credential(p,root)
     root.mkdir(mode=0o700,parents=True,exist_ok=True)
     fd=os.open(root/'schedule.lock',os.O_CREAT|os.O_RDWR,0o600)
     try:
@@ -85,44 +85,36 @@ def tick(root,force=None,now=None,get_password=credential):
     finally: os.close(fd)
 
 def agent(root):
-    label='org.honeybadger.dispatch.'+hashlib.sha256(str(root).encode()).hexdigest()[:16]
-    return label,Path.home()/'Library/LaunchAgents'/(label+'.plist')
+    from schedulers import get_scheduler
+    scheduler=get_scheduler()
+    return scheduler.label(root),scheduler.path(root)
 
-def install(root):
-    if sys.platform!='darwin': raise RuntimeError('launchd requires macOS')
-    label,path=agent(root);path.parent.mkdir(parents=True,exist_ok=True)
-    if path.exists():
-        if agent_status(root)=='Loaded': raise RuntimeError('Agent already loaded; schedule changes take effect automatically')
-        raise RuntimeError('Agent file already exists; remove scheduler, then install again')
-    data={'Label':label,'ProgramArguments':[sys.executable,str(Path(__file__).resolve()),'--archive',str(root),'tick'],'StartInterval':60,'RunAtLoad':True,'ProcessType':'Background'}
-    with path.open('xb') as f: plistlib.dump(data,f)
-    try: subprocess.run(['/bin/launchctl','bootstrap','gui/'+str(os.getuid()),str(path)],check=True)
-    except Exception:
-        path.unlink(missing_ok=True);raise
-    return str(path)
+def install(root,account=None,interval=None,every=None,at=None):
+    from schedulers import get_scheduler
+    return get_scheduler().install(root,account,interval,every,at)
 
 def agent_status(root):
-    if sys.platform!='darwin': return 'Not supported on this platform'
-    label,path=agent(root)
-    r=subprocess.run(['/bin/launchctl','print','gui/'+str(os.getuid())+'/'+label],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
-    return 'Loaded' if r.returncode==0 else ('Installed, not loaded' if path.exists() else 'Not installed')
+    from schedulers import get_scheduler
+    try: return get_scheduler().status(root)
+    except Exception: return 'Not supported on this platform'
 
 def uninstall(root):
-    if sys.platform!='darwin': raise RuntimeError('launchd requires macOS')
-    label,path=agent(root)
-    if agent_status(root)=='Loaded':
-        subprocess.run(['/bin/launchctl','bootout','gui/'+str(os.getuid())+'/'+label],check=True)
-    path.unlink(missing_ok=True)
+    from schedulers import get_scheduler
+    get_scheduler().uninstall(root)
 
-def main():
+def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--archive',default='~/.hb-dispatch')
     sub=p.add_subparsers(dest='cmd',required=True)
     q=sub.add_parser('add');q.add_argument('name');q.add_argument('host');q.add_argument('user');q.add_argument('--folder',action='append',required=True)
     g=q.add_mutually_exclusive_group(required=True);g.add_argument('--minutes',type=int);g.add_argument('--daily')
     for cmd in ('pause','resume','run'):
         q=sub.add_parser(cmd);q.add_argument('name')
-    for cmd in ('tick','status','install','uninstall','gui'):sub.add_parser(cmd)
-    a=p.parse_args();root=Path(a.archive).expanduser().resolve()
+    q=sub.add_parser('install');q.add_argument('--account');q.add_argument('--interval',choices=('minutes','daily'));q.add_argument('--every',type=int);q.add_argument('--at')
+    q=sub.add_parser('credential');c=q.add_subparsers(dest='ccmd',required=True)
+    for cmd in ('set','delete'):
+        cq=c.add_parser(cmd);cq.add_argument('name')
+    for cmd in ('tick','status','uninstall','gui'):sub.add_parser(cmd)
+    a=p.parse_args(argv);root=Path(a.archive).expanduser().resolve()
     if a.cmd=='gui':
         from schedule_ui import launch
         launch(root);return
@@ -130,11 +122,30 @@ def main():
     if a.cmd=='add':
         item=profile(a.name,a.host,a.user,a.folder,a.minutes,a.daily)
         profiles[a.name]=item;write_json(root/'schedule.json',profiles)
-        print('Keychain item name:',service(item),'Account:',item['user'])
+        print('Credential item name:',service(item),'Account:',item['user'])
+        print('Store the password with: credential set',a.name)
     elif a.cmd in ('pause','resume'):
         profiles[a.name]['enabled']=a.cmd=='resume';write_json(root/'schedule.json',profiles)
     elif a.cmd in ('run','tick'): print(json.dumps(tick(root,a.name if a.cmd=='run' else None),indent=2))
-    elif a.cmd=='status': print(json.dumps({'agent':agent_status(root),'profiles':profiles,'status':read_json(root/'schedule-status.json',{})},indent=2))
-    elif a.cmd=='install': print(install(root))
+    elif a.cmd=='status': print(json.dumps({'scheduler':agent_status(root),'profiles':profiles,'status':read_json(root/'schedule-status.json',{})},indent=2))
+    elif a.cmd=='install':
+        every,at=a.every,a.at
+        if a.interval is None and a.account in profiles:
+            minutes=profiles[a.account]['minutes']
+            if minutes is not None: a.interval,every='minutes',minutes
+            else: a.interval,at='daily',profiles[a.account]['daily']
+        if a.interval=='daily' and not at: at='12:00'
+        print(install(root,a.account,a.interval,every,at))
     elif a.cmd=='uninstall': uninstall(root)
+    elif a.cmd=='credential':
+        from schedulers import get_credential_store
+        if a.name not in profiles: raise SystemExit('Unknown profile: '+a.name)
+        item=profiles[a.name];store=get_credential_store(root)
+        if a.ccmd=='set':
+            import getpass
+            store.set(service(item),item['user'],getpass.getpass('Mail password: '),root)
+            print('Stored credential in',store.name)
+        else:
+            store.delete(service(item),item['user'],root)
+            print('Deleted credential from',store.name)
 if __name__=='__main__': main()
