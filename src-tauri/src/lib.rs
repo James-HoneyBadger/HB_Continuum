@@ -327,6 +327,21 @@ fn import_eml(state: State<AppState>, paths: Vec<String>) -> Result<Value, Strin
 }
 
 #[tauri::command]
+fn cancel(state: State<AppState>, job_id: String) -> Result<Value, String> {
+    call(&state, "cancel", json!({ "job_id": job_id }))
+}
+
+#[tauri::command]
+fn import_history(state: State<AppState>, limit: Option<u32>) -> Result<Value, String> {
+    call(&state, "import_history", json!({ "limit": limit.unwrap_or(50) }))
+}
+
+#[tauri::command]
+fn sources(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "sources", json!({}))
+}
+
+#[tauri::command]
 fn preferences(state: State<AppState>) -> Result<Value, String> {
     call(&state, "preferences", json!({}))
 }
@@ -514,7 +529,8 @@ pub fn run() {
             record, verify, health,
             reindex, recover_orphans, migrate_status, backup, verify_backup, restore,
             facebook_preview, facebook_import,
-            import_eml, preferences, preferences_set, research_list, research_results,
+            import_eml, import_history, sources, cancel,
+            preferences, preferences_set, research_list, research_results,
             research_workspace_save, research_search_save, research_tag, research_untag,
             research_apply_rules, research_field_define, research_metadata_set,
             research_report_save, research_report_preview, research_report_export,

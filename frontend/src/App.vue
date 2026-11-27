@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import OverviewView from "./components/OverviewView.vue";
 import SearchView from "./components/SearchView.vue";
 import ImportView from "./components/ImportView.vue";
+import SourcesView from "./components/SourcesView.vue";
 import ResearchView from "./components/ResearchView.vue";
 import SyncView from "./components/SyncView.vue";
 import PreferencesView from "./components/PreferencesView.vue";
@@ -18,8 +19,9 @@ interface Stats {
 
 const tabs = [
   "Overview",
-  "Search",
   "Timeline",
+  "Search",
+  "Sources",
   "Import",
   "Research",
   "Sync",
@@ -106,6 +108,7 @@ onMounted(refreshStats);
         <OverviewView v-if="tab === 'Overview'" :on-error="reportError" :on-changed="refreshStats" />
         <SearchView v-else-if="tab === 'Search'" :on-error="reportError" :on-changed="refreshStats" />
         <TimelineView v-else-if="tab === 'Timeline'" :on-error="reportError" :on-changed="refreshStats" />
+        <SourcesView v-else-if="tab === 'Sources'" :on-error="reportError" :on-changed="refreshStats" />
         <ImportView v-else-if="tab === 'Import'" :on-error="reportError" :on-changed="refreshStats" />
         <ResearchView v-else-if="tab === 'Research'" :on-error="reportError" :on-changed="refreshStats" />
         <SyncView v-else-if="tab === 'Sync'" :on-error="reportError" :on-changed="refreshStats" />

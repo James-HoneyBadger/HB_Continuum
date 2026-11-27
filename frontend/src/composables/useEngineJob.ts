@@ -58,6 +58,15 @@ export function useEngineJob() {
     if (!unlisten) unlisten = await listen("engine-event", (event) => handle(event.payload));
   }
 
+  async function cancel() {
+    if (!activeJob) return;
+    try {
+      await invoke("cancel", { jobId: activeJob });
+    } catch {
+      // The job may already have finished; nothing else to do.
+    }
+  }
+
   async function start(method: string, params: Record<string, unknown> = {}): Promise<JobOutcome> {
     if (busy.value) throw new Error("another operation is already running");
     await ensureListener();
@@ -85,5 +94,5 @@ export function useEngineJob() {
     if (unlisten) unlisten();
   });
 
-  return { busy, progress, start };
+  return { busy, progress, start, cancel };
 }

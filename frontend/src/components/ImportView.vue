@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEngineJob } from "../composables/useEngineJob";
@@ -13,7 +13,22 @@ const importResult = ref<any>(null);
 const facebookPaths = ref<string[]>([]);
 const facebookPreview = ref<any>(null);
 const facebookResult = ref<any>(null);
-const { busy, progress, start } = useEngineJob();
+const history = ref<any[]>([]);
+const historyAvailable = ref(true);
+const { busy, progress, start, cancel } = useEngineJob();
+
+async function loadHistory() {
+  try {
+    const response = (await invoke("import_history", { limit: 25 })) as {
+      available: boolean;
+      runs: any[];
+    };
+    historyAvailable.value = response.available;
+    history.value = response.runs;
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
 
 async function chooseFiles() {
   try {
@@ -81,6 +96,7 @@ async function runFacebookImport() {
       return;
     }
     facebookResult.value = outcome.result;
+    await loadHistory();
     props.onChanged();
   } catch (e) {
     props.onError(String(e));
@@ -95,12 +111,21 @@ async function runImport() {
     return;
   }
   try {
-    importResult.value = (await invoke("import_eml", { paths })) as any;
+    const outcome = await start("import_eml", { paths });
+    if (outcome.event === "job_error") {
+      props.onError(String(outcome.message || "EML import failed"));
+      await loadHistory();
+      return;
+    }
+    importResult.value = outcome.result;
+    await loadHistory();
     props.onChanged();
   } catch (e) {
     props.onError(String(e));
   }
 }
+
+onMounted(loadHistory);
 </script>
 
 <template>
@@ -110,10 +135,14 @@ async function runImport() {
       Original message bytes are preserved under their SHA-256 and never modified. Import is idempotent.
     </p>
     <div class="row">
-      <button @click="chooseFiles">Choose .eml files…</button>
-      <button @click="chooseFolder">Choose folder…</button>
-      <button @click="runImport" :disabled="!importPaths.length && !importPath">Import</button>
+      <button :disabled="busy" @click="chooseFiles">Choose .eml files…</button>
+      <button :disabled="busy" @click="chooseFolder">Choose folder…</button>
+      <button @click="runImport" :disabled="busy || (!importPaths.length && !importPath)">
+        {{ busy ? "Importing…" : "Import" }}
+      </button>
+      <button v-if="busy" @click="cancel">Cancel</button>
     </div>
+    <p v-if="progress" class="meta">{{ progress }}</p>
     <p v-if="importPaths.length" class="meta">
       {{ importPaths.length === 1 ? importPaths[0] : importPaths.length + " files selected" }}
     </p>
@@ -122,7 +151,8 @@ async function runImport() {
     </div>
     <p v-if="importResult" class="meta">
       {{ importResult.files_seen }} files seen · {{ importResult.imported }} newly imported ·
-      {{ importResult.errors.length }} errors
+      {{ importResult.existing }} already present · {{ importResult.errors.length }} errors
+      <span v-if="importResult.cancelled">· cancelled, completed work was kept</span>
     </p>
     <ul v-if="importResult && importResult.errors.length" class="errors">
       <li v-for="e in importResult.errors" :key="e.path"><span class="meta">{{ e.path }}</span> {{ e.error }}</li>
@@ -157,6 +187,42 @@ async function runImport() {
     <ul v-if="facebookResult && facebookResult.warnings.length" class="errors">
       <li v-for="(warning, i) in facebookResult.warnings" :key="i">{{ warning }}</li>
     </ul>
+
+    <h2>Import history</h2>
+    <p v-if="!historyAvailable" class="meta">
+      This archive predates import tracking; new runs will be recorded after it is opened by this build.
+    </p>
+    <table v-else-if="history.length" class="history">
+      <thead>
+        <tr>
+          <th>Finished</th>
+          <th>Source</th>
+          <th>Target</th>
+          <th>Status</th>
+          <th>Seen</th>
+          <th>New</th>
+          <th>Existing</th>
+          <th>Failed</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="run in history" :key="run.id">
+          <td>{{ run.finished_at || run.started_at }}</td>
+          <td>{{ run.source }}</td>
+          <td class="target" :title="run.source_key">{{ run.source_key || "—" }}</td>
+          <td :class="{ bad: run.status === 'error' }">{{ run.status }}</td>
+          <td>{{ run.records_seen ?? "—" }}</td>
+          <td>{{ run.records_new ?? "—" }}</td>
+          <td>{{ run.records_existing ?? "—" }}</td>
+          <td>{{ run.records_failed ?? "—" }}</td>
+        </tr>
+      </tbody>
+    </table>
+    <p v-else class="meta">No imports recorded yet.</p>
+    <p class="meta">
+      Counts describe what the engine actually processed in each run; a cancelled run keeps the
+      records it already committed, and re-running it is safe.
+    </p>
   </section>
 </template>
 
@@ -186,5 +252,30 @@ button {
 .errors {
   color: var(--hb-error-text);
   font-size: 13px;
+}
+.history {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.history th,
+.history td {
+  text-align: left;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--hb-border);
+  font-variant-numeric: tabular-nums;
+}
+.history th {
+  color: var(--hb-text-secondary);
+  font-weight: 600;
+}
+.history td.bad {
+  color: var(--hb-error-text);
+}
+.history td.target {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
