@@ -376,6 +376,24 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(self.server.handle(request('restore',snapshot='x'))['error']['code'],'INVALID_PARAMS')
         self.assertEqual(self.server.handle(request('restore',snapshot='x',destination='y'))['result']['status'],'started')
 
+    def test_facebook_preview_and_import_job(self):
+        export=self.root/'posts.json'
+        export.write_text(json.dumps({'your_posts':[
+            {'timestamp':1700000000,'data':[{'post':'Bullion note'}]},
+        ]}))
+        preview=self.server.handle(request('facebook_preview',paths=[str(export)]))['result']
+        self.assertEqual(preview['files_discovered'],1)
+        self.assertEqual(preview['supported_records'],1)
+        started=self.server.handle(request('facebook_import',paths=[str(export)]))
+        terminal=self.finish_job(started['result']['job_id'])
+        self.assertEqual(terminal['event'],'job_complete')
+        self.assertEqual(terminal['result']['records_imported'],1)
+        self.assertFalse(terminal['result']['cancelled'])
+        again=self.server.handle(request('facebook_import',paths=[str(export)]))
+        self.assertEqual(self.finish_job(again['result']['job_id'])['result']['files_skipped'],1)
+        self.assertEqual(self.server.handle(request('facebook_preview'))['error']['code'],'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request('facebook_import',paths=[]))['error']['code'],'INVALID_PARAMS')
+
     def test_serve_subprocess(self):
         proc=subprocess.Popen(
             [sys.executable, 'dispatch.py', '--archive', str(self.root), 'serve'],

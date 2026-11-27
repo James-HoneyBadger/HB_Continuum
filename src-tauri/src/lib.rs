@@ -194,6 +194,16 @@ fn recover_orphans(state: State<AppState>) -> Result<Value, String> {
 }
 
 #[tauri::command]
+fn facebook_preview(state: State<AppState>, paths: Vec<String>) -> Result<Value, String> {
+    call(&state, "facebook_preview", json!({ "paths": paths }))
+}
+
+#[tauri::command]
+fn facebook_import(state: State<AppState>, paths: Vec<String>) -> Result<Value, String> {
+    call(&state, "facebook_import", json!({ "paths": paths }))
+}
+
+#[tauri::command]
 fn migrate_status(state: State<AppState>) -> Result<Value, String> {
     call(&state, "migrate_status", json!({}))
 }
@@ -408,6 +418,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ping, stats, search, message, thread, record, verify, health,
             reindex, recover_orphans, migrate_status, backup, verify_backup, restore,
+            facebook_preview, facebook_import,
             import_eml, preferences, preferences_set, research_list, research_results,
             research_workspace_save, research_search_save, research_tag, research_untag,
             research_apply_rules, research_field_define, research_metadata_set,

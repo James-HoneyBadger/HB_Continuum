@@ -62,7 +62,8 @@ Phase A — Stabilization (repository audit in progress).
   `recover_orphans`) over IPC, surfaced by a Health tab in the Tauri shell;
   schema reporting (`migrate_status`) and validated `backup`, `verify_backup`
   and `restore` jobs appear in a Backup tab, and both tabs consume forwarded
-  engine events through a shared job composable.
+  engine events through a shared job composable; the Import tab offers
+  Facebook export preview and background import alongside EML import.
   Python subprocess client driving `stats`, `search`, `message`, `thread`,
   `record`, `verify`, `import_eml`, `preferences`, and the full research
   overlay (workspaces, saved searches, tags, fields, metadata, reports with
@@ -109,7 +110,8 @@ relationships explorers, and the documentation overhaul
   `frontend/src/App.vue`, `frontend/src/components/SearchView.vue`,
   `frontend/src/components/HealthView.vue`,
   `frontend/src/components/BackupView.vue`,
-  `frontend/src/composables/useEngineJob.ts`, `src-tauri/src/lib.rs`,
+  `frontend/src/composables/useEngineJob.ts`, `facebook.py`,
+  `frontend/src/components/ImportView.vue`, `src-tauri/src/lib.rs`,
   `tests/test_migrations.py`, `tests/test_ipc.py` modified.
 
 ## Database changes
@@ -143,9 +145,9 @@ relationships explorers, and the documentation overhaul
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 158 tests, all pass (29 baseline
+- `python3 -m unittest discover -s tests`: 159 tests, all pass (29 baseline
   + 5 search-worker + 14 Facebook importer + 9 summarization + 4 unified
-  search + 38 IPC + 26 scheduler + 1 Windows-path tick + 17 migrations + 15
+  search + 39 IPC + 26 scheduler + 1 Windows-path tick + 17 migrations + 15
   archive hardening).
 - `mypy` (2.4.1, matching CI): no issues in 19 source files.
 - End-to-end CLI smoke tests of `dispatch facebook preview/import/search/
@@ -157,12 +159,12 @@ relationships explorers, and the documentation overhaul
   (clean exit 0), `dispatch backup`/`verify-backup`/`restore`, and
   `dispatch reindex` over a legacy v1 archive: pass.
 - Desktop shell: `cargo check` and `npm run build` (vue-tsc + vite) pass
-  with the health, repair, schema and backup commands, the Backup tab and the
-  forwarded `engine-event` channel.
+  with the health, repair, schema, backup and Facebook-import commands, the
+  Backup tab and the forwarded `engine-event` channel.
 
 ## Test results
 
-158 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
+159 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
 frontend and Rust builds pass; IPC surfaces smoke-tested end-to-end over the
 real subprocess protocol.
 
@@ -220,9 +222,9 @@ Scheduler verification status:
 
 ## Next recommended tasks
 
-1. Surface Facebook import and research report export in the shell, which
-   still require the CLI; health, repair, backup, restore and schema status
-   are now reachable.
+1. Port the remaining workstation surfaces (timeline, correspondents,
+   thread view, evidence export) to the shell, which still cover only part of
+   the Tkinter feature set.
 2. Support Facebook post/comment revision entries and message attachments
    metadata.
 3. Close PR #4 as superseded and reconcile PR #5 branding with this branch.

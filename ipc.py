@@ -386,6 +386,15 @@ def _research_report_export(root, name, path):
         return {'name': label, 'path': destination}
     return _with_research(root, action)
 
+def _facebook_preview(root, paths):
+    from facebook import preview
+    if not isinstance(paths, list) or not paths or not all(isinstance(p, str) for p in paths):
+        raise IPCError('INVALID_PARAMS', 'paths must be a non-empty list of strings')
+    try:
+        return preview(paths, root)
+    except OSError as exc:
+        raise IPCError('IMPORT_FAILED', str(exc)) from None
+
 def _export_evidence(root, hashes, destination):
     from dispatch import Archive
     targets = _hash_list(hashes)
@@ -619,6 +628,23 @@ class IPCServer:
 
         return self._start_job(work)
 
+    def _start_facebook_import(self, params):
+        from facebook import import_files
+        paths = params.get('paths')
+        if not isinstance(paths, list) or not paths or not all(isinstance(p, str) for p in paths):
+            raise IPCError('INVALID_PARAMS', 'paths must be a non-empty list of strings')
+
+        def work(job_id, cancel_event):
+            def progress(done, total, path, status):
+                self._write(_event('progress', job_id=job_id, done=done, total=total,
+                                   hash='', status=f'{status} {path}'))
+            try:
+                return import_files(paths, self.root, progress=progress, cancel_event=cancel_event)
+            except OSError as exc:
+                raise IPCError('IMPORT_FAILED', str(exc)) from None
+
+        return self._start_job(work)
+
     def _cancel(self, params):
         job_id = params.get('job_id')
         job = self._jobs.get(job_id) if isinstance(job_id, str) else None
@@ -667,6 +693,10 @@ class IPCServer:
                 return _result(request_id, self._start_backup_action('verify_backup', params))
             if method == 'restore':
                 return _result(request_id, self._start_backup_action('restore', params))
+            if method == 'facebook_preview':
+                return _result(request_id, _facebook_preview(self.root, params.get('paths')))
+            if method == 'facebook_import':
+                return _result(request_id, self._start_facebook_import(params))
             if method == 'import_eml':
                 return _result(request_id, _import_eml(self.root, params.get('paths', [])))
             if method == 'preferences':

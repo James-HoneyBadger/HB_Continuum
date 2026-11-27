@@ -23,7 +23,8 @@ spawned as `python3 dispatch.py --archive <root> serve`.
 - Methods are an explicit allowlist: `ping`, `stats`, `search`, `message`,
   `thread`, `record`, `verify`, `health`, `migrate_status`, `reindex`,
   `recover_orphans`, `backup`, `verify_backup`, `restore`, `import_eml`,
-  `preferences`, `preferences_set`, the `research_*` overlay methods,
+  `facebook_preview`, `facebook_import`, `preferences`, `preferences_set`,
+  the `research_*` overlay methods,
   `export_evidence`, the `schedule_*` methods, `summarize`, `cancel` and
   `shutdown`.
 - `health` inspects an existing archive through a read-only connection and
@@ -38,6 +39,10 @@ spawned as `python3 dispatch.py --archive <root> serve`.
   that validate before publishing; failures report `BACKUP_FAILED`,
   `BACKUP_INVALID` or `RESTORE_FAILED`, and missing paths are rejected as
   `INVALID_PARAMS` before a job starts.
+- `facebook_preview` reports what a Facebook export contains without
+  writing; `facebook_import` is a background job that streams per-file
+  progress and returns the importer's counters, with `IMPORT_FAILED` for
+  unreadable paths.
 - `message` and `thread` results carry the body text and indexed attachment
   metadata (`filename`, `mime`, `characters`); an archive without the
   attachment index reports an empty list rather than failing.

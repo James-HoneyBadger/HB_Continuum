@@ -220,29 +220,36 @@ def preview(paths, root=None):
             result['unsupported_records'] += estimated
     return result
 
-def import_files(paths, root):
+def import_files(paths, root, progress=None, cancel_event=None):
     files = _expand(paths)
     catalog = Catalog(root)
     counts = {'files_discovered': len(files), 'files_imported': 0, 'files_skipped': 0,
               'files_unsupported': 0, 'records_encountered': 0, 'records_imported': 0,
               'records_duplicate': 0, 'records_unsupported': 0,
-              'parse_errors': 0, 'warnings': []}
+              'parse_errors': 0, 'cancelled': False, 'warnings': []}
+    total = len(files)
     try:
-        for path in files:
+        for done, path in enumerate(files, 1):
+            if cancel_event is not None and cancel_event.is_set():
+                counts['cancelled'] = True
+                break
             try:
                 raw, doc = _read_json(path)
             except FacebookParseError as exc:
                 counts['parse_errors'] += 1
                 counts['warnings'].append(str(exc))
+                if progress is not None: progress(done, total, str(path), 'error')
                 continue
             category, key, items = _extract_items(path, doc)
             file_hash = sha256(raw)
             if catalog.has_file(file_hash):
                 counts['files_skipped'] += 1
+                if progress is not None: progress(done, total, str(path), 'skipped')
                 continue
             if category not in SUPPORTED:
                 counts['files_unsupported'] += 1
                 counts['warnings'].append(f'{path}: unsupported category {category!r}')
+                if progress is not None: progress(done, total, str(path), 'unsupported')
                 continue
             source_key = _source_key(path, category, key, doc)
             records = [r for r in (_normalize(category, item) for item in items) if r is not None]
@@ -262,6 +269,7 @@ def import_files(paths, root):
                     else:
                         counts['records_duplicate'] += 1
             counts['files_imported'] += 1
+            if progress is not None: progress(done, total, str(path), 'imported')
         return counts
     finally:
         catalog.close()

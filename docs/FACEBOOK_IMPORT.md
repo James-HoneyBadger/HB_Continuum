@@ -49,6 +49,10 @@ python3 dispatch.py --archive ~/HB_Continuum facebook search "receipt"
 python3 dispatch.py --archive ~/HB_Continuum facebook list --kind event --limit 50
 ```
 
+The desktop **Import** tab offers the same preview and import, choosing
+either individual JSON files or the export folder; the import runs as a
+background job with per-file progress.
+
 `preview` reports files discovered, recognized categories, estimated record
 counts, and unsupported files. `import` is idempotent: re-running it skips
 files already imported (matched by SHA-256), so interrupted imports resume
