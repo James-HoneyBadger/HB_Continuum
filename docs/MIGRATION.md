@@ -105,6 +105,23 @@ The log records observed counts only. A process killed mid-run leaves
 silently rewritten as success. Nothing is backfilled for imports performed
 before version 4; the UI reports history as unavailable for those runs.
 
+## Research version 2: journal entries
+
+Version 2 adds two tables to `research.sqlite3`:
+
+- `journal_entries` holds the current version of each user-authored entry:
+  title, body, an optional event date, creation/update timestamps, a
+  revision counter and a soft-deletion timestamp.
+- `journal_revisions` is append-only. Every create and every changed update
+  writes one row, so an edit never replaces earlier text. An unchanged save
+  writes nothing.
+
+Journal entries are retrospective user records, not preserved evidence.
+They live in the research overlay, are never merged into `archive.sqlite3`
+or the raw originals, and soft deletion keeps every revision available for
+inspection and restore. The migration is additive; existing workspaces,
+tags, rules, fields and reports are untouched.
+
 ## Inspecting and migrating
 
 Opening the archive at all (`dispatch`, `dispatch gui`) migrates

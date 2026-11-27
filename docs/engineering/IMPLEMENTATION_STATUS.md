@@ -138,6 +138,22 @@ landed (Overview dashboard, design tokens, timeline pagination).
 - Added the missing `cancel` Tauri command so the shell can cancel
   long-running engine jobs instead of only waiting for them.
 
+### Journal workspace (2026-11-27, third increment)
+
+- Research schema version 2 adds `journal_entries` and an append-only
+  `journal_revisions` table. Creating or changing an entry writes a
+  revision; an unchanged save writes nothing. Entries are soft-deleted and
+  can be restored, with all revisions retained.
+- `Research` exposes validated journal create/get/list/update/delete/restore
+  operations with explicit bounds (200-character title, 1 MB body,
+  ISO 8601 event date). The event date and the recording time are separate.
+- IPC adds `journal_list`, `journal_get`, `journal_save`, `journal_delete`
+  and `journal_restore`; the Tauri shell exposes matching commands.
+- New Journal workspace: entry list, editor, revision history preview,
+  two-step removal explanation and restore. The view states that entries are
+  retrospective user records stored in the research overlay, never merged
+  with preserved evidence.
+
 ## Pending capabilities
 
 See `BASELINE_AUDIT.md` section 9. In brief: local embeddings/hybrid
@@ -164,6 +180,10 @@ until the shell's flows are exercised against real archives.
 
 ## Files changed
 
+- Journal increment (2026-11-27): `migrations.py`, `research.py`, `ipc.py`,
+  `src-tauri/src/lib.rs`, `frontend/src/App.vue`,
+  `frontend/src/components/JournalView.vue` (new), `tests/test_journal.py`
+  (new), `tests/test_ipc.py`, `tests/test_migrations.py`, `docs/MIGRATION.md`.
 - Import increment (2026-11-27): `migrations.py`, `dispatch.py`, `ipc.py`,
   `src-tauri/src/lib.rs`, `frontend/src/App.vue`,
   `frontend/src/components/ImportView.vue`, `frontend/src/composables/useEngineJob.ts`,
@@ -208,10 +228,11 @@ until the shell's flows are exercised against real archives.
 
 - Schema versioning lives in `migrations.py`, shared by all three databases
   and tracked with `PRAGMA user_version`; `archive` is at version 4, `catalog`
-  at version 2 and `research` at version 1. Archive version 2 adds
+  at version 2 and `research` at version 2. Archive version 2 adds
   `attachment_index` and `extraction_versions`; version 3 adds `sort_ts`,
   `date_precision` and the `messages_sort_ts` index (additive, with a
   transactional backfill); version 4 adds `import_runs` and its time index.
+  Research version 2 adds `journal_entries` and `journal_revisions`.
 - New source-independent catalog database `catalog.sqlite3` with
   `source_files` and `records` tables plus a trigger-maintained FTS5
   `record_search` index, governed by a `PRAGMA user_version`-based migration
@@ -236,10 +257,11 @@ until the shell's flows are exercised against real archives.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 183 tests, 182 pass and 1 is
+- `python3 -m unittest discover -s tests`: 190 tests, 189 pass and 1 is
   skipped on this machine (the optional `keyring` backend is not
-  installed). Includes the new 8 timestamp/chronology tests, 2 real-process
-  lock tests, 5 import-run tests, 6 unified-search tests and 44 IPC tests.
+  installed). Includes 8 timestamp/chronology tests, 2 real-process lock
+  tests, 5 import-run tests, 6 journal tests, 6 unified-search tests and
+  45 IPC tests.
 - `mypy` (2.4.1, matching CI): no issues in 19 source files.
 - `cargo test` (src-tauri): 3 tests pass, covering bundled-sidecar
   preference, the development script fallback and resolution from a bare
@@ -265,11 +287,10 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-183 Python tests ran: 182 passed, 0 failed, 1 skipped (Python 3.13.6,
+190 Python tests ran: 189 passed, 0 failed, 1 skipped (Python 3.13.6,
 macOS ARM64); `npm run build` (vue-tsc + vite), `cargo check` and
-`cargo test` pass; the background EML import, import history and sources
-surfaces were smoke-tested end-to-end over the real subprocess protocol
-(3 progress events, 3 new records, idempotent second run with 3 existing).
+`cargo test` pass; background EML import, import history, sources and
+journal IPC surfaces are covered by tests over the real subprocess protocol.
 
 Scheduler verification status:
 
@@ -326,8 +347,8 @@ Scheduler verification status:
 - Archive locking is implemented for POSIX and Windows and tested with real
   processes on macOS; the Windows code path has not yet run on Windows in
   this environment.
-- The desktop shell now has Source Manager and import history, but still
-  lacks the journal, report and record-collection workspaces.
+- The desktop shell now has Source Manager, import history and a Journal,
+  but still lacks the report and record-collection workspaces.
 - Import history is best-effort for Facebook imports: a completed import
   reports `history_error` rather than failing when the run cannot be logged.
 
