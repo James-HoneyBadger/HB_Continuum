@@ -150,7 +150,9 @@ python3 dispatch.py summarize run --all --type thread
 snippets are excerpts of the stored text, never generated. The desktop search
 adds source, exact sender/actor, record-kind, tag and date-range filters.
 Totals are exact counts unless a tag filter is applied, and a listing limit is
-reported explicitly rather than disguised as a total.
+reported explicitly rather than disguised as a total. Malformed query
+expressions are rejected with an explanation and syntax help instead of
+silently returning no matches.
 
 ```sh
 python3 dispatch.py search-all "receipt"
