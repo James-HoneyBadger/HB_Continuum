@@ -9,6 +9,32 @@ __version__ = '0.3.0'
 def valid_hash(value):
     return isinstance(value,str) and len(value)==64 and all(c in '0123456789abcdef' for c in value)
 
+def verify_raw(conn, raw):
+    """Return stored hashes whose original is missing, unsafe or altered."""
+    bad=[]
+    for h, in conn.execute('SELECT hash FROM messages'):
+        if not valid_hash(h): bad.append(h); continue
+        path=raw/(h+'.eml')
+        try:
+            if path.is_symlink() or not path.is_file(): bad.append(h); continue
+            with path.open('rb') as f:
+                if hashlib.file_digest(f,'sha256').hexdigest()!=h: bad.append(h)
+        except OSError: bad.append(h)
+    return bad
+
+def diagnose(conn, raw):
+    """Consistency report shared by the CLI and the desktop protocol."""
+    checks=conn.execute('PRAGMA quick_check').fetchall()
+    foreign=conn.execute('PRAGMA foreign_key_check').fetchall()
+    hashes={h for h, in conn.execute('SELECT hash FROM messages')}
+    indexed={h for h, in conn.execute('SELECT hash FROM search')}
+    originals={p.stem for p in raw.glob('*.eml') if p.is_file()}
+    duplicate=conn.execute('SELECT count(*) FROM search').fetchone()[0]-len(indexed)
+    return {'sqlite_ok':checks==[('ok',)],'foreign_key_errors':len(foreign),'messages':len(hashes),
+            'index_missing':sorted(hashes-indexed),'index_extra':sorted(indexed-hashes),
+            'index_duplicate_rows':duplicate,'raw_missing':sorted(hashes-originals),
+            'raw_unindexed':sorted(originals-hashes),'raw_invalid':verify_raw(conn,raw)}
+
 class Archive:
     def __init__(self, root):
         self.root = Path(root).expanduser().resolve(); self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -51,13 +77,13 @@ class Archive:
                 self.db.execute('INSERT OR IGNORE INTO origins VALUES(?,?,?,?,?)',(*origin,digest))
                 if self.db.execute('SELECT hash FROM origins WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone()[0]!=digest: raise ValueError('Origin conflict')
         return digest
-    def reindex(self):
+    def reindex(self, progress=None, cancel_event=None):
         """Repair derived index data from the preserved raw originals.
 
         Messages extracted by an older build, messages with a missing search
         row, and messages with duplicate search rows are re-extracted. Each
         message is verified against its raw original and re-indexed in its own
-        transaction, so an interrupted run keeps its progress.
+        transaction, so an interrupted or cancelled run keeps its progress.
         """
         from mime_index import extract, index_text
         from sync_lock import sync_lock
@@ -68,10 +94,12 @@ class Archive:
                 'WHERE hash NOT IN (SELECT hash FROM extraction_versions WHERE version=2) '
                 'OR hash NOT IN (SELECT hash FROM search) '
                 'OR hash IN (SELECT hash FROM search GROUP BY hash HAVING count(*)>1)').fetchall()
+            total=len(pending)
             rowids={}
             for rowid,h in self.db.execute('SELECT rowid,hash FROM search'):
                 rowids.setdefault(h,[]).append(rowid)
-            for h,subject,sender in pending:
+            for done,(h,subject,sender) in enumerate(pending,1):
+                if cancel_event is not None and cancel_event.is_set(): break
                 if not valid_hash(h): raise ValueError('Invalid stored message hash')
                 source=self.raw/(h+'.eml')
                 if source.is_symlink(): raise ValueError('Unsafe raw file')
@@ -86,6 +114,7 @@ class Archive:
                     self.db.executemany('INSERT INTO attachment_index VALUES(?,?,?,?,?)',[(h,*a) for a in attachments])
                     self.db.execute('INSERT OR REPLACE INTO extraction_versions VALUES(?,2)',(h,))
                 count+=1
+                if progress is not None: progress(done,total,h,'reindexed')
         return count
     def attachments(self,h):
         return self.db.execute('SELECT filename,mime,length(content) FROM attachment_index WHERE hash=? ORDER BY part',(h,)).fetchall()
@@ -94,34 +123,31 @@ class Archive:
         with sync_lock(self.root):
             return self._health()
     def _health(self):
-        checks=self.db.execute('PRAGMA quick_check').fetchall()
-        foreign=self.db.execute('PRAGMA foreign_key_check').fetchall()
-        hashes={h for h, in self.db.execute('SELECT hash FROM messages')}
-        indexed={h for h, in self.db.execute('SELECT hash FROM search')}
-        raw={p.stem for p in self.raw.glob('*.eml') if p.is_file()}
-        duplicate=self.db.execute('SELECT count(*) FROM search').fetchone()[0]-len(indexed)
-        return {'sqlite_ok':checks==[('ok',)],'foreign_key_errors':len(foreign),'messages':len(hashes),
-                'index_missing':sorted(hashes-indexed),'index_extra':sorted(indexed-hashes),
-                'index_duplicate_rows':duplicate,'raw_missing':sorted(hashes-raw),
-                'raw_unindexed':sorted(raw-hashes),'raw_invalid':self.verify()}
-    def recover_orphans(self):
+        return diagnose(self.db,self.raw)
+    def recover_orphans(self, progress=None, cancel_event=None):
         """Re-ingest valid raw originals left behind by an interrupted ingest.
 
         Only byte-verified files with a valid hash are recovered; no origin is
-        invented, so a recovered message has no mailbox provenance.
+        invented, so a recovered message has no mailbox provenance. Altered,
+        oversized and unreadable files are left in place for investigation.
         """
         from sync_lock import sync_lock
         recovered=[]
         with sync_lock(self.root):
-            for path in sorted(self.raw.glob('*.eml')):
-                h=path.stem
-                if not valid_hash(h) or path.is_symlink() or not path.is_file(): continue
-                if self.db.execute('SELECT 1 FROM messages WHERE hash=?',(h,)).fetchone(): continue
-                if path.stat().st_size>64*1024*1024: continue
-                raw=path.read_bytes()
-                if hashlib.sha256(raw).hexdigest()!=h: continue
-                self._ingest(raw)
-                recovered.append(h)
+            candidates=sorted(self.raw.glob('*.eml'))
+            total=len(candidates)
+            for done,path in enumerate(candidates,1):
+                if cancel_event is not None and cancel_event.is_set(): break
+                h=path.stem; status='skipped'
+                try:
+                    if (valid_hash(h) and not path.is_symlink() and path.is_file()
+                            and not self.db.execute('SELECT 1 FROM messages WHERE hash=?',(h,)).fetchone()
+                            and path.stat().st_size<=64*1024*1024):
+                        raw=path.read_bytes()
+                        if hashlib.sha256(raw).hexdigest()==h:
+                            self._ingest(raw); recovered.append(h); status='recovered'
+                except OSError: status='unreadable'
+                if progress is not None: progress(done,total,h,status)
         return recovered
     def find(self, query, limit=100):
         limit=max(1,min(int(limit),5000))
@@ -134,16 +160,7 @@ class Archive:
             except sqlite3.OperationalError:
                 return []
     def verify(self):
-        bad=[]
-        for h, in self.db.execute('SELECT hash FROM messages'):
-            if not valid_hash(h): bad.append(h); continue
-            path=self.raw/(h+'.eml')
-            try:
-                if path.is_symlink() or not path.is_file(): bad.append(h); continue
-                with path.open('rb') as f:
-                    if hashlib.file_digest(f,'sha256').hexdigest()!=h: bad.append(h)
-            except OSError: bad.append(h)
-        return bad
+        return verify_raw(self.db,self.raw)
     def export(self, hashes, destination):
         dest=Path(destination)
         hashes=list(dict.fromkeys(hashes))

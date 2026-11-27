@@ -110,7 +110,11 @@ python3 dispatch.py search-all "bullion" --sources facebook
 ```
 
 **Desktop app (in development)** — a Tauri 2 shell with a Vue 3 interface
-drives the Python engine over the versioned IPC protocol. From a checkout:
+drives the Python engine over the versioned IPC protocol, including search,
+reading with attachment metadata, import, research, synchronization,
+preferences, integrity verification and an archive Health tab that reports
+local consistency and runs resumable reindex/recovery repairs. From a
+checkout:
 
 ```sh
 cd frontend && npm install

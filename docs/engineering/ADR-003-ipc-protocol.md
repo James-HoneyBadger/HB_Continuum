@@ -21,9 +21,17 @@ spawned as `python3 dispatch.py --archive <root> serve`.
 - Long-running jobs emit `event` objects (`progress`, `job_complete`,
   `job_error`) tagged with a `job_id`.
 - Methods are an explicit allowlist: `ping`, `stats`, `search`, `message`,
-  `thread`, `record`, `verify`, `import_eml`, `preferences`,
-  `preferences_set`, the `research_*` overlay methods, `export_evidence`,
-  the `schedule_*` methods, `summarize`, `cancel` and `shutdown`.
+  `thread`, `record`, `verify`, `health`, `reindex`, `recover_orphans`,
+  `import_eml`, `preferences`, `preferences_set`, the `research_*` overlay
+  methods, `export_evidence`, the `schedule_*` methods, `summarize`,
+  `cancel` and `shutdown`.
+- `health` inspects an existing archive through a read-only connection and
+  never migrates or writes during the request, returning
+  `ARCHIVE_NOT_AVAILABLE` or `ARCHIVE_BUSY` instead. `reindex` and
+  `recover_orphans` are background jobs that emit `progress` per message and
+  a terminal `job_complete` with what they repaired; they migrate the archive
+  when they open it, exactly like the CLI, and report `MIGRATION_ERROR` if
+  the schema is newer than this build.
 - `message` and `thread` results carry the body text and indexed attachment
   metadata (`filename`, `mime`, `characters`); an archive without the
   attachment index reports an empty list rather than failing.
@@ -35,6 +43,14 @@ spawned as `python3 dispatch.py --archive <root> serve`.
   requires binding/port management for no demonstrated benefit.
 - **Python object serialization over a pipe (pickle):** rejected — not
   inspectable, not safe for untrusted boundaries.
+
+## Shell-side event delivery
+
+The Rust bridge registers `engine-event` with the webview for every engine
+line that carries `event` instead of `request_id`, so background job
+progress and completion reach Vue components through
+`@tauri-apps/api/event` rather than polling. Job identifiers are returned by
+the starting request and used to filter events.
 
 ## Consequences
 

@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tauri::State;
+use tauri::{Emitter, Manager, State};
 
 type Pending = Arc<Mutex<HashMap<String, Sender<Value>>>>;
 
@@ -21,6 +21,7 @@ struct Engine {
 struct AppState {
     archive: Mutex<String>,
     engine: Mutex<Option<Engine>>,
+    app: tauri::AppHandle,
 }
 
 static COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -50,7 +51,7 @@ fn script_path() -> Result<PathBuf, String> {
     }
 }
 
-fn spawn_engine(archive: &str) -> Result<Engine, String> {
+fn spawn_engine(app: &tauri::AppHandle, archive: &str) -> Result<Engine, String> {
     let script = script_path()?;
     let mut child = Command::new("python3")
         .arg(&script)
@@ -67,6 +68,7 @@ fn spawn_engine(archive: &str) -> Result<Engine, String> {
     let stdout = child.stdout.take().ok_or("engine stdout unavailable")?;
     let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
     let pending_reader = pending.clone();
+    let events = app.clone();
     std::thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
@@ -77,6 +79,9 @@ fn spawn_engine(archive: &str) -> Result<Engine, String> {
                         if let Some(tx) = pending_reader.lock().expect("pending lock").remove(id) {
                             let _ = tx.send(value);
                         }
+                    } else if value.get("event").is_some() {
+                        // Background jobs report progress and completion out of band.
+                        let _ = events.emit("engine-event", value);
                     }
                 }
                 Err(_) => break,
@@ -92,7 +97,7 @@ fn call(state: &AppState, method: &str, params: Value) -> Result<Value, String> 
     let mut guard = state.engine.lock().expect("engine lock");
     if guard.is_none() {
         let archive = state.archive.lock().expect("archive lock").clone();
-        *guard = Some(spawn_engine(&archive)?);
+        *guard = Some(spawn_engine(&state.app, &archive)?);
     }
     let engine = guard.as_mut().expect("engine present");
     engine
@@ -171,6 +176,21 @@ fn record(state: State<AppState>, record_id: String) -> Result<Value, String> {
 #[tauri::command]
 fn verify(state: State<AppState>) -> Result<Value, String> {
     call(&state, "verify", json!({}))
+}
+
+#[tauri::command]
+fn health(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "health", json!({}))
+}
+
+#[tauri::command]
+fn reindex(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "reindex", json!({}))
+}
+
+#[tauri::command]
+fn recover_orphans(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "recover_orphans", json!({}))
 }
 
 #[tauri::command]
@@ -353,12 +373,17 @@ pub fn run() {
     let default_archive = std::env::var("HB_ARCHIVE").unwrap_or_else(|_| "~/.hb-dispatch".to_string());
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState {
-            archive: Mutex::new(default_archive),
-            engine: Mutex::new(None),
+        .setup(move |app| {
+            app.manage(AppState {
+                archive: Mutex::new(default_archive),
+                engine: Mutex::new(None),
+                app: app.handle().clone(),
+            });
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            ping, stats, search, message, thread, record, verify,
+            ping, stats, search, message, thread, record, verify, health,
+            reindex, recover_orphans,
             import_eml, preferences, preferences_set, research_list, research_results,
             research_workspace_save, research_search_save, research_tag, research_untag,
             research_apply_rules, research_field_define, research_metadata_set,

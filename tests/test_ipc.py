@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (c) 2026 Honey Badger Universe
-import io, json, subprocess, sys, tempfile, time, unittest
+import io, json, os, sqlite3, subprocess, sys, tempfile, time, unittest
 from pathlib import Path
 from unittest import mock
 from dispatch import Archive
@@ -253,6 +253,79 @@ class IPCServerTests(unittest.TestCase):
         # cancellation endpoint resolves for a known job
         self.assertEqual(self.server.handle(request('cancel',job_id=job_id))['result']['status'],'cancelling')
         self.assertEqual(self.server.handle(request('cancel',job_id='missing'))['error']['code'],'UNKNOWN_JOB')
+
+    def finish_job(self, job_id):
+        deadline=time.time()+5
+        while time.time()<deadline and not self.server._jobs[job_id].get('done'):
+            time.sleep(0.01)
+        self.assertTrue(self.server._jobs[job_id].get('done'))
+        events=[json.loads(x) for x in self.server.out.getvalue().splitlines()]
+        return next(e for e in events
+                    if e.get('event') in ('job_complete','job_error') and e.get('job_id')==job_id)
+
+    def test_health_reports_clean_archive(self):
+        resp=self.server.handle(request('health'))
+        self.assertTrue(resp['result']['sqlite_ok'])
+        self.assertEqual(resp['result']['messages'],1)
+        self.assertEqual(resp['result']['index_missing'],[])
+        self.assertEqual(resp['result']['raw_invalid'],[])
+        self.assertEqual(self.server.handle(request('message',hash='0'*64))['error']['code'],'NOT_FOUND')
+
+    def test_health_reports_missing_index_row(self):
+        with self.a.db: self.a.db.execute('DELETE FROM search WHERE hash=?',(self.h,))
+        resp=self.server.handle(request('health'))
+        self.assertEqual(resp['result']['index_missing'],[self.h])
+
+    def test_health_never_migrates_a_legacy_archive(self):
+        from migrations import MIGRATIONS, current_version
+        legacy=self.root/'legacy'
+        legacy.mkdir()
+        db=sqlite3.connect(legacy/'archive.sqlite3')
+        try:
+            for statement in MIGRATIONS['archive'][1]:
+                db.execute(statement)
+            db.execute('PRAGMA user_version=1')
+            db.commit()
+        finally:
+            db.close()
+        server=IPCServer(legacy,out=io.StringIO())
+        resp=server.handle(request('health'))
+        self.assertEqual(resp['result']['messages'],0)
+        db=sqlite3.connect(legacy/'archive.sqlite3')
+        try:
+            self.assertEqual(current_version(db),1)
+        finally:
+            db.close()
+
+    def test_health_requires_an_archive(self):
+        server=IPCServer(self.root/'missing', out=io.StringIO())
+        self.assertEqual(server.handle(request('health'))['error']['code'],'ARCHIVE_NOT_AVAILABLE')
+
+    def test_health_defers_while_archive_is_busy(self):
+        if os.name!='posix': self.skipTest('sync_lock is a no-op off POSIX')
+        from sync_lock import sync_lock
+        with sync_lock(self.root):
+            self.assertEqual(self.server.handle(request('health'))['error']['code'],'ARCHIVE_BUSY')
+
+    def test_reindex_job_repairs_missing_index_row(self):
+        with self.a.db: self.a.db.execute('DELETE FROM search WHERE hash=?',(self.h,))
+        resp=self.server.handle(request('reindex'))
+        terminal=self.finish_job(resp['result']['job_id'])
+        self.assertEqual(terminal['event'],'job_complete')
+        self.assertEqual(terminal['result'],{'action':'reindex','reindexed':1,'cancelled':False})
+        self.assertEqual(self.server.handle(request('health'))['result']['index_missing'],[])
+
+    def test_recover_orphans_job_reports_recovered_hashes(self):
+        import hashlib
+        raw=b'From: orphan@example.invalid\r\nSubject: Orphan\r\n\r\nrecovered body'
+        orphan=hashlib.sha256(raw).hexdigest()
+        (self.root/'raw'/(orphan+'.eml')).write_bytes(raw)
+        resp=self.server.handle(request('recover_orphans'))
+        terminal=self.finish_job(resp['result']['job_id'])
+        self.assertEqual(terminal['event'],'job_complete')
+        self.assertEqual(terminal['result']['recovered'],[orphan])
+        self.assertFalse(terminal['result']['cancelled'])
+        self.assertEqual(self.server.handle(request('health'))['result']['raw_unindexed'],[])
 
     def test_serve_subprocess(self):
         proc=subprocess.Popen(

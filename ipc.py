@@ -154,6 +154,23 @@ def _verify(root):
             bad.append(h)
     return {'checked': len(hashes), 'bad': bad}
 
+def _health(root):
+    """Read-only consistency report; never migrates or writes to the archive."""
+    from dispatch import diagnose
+    from sync_lock import sync_lock, SyncBusy
+    base = Path(root)
+    path = base / 'archive.sqlite3'
+    if not path.is_file():
+        raise IPCError('ARCHIVE_NOT_AVAILABLE', 'The selected archive has no archive.sqlite3')
+    conn = _ro_connect(path)
+    try:
+        with sync_lock(base):
+            return diagnose(conn, base / 'raw')
+    except SyncBusy:
+        raise IPCError('ARCHIVE_BUSY', 'another archive operation is running') from None
+    finally:
+        conn.close()
+
 def _import_eml(root, paths):
     from dispatch import Archive
     if not isinstance(paths, list):
@@ -537,6 +554,37 @@ class IPCServer:
 
         return self._start_job(work)
 
+    def _start_repair(self, action):
+        from dispatch import Archive
+        from migrations import MigrationError
+        from sync_lock import SyncBusy
+
+        def work(job_id, cancel_event):
+            archive = None
+            try:
+                archive = Archive(self.root)
+
+                def progress(done, total, digest, status):
+                    self._write(_event('progress', job_id=job_id, done=done, total=total,
+                                       hash=digest, status=status))
+                try:
+                    if action == 'reindex':
+                        count = archive.reindex(progress=progress, cancel_event=cancel_event)
+                        return {'action': action, 'reindexed': count,
+                                'cancelled': cancel_event.is_set()}
+                    recovered = archive.recover_orphans(progress=progress, cancel_event=cancel_event)
+                    return {'action': action, 'recovered': recovered,
+                            'cancelled': cancel_event.is_set()}
+                except SyncBusy as exc:
+                    raise IPCError('ARCHIVE_BUSY', str(exc)) from None
+            except MigrationError as exc:
+                raise IPCError('MIGRATION_ERROR', str(exc)) from None
+            finally:
+                if archive is not None:
+                    archive.db.close()
+
+        return self._start_job(work)
+
     def _cancel(self, params):
         job_id = params.get('job_id')
         job = self._jobs.get(job_id) if isinstance(job_id, str) else None
@@ -571,6 +619,12 @@ class IPCServer:
                 return _result(request_id, _record(self.root, params.get('record_id')))
             if method == 'verify':
                 return _result(request_id, _verify(self.root))
+            if method == 'health':
+                return _result(request_id, _health(self.root))
+            if method == 'reindex':
+                return _result(request_id, self._start_repair('reindex'))
+            if method == 'recover_orphans':
+                return _result(request_id, self._start_repair('recover'))
             if method == 'import_eml':
                 return _result(request_id, _import_eml(self.root, params.get('paths', [])))
             if method == 'preferences':
