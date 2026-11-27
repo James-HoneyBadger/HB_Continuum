@@ -114,11 +114,43 @@ class IPCServerTests(unittest.TestCase):
         inbox.mkdir()
         (inbox/'one.eml').write_bytes(b'From: c@example.invalid\r\nSubject: Imported\r\n\r\nHello import')
         resp=self.server.handle(request('import_eml',paths=[str(inbox)]))
-        self.assertEqual(resp['result']['imported'],1)
-        self.assertEqual(len(resp['result']['hashes']),1)
+        first=self.finish_job(resp['result']['job_id'])
+        self.assertEqual(first['event'],'job_complete')
+        self.assertEqual(first['result']['imported'],1)
+        self.assertEqual(len(first['result']['hashes']),1)
         resp=self.server.handle(request('import_eml',paths=[str(inbox)]))
-        self.assertEqual(resp['result']['imported'],0)
+        second=self.finish_job(resp['result']['job_id'])
+        self.assertEqual(second['result']['imported'],0)
+        self.assertEqual(second['result']['existing'],1)
         self.assertEqual(self.server.handle(request('import_eml',paths='not-a-list'))['error']['code'],'INVALID_PARAMS')
+
+    def test_import_history_records_real_runs(self):
+        inbox=self.root/'inbox'; inbox.mkdir()
+        (inbox/'one.eml').write_bytes(b'From: c@example.invalid\r\nSubject: History\r\n\r\nbody')
+        resp=self.server.handle(request('import_eml',paths=[str(inbox)]))
+        self.finish_job(resp['result']['job_id'])
+        history=self.server.handle(request('import_history'))['result']
+        self.assertTrue(history['available'])
+        run=history['runs'][0]
+        self.assertEqual(run['source'],'eml')
+        self.assertEqual(run['status'],'ok')
+        self.assertEqual(run['records_new'],1)
+        self.assertEqual(run['records_failed'],0)
+        self.assertIsNotNone(run['finished_at'])
+        self.assertEqual(self.server.handle(request('import_history',limit=0))['error']['code'],'INVALID_PARAMS')
+
+    def test_sources_reports_accounts_and_footprint(self):
+        with self.a.db:
+            self.a.db.execute('INSERT INTO origins VALUES(?,?,?,?,?)',
+                              ('imap.example|me','INBOX','1','1',self.h))
+        sources=self.server.handle(request('sources'))['result']
+        account=sources['email_accounts'][0]
+        self.assertEqual(account['account'],'imap.example|me')
+        self.assertEqual(account['messages'],1)
+        self.assertEqual(account['origins'],1)
+        self.assertEqual(account['folders'],1)
+        self.assertGreater(sources['storage']['total_bytes'],0)
+        self.assertEqual(sources['catalog']['records'],0)
 
     def test_preferences_get_set(self):
         resp=self.server.handle(request('preferences'))
@@ -389,6 +421,10 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(terminal['event'],'job_complete')
         self.assertEqual(terminal['result']['records_imported'],1)
         self.assertFalse(terminal['result']['cancelled'])
+        history=self.server.handle(request('import_history'))['result']['runs']
+        self.assertEqual(history[0]['source'],'facebook')
+        self.assertEqual(history[0]['status'],'ok')
+        self.assertEqual(history[0]['records_new'],1)
         again=self.server.handle(request('facebook_import',paths=[str(export)]))
         self.assertEqual(self.finish_job(again['result']['job_id'])['result']['files_skipped'],1)
         self.assertEqual(self.server.handle(request('facebook_preview'))['error']['code'],'INVALID_PARAMS')

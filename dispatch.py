@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Honey Badger Universe
 """Local read-only email archive. No network access except explicit sync."""
 import shutil, argparse, hashlib, imaplib, sqlite3, ssl, json, os, tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 __version__ = '0.3.0'
@@ -152,6 +153,85 @@ class Archive:
                 self.db.execute('INSERT OR IGNORE INTO origins VALUES(?,?,?,?,?)',(*origin,digest))
                 if self.db.execute('SELECT hash FROM origins WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone()[0]!=digest: raise ValueError('Origin conflict')
         return digest
+    def begin_import_run(self, source, source_key=None):
+        """Open an import-run record so the UI can show real history."""
+        now=datetime.now(timezone.utc).isoformat(timespec='seconds')
+        with self.db:
+            cur=self.db.execute(
+                'INSERT INTO import_runs(source,source_key,started_at,status) VALUES(?,?,?,?)',
+                (source,source_key,now,'running'))
+        return cur.lastrowid
+    def finish_import_run(self, run_id, status='ok', files_seen=None, records_seen=None,
+                          records_new=None, records_existing=None, records_failed=None,
+                          detail=None):
+        now=datetime.now(timezone.utc).isoformat(timespec='seconds')
+        with self.db:
+            self.db.execute(
+                'UPDATE import_runs SET finished_at=?,status=?,files_seen=?,records_seen=?,'
+                'records_new=?,records_existing=?,records_failed=?,detail=? WHERE id=?',
+                (now,status,files_seen,records_seen,records_new,records_existing,
+                 records_failed,detail,run_id))
+        return run_id
+    def import_history(self, limit=50):
+        limit=max(1,min(int(limit),500))
+        return self.db.execute(
+            'SELECT id,source,source_key,started_at,finished_at,status,files_seen,'
+            'records_seen,records_new,records_existing,records_failed,detail '
+            'FROM import_runs ORDER BY COALESCE(finished_at,started_at) DESC, id DESC LIMIT ?',
+            (limit,)).fetchall()
+    def import_files(self, paths, progress=None, cancel_event=None):
+        """Import .eml files or directories with progress, cancellation and history.
+
+        Existing bytes are never rewritten; a file already in the archive is
+        counted as existing rather than new. Per-file failures are reported
+        without aborting the rest of the run.
+        """
+        files=[]; errors=[]
+        for raw in paths:
+            path=Path(raw).expanduser()
+            if path.is_symlink():
+                errors.append({'path':str(path),'error':'Unsafe symbolic link'})
+                continue
+            if path.is_dir():
+                for candidate in sorted(path.glob('*.eml')):
+                    if candidate.name.startswith('.'):
+                        continue
+                    if candidate.is_symlink():
+                        errors.append({'path':str(candidate),'error':'Unsafe symbolic link'})
+                    elif candidate.is_file():
+                        files.append(candidate)
+                    else:
+                        errors.append({'path':str(candidate),'error':'Not a regular file'})
+            elif path.is_file():
+                files.append(path)
+            else:
+                errors.append({'path':str(path),'error':'FileNotFoundError: not found'})
+        run=self.begin_import_run('eml', ', '.join(str(p) for p in paths)[:200])
+        imported=[]; existing=0; processed=0; status='ok'
+        total=len(files)
+        try:
+            for done,path in enumerate(files,1):
+                if cancel_event is not None and cancel_event.is_set():
+                    status='cancelled'; break
+                try:
+                    raw=path.read_bytes()
+                    digest=hashlib.sha256(raw).hexdigest()
+                    is_new=self.db.execute('SELECT 1 FROM messages WHERE hash=?',(digest,)).fetchone() is None
+                    self.ingest(raw)
+                    processed+=1
+                    if is_new: imported.append(digest)
+                    else: existing+=1
+                    if progress is not None: progress(done,total,str(path),'imported' if is_new else 'existing')
+                except Exception as exc:
+                    errors.append({'path':str(path),'error':type(exc).__name__+': '+str(exc)})
+                    if progress is not None: progress(done,total,str(path),'error')
+        except Exception as exc:
+            self.finish_import_run(run,'error',len(files),processed,len(imported),existing,
+                                   len(errors),type(exc).__name__)
+            raise
+        self.finish_import_run(run,status,len(files),processed,len(imported),existing,len(errors))
+        return {'files_seen':len(files),'imported':len(imported),'existing':existing,
+                'hashes':imported,'errors':errors,'cancelled':status=='cancelled','run_id':run}
     def reindex(self, progress=None, cancel_event=None):
         """Repair derived index data from the preserved raw originals.
 
@@ -298,7 +378,15 @@ class Archive:
     def sync(self, host, user, password, folder='INBOX'):
         from sync_lock import sync_lock
         with sync_lock(self.root):
-            return self._sync(host, user, password, folder)
+            run=self.begin_import_run('imap', f'{host}|{user}|{folder}')
+            try:
+                count=self._sync(host, user, password, folder)
+            except Exception as exc:
+                self.finish_import_run(run,'error',detail=type(exc).__name__)
+                raise
+            self.finish_import_run(run,'ok',records_seen=count,records_new=count,
+                                   records_existing=0,records_failed=0)
+            return count
     def _sync(self, host, user, password, folder):
         if folder.startswith('"') and folder.endswith('"'):
             folder=folder[1:-1]
@@ -332,7 +420,7 @@ class Archive:
 def main(argv=None):
     import getpass, sys
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version'); q=sub.add_parser('search-all'); q.add_argument('query'); q.add_argument('--limit',type=int,default=100); q.add_argument('--sources',default='email,facebook'); sub.add_parser('serve'); sub.add_parser('health'); sub.add_parser('reindex'); sub.add_parser('recover-orphans'); q=sub.add_parser('backup'); q.add_argument('destination'); q=sub.add_parser('verify-backup'); q.add_argument('snapshot'); q=sub.add_parser('restore'); q.add_argument('snapshot'); q=sub.add_parser('schedule'); q.add_argument('args',nargs=argparse.REMAINDER); q=sub.add_parser('migrate'); q.add_argument('--dry-run',action='store_true'); q.add_argument('--no-snapshot',action='store_true')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version'); q=sub.add_parser('search-all'); q.add_argument('query'); q.add_argument('--limit',type=int,default=100); q.add_argument('--sources',default='email,facebook'); sub.add_parser('serve'); sub.add_parser('health'); sub.add_parser('reindex'); sub.add_parser('recover-orphans'); q=sub.add_parser('import-history'); q.add_argument('--limit',type=int,default=50); q=sub.add_parser('backup'); q.add_argument('destination'); q=sub.add_parser('verify-backup'); q.add_argument('snapshot'); q=sub.add_parser('restore'); q.add_argument('snapshot'); q=sub.add_parser('schedule'); q.add_argument('args',nargs=argparse.REMAINDER); q=sub.add_parser('migrate'); q.add_argument('--dry-run',action='store_true'); q.add_argument('--no-snapshot',action='store_true')
     a=p.parse_args(argv)
     if a.cmd=='migrate':
         from migrations import report
@@ -349,7 +437,15 @@ def main(argv=None):
         print(json.dumps(result)); return 0
     ar=Archive(a.archive)
     if a.cmd=='import':
-        for f in a.files: print(ar.ingest(Path(f).read_bytes()))
+        def progress(done,total,path,status): print(f'[{done}/{total}] {path} {status}',file=sys.stderr)
+        result=ar.import_files(a.files,progress=progress)
+        for h in result['hashes']: print(h)
+        if result['errors']: print(json.dumps(result['errors'],indent=2),file=sys.stderr)
+        return int(bool(result['errors']) or result['cancelled'])
+    elif a.cmd=='import-history':
+        keys=('id','source','source_key','started_at','finished_at','status','files_seen',
+              'records_seen','records_new','records_existing','records_failed','detail')
+        print(json.dumps([dict(zip(keys,row)) for row in ar.import_history(a.limit)],indent=2))
     elif a.cmd=='reindex': print(ar.reindex())
     elif a.cmd=='recover-orphans': print(json.dumps(ar.recover_orphans()))
     elif a.cmd=='health':

@@ -230,8 +230,18 @@ def _dashboard(root):
             return None
         return datetime.fromtimestamp(value, timezone.utc).date().isoformat()
 
+    return {
+        'archive': {'messages': messages, 'origins': origins, 'undated': undated,
+                    'earliest': iso(earliest), 'latest': iso(latest)},
+        'catalog': _catalog_stats(base),
+        'by_year': [{'year': year, 'count': count} for year, count in by_year],
+        'storage': _storage_footprint(base),
+    }
+
+def _storage_footprint(base):
+    """Bytes held by preserved originals and by the databases themselves."""
     raw_bytes = 0
-    raw = base / 'raw'
+    raw = Path(base) / 'raw'
     if raw.is_dir():
         for entry in raw.iterdir():
             try:
@@ -241,21 +251,120 @@ def _dashboard(root):
                 continue
     database_bytes = 0
     for name in ('archive.sqlite3', 'research.sqlite3', 'catalog.sqlite3',
-                 'archive.sqlite3-wal', 'archive.sqlite3-shm'):
-        candidate = base / name
+                 'archive.sqlite3-wal', 'research.sqlite3-wal', 'catalog.sqlite3-wal',
+                 'archive.sqlite3-shm', 'research.sqlite3-shm', 'catalog.sqlite3-shm'):
+        candidate = Path(base) / name
         try:
             if candidate.is_file():
                 database_bytes += candidate.stat().st_size
         except OSError:
             continue
-    return {
-        'archive': {'messages': messages, 'origins': origins, 'undated': undated,
-                    'earliest': iso(earliest), 'latest': iso(latest)},
-        'catalog': _catalog_stats(base),
-        'by_year': [{'year': year, 'count': count} for year, count in by_year],
-        'storage': {'raw_bytes': raw_bytes, 'database_bytes': database_bytes,
-                    'total_bytes': raw_bytes + database_bytes},
-    }
+    return {'raw_bytes': raw_bytes, 'database_bytes': database_bytes,
+            'total_bytes': raw_bytes + database_bytes}
+
+def _sources(root):
+    """Per-source inventory derived from stored provenance, never from intake.
+
+    `messages` per email account counts distinct message hashes reachable from
+    that account's mailbox origins; `origins` counts mailbox occurrences, so a
+    message present in two folders counts twice in `origins` and once in
+    `messages`. Catalog dates are the recorded ISO timestamps and are only
+    reported when every compared value uses that format.
+    """
+    from datetime import datetime, timezone
+    base = Path(root)
+    path = base / 'archive.sqlite3'
+    if not path.is_file():
+        raise IPCError('ARCHIVE_NOT_AVAILABLE', 'The selected archive has no archive.sqlite3')
+    conn = _ro_connect(path)
+    try:
+        accounts = conn.execute(
+            'SELECT o.account, count(DISTINCT o.hash), count(*), count(DISTINCT o.folder) '
+            'FROM origins o GROUP BY o.account ORDER BY o.account').fetchall()
+        coverage = {}
+        for account, _, _, _ in accounts:
+            try:
+                coverage[account] = conn.execute(
+                    'SELECT min(m.sort_ts), max(m.sort_ts) FROM origins o '
+                    'JOIN messages m ON m.hash=o.hash WHERE o.account=?', (account,)).fetchone()
+            except sqlite3.OperationalError:
+                coverage[account] = (None, None)
+        try:
+            runs = conn.execute(
+                "SELECT source_key,status,COALESCE(finished_at,started_at),records_new "
+                "FROM import_runs WHERE source='imap' "
+                'ORDER BY COALESCE(finished_at,started_at) DESC, id DESC').fetchall()
+            history_available = True
+        except sqlite3.OperationalError:
+            runs = []
+            history_available = False
+    finally:
+        conn.close()
+
+    last_run = {}
+    for source_key, status, when, records_new in runs:
+        account = source_key.rsplit('|', 1)[0] if source_key else ''
+        last_run.setdefault(account, {'status': status, 'at': when, 'records_new': records_new})
+
+    def iso(value):
+        if value is None:
+            return None
+        return datetime.fromtimestamp(value, timezone.utc).date().isoformat()
+
+    email_accounts = [
+        {'account': account, 'messages': messages, 'origins': origins,
+         'folders': folders, 'earliest': iso(coverage.get(account, (None, None))[0]),
+         'latest': iso(coverage.get(account, (None, None))[1]),
+         'last_import': last_run.get(account)}
+        for account, messages, origins, folders in accounts]
+
+    catalog_sources = []
+    catalog = {'files': 0, 'records': 0}
+    catalog_path = base / 'catalog.sqlite3'
+    if catalog_path.is_file():
+        cat = _ro_connect(catalog_path)
+        try:
+            for source_type, files, size in cat.execute(
+                    'SELECT source_type, count(*), coalesce(sum(size),0) '
+                    'FROM source_files GROUP BY source_type ORDER BY source_type'):
+                records = cat.execute('SELECT count(*) FROM records WHERE source_type=?',
+                                      (source_type,)).fetchone()[0]
+                earliest, latest = cat.execute(
+                    'SELECT min(occurred_at), max(occurred_at) FROM records '
+                    'WHERE source_type=? AND occurred_at IS NOT NULL', (source_type,)).fetchone()
+                catalog_sources.append({'source_type': source_type, 'files': files,
+                                        'records': records, 'bytes': size,
+                                        'earliest': earliest, 'latest': latest})
+            catalog = _catalog_stats(base)
+        finally:
+            cat.close()
+
+    return {'email_accounts': email_accounts, 'catalog_sources': catalog_sources,
+            'catalog': catalog, 'storage': _storage_footprint(base),
+            'history_available': history_available}
+
+def _import_history(root, limit=50):
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 500:
+        raise IPCError('INVALID_PARAMS', 'limit must be an integer between 1 and 500')
+    path = Path(root) / 'archive.sqlite3'
+    if not path.is_file():
+        raise IPCError('ARCHIVE_NOT_AVAILABLE', 'The selected archive has no archive.sqlite3')
+    conn = _ro_connect(path)
+    try:
+        try:
+            rows = conn.execute(
+                'SELECT id,source,source_key,started_at,finished_at,status,files_seen,'
+                'records_seen,records_new,records_existing,records_failed,detail '
+                'FROM import_runs ORDER BY COALESCE(finished_at,started_at) DESC, id DESC LIMIT ?',
+                (limit,)).fetchall()
+        except sqlite3.OperationalError:
+            return {'available': False, 'runs': []}
+    finally:
+        conn.close()
+    keys = ('id', 'source', 'source_key', 'started_at', 'finished_at', 'status',
+            'files_seen', 'records_seen', 'records_new', 'records_existing',
+            'records_failed', 'detail')
+    return {'available': True, 'runs': [dict(zip(keys, row)) for row in rows]}
 
 def _catalog_stats(root):
     path = Path(root) / 'catalog.sqlite3'
@@ -287,33 +396,6 @@ def _migration_report(root):
     """Report on-disk schema versions and pending steps without migrating."""
     from migrations import report
     return report(Path(root).expanduser(), dry_run=True)
-
-def _import_eml(root, paths):
-    from dispatch import Archive
-    if not isinstance(paths, list):
-        raise IPCError('INVALID_PARAMS', 'paths must be a list')
-    files = []
-    for raw in paths:
-        path = Path(raw).expanduser()
-        if path.is_dir():
-            files.extend(sorted(q for q in path.glob('*.eml') if q.is_file() and not q.name.startswith('.')))
-        elif path.is_file():
-            files.append(path)
-    archive = Archive(root)
-    imported = []
-    errors = []
-    try:
-        before = {h for h, in archive.db.execute('SELECT hash FROM messages')}
-        for f in files:
-            try:
-                digest = archive.ingest(f.read_bytes())
-                if digest not in before:
-                    imported.append(digest)
-            except Exception as exc:
-                errors.append({'path': str(f), 'error': type(exc).__name__ + ': ' + str(exc)})
-    finally:
-        archive.db.close()
-    return {'files_seen': len(files), 'imported': len(imported), 'hashes': imported, 'errors': errors}
 
 def _preferences(root):
     from preferences import FIELDS, load as load_prefs
@@ -746,6 +828,34 @@ class IPCServer:
 
         return self._start_job(work)
 
+    def _start_eml_import(self, params):
+        from dispatch import Archive
+        from migrations import MigrationError
+        from sync_lock import SyncBusy
+        paths = params.get('paths')
+        if not isinstance(paths, list) or not paths or not all(isinstance(p, str) for p in paths):
+            raise IPCError('INVALID_PARAMS', 'paths must be a non-empty list of strings')
+
+        def work(job_id, cancel_event):
+            archive = None
+            try:
+                archive = Archive(self.root)
+
+                def progress(done, total, path, status):
+                    self._write(_event('progress', job_id=job_id, done=done, total=total,
+                                       hash='', status=f'{status} {path}'))
+
+                return archive.import_files(paths, progress=progress, cancel_event=cancel_event)
+            except SyncBusy as exc:
+                raise IPCError('ARCHIVE_BUSY', str(exc)) from None
+            except MigrationError as exc:
+                raise IPCError('MIGRATION_ERROR', str(exc)) from None
+            finally:
+                if archive is not None:
+                    archive.db.close()
+
+        return self._start_job(work)
+
     def _start_facebook_import(self, params):
         from facebook import import_files
         paths = params.get('paths')
@@ -757,9 +867,31 @@ class IPCServer:
                 self._write(_event('progress', job_id=job_id, done=done, total=total,
                                    hash='', status=f'{status} {path}'))
             try:
-                return import_files(paths, self.root, progress=progress, cancel_event=cancel_event)
+                result = import_files(paths, self.root, progress=progress,
+                                      cancel_event=cancel_event)
             except OSError as exc:
                 raise IPCError('IMPORT_FAILED', str(exc)) from None
+            # History is best-effort: a completed import must not fail merely
+            # because its run could not be recorded, but the result says so.
+            from dispatch import Archive
+            archive = None
+            try:
+                archive = Archive(self.root)
+                run = archive.begin_import_run('facebook', ', '.join(paths)[:200])
+                archive.finish_import_run(
+                    run, 'cancelled' if result.get('cancelled') else 'ok',
+                    files_seen=result.get('files_discovered'),
+                    records_seen=result.get('records_encountered'),
+                    records_new=result.get('records_imported'),
+                    records_existing=result.get('records_duplicate'),
+                    records_failed=result.get('parse_errors') + result.get('files_unsupported', 0))
+                result['run_id'] = run
+            except Exception as exc:
+                result['history_error'] = type(exc).__name__ + ': ' + str(exc)
+            finally:
+                if archive is not None:
+                    archive.db.close()
+            return result
 
         return self._start_job(work)
 
@@ -825,7 +957,11 @@ class IPCServer:
             if method == 'facebook_import':
                 return _result(request_id, self._start_facebook_import(params))
             if method == 'import_eml':
-                return _result(request_id, _import_eml(self.root, params.get('paths', [])))
+                return _result(request_id, self._start_eml_import(params))
+            if method == 'import_history':
+                return _result(request_id, _import_history(self.root, params.get('limit', 50)))
+            if method == 'sources':
+                return _result(request_id, _sources(self.root))
             if method == 'preferences':
                 return _result(request_id, _preferences(self.root))
             if method == 'preferences_set':

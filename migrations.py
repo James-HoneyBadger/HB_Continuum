@@ -62,6 +62,15 @@ ARCHIVE_V3 = (
     _backfill_archive_timestamps,
 )
 
+ARCHIVE_V4 = (
+    'CREATE TABLE IF NOT EXISTS import_runs('
+    'id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL, source_key TEXT, '
+    'started_at TEXT NOT NULL, finished_at TEXT, status TEXT NOT NULL, '
+    'files_seen INTEGER, records_seen INTEGER, records_new INTEGER, '
+    'records_existing INTEGER, records_failed INTEGER, detail TEXT)',
+    'CREATE INDEX IF NOT EXISTS import_runs_by_time ON import_runs(started_at DESC)',
+)
+
 RESEARCH_V1 = (
     'CREATE TABLE IF NOT EXISTS workspaces('
     'name TEXT PRIMARY KEY, description TEXT NOT NULL)',
@@ -117,7 +126,7 @@ CATALOG_V2 = (
 )
 
 MIGRATIONS = {
-    'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3},
+    'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3, 4: ARCHIVE_V4},
     'research': {1: RESEARCH_V1},
     'catalog': {1: CATALOG_V1, 2: CATALOG_V2},
 }

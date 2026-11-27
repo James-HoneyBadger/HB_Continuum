@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Compile
-        run: python -m py_compile dispatch.py desktop.py schedule.py schedule_ui.py sync_lock.py schedulers.py migrations.py timestamps.py mime_index.py backup.py tests/test_dispatch.py tests/test_schedule.py tests/test_schedulers.py tests/test_migrations.py tests/test_hardening.py tests/test_timeline.py tests/test_concurrency.py preferences.py preferences_ui.py tests/test_preferences.py research.py research_ui.py tests/test_research.py search_worker.py tests/test_search_worker.py catalog.py facebook.py tests/test_facebook.py summarize.py tests/test_summarize.py unified.py tests/test_unified.py ipc.py tests/test_ipc.py scripts/scheduler_smoke.py scripts/build_engine.py
+        run: python -m py_compile dispatch.py desktop.py schedule.py schedule_ui.py sync_lock.py schedulers.py migrations.py timestamps.py mime_index.py backup.py tests/test_dispatch.py tests/test_schedule.py tests/test_schedulers.py tests/test_migrations.py tests/test_hardening.py tests/test_timeline.py tests/test_concurrency.py tests/test_import_runs.py preferences.py preferences_ui.py tests/test_preferences.py research.py research_ui.py tests/test_research.py search_worker.py tests/test_search_worker.py catalog.py facebook.py tests/test_facebook.py summarize.py tests/test_summarize.py unified.py tests/test_unified.py ipc.py tests/test_ipc.py scripts/scheduler_smoke.py scripts/build_engine.py
       - name: Tests
         run: python -m unittest discover -s tests -v
 

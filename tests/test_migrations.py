@@ -148,8 +148,8 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(sorted(MIGRATIONS['catalog']),[1,2])
 
     def test_archive_version_registry(self):
-        self.assertEqual(target_version('archive'),3)
-        self.assertEqual(sorted(MIGRATIONS['archive']),[1,2,3])
+        self.assertEqual(target_version('archive'),4)
+        self.assertEqual(sorted(MIGRATIONS['archive']),[1,2,3,4])
 
     def test_archive_v1_upgrades_to_v2_keeping_rows(self):
         db=sqlite3.connect(self.root/'archive.sqlite3')
@@ -162,9 +162,10 @@ class MigrationTests(unittest.TestCase):
             db.execute('INSERT INTO search VALUES(?,?,?,?)',('b'*64,'Subject','s@e','body'))
             db.commit()
             result=apply(db,'archive')
-            self.assertEqual(result['applied'],[2,3])
+            self.assertEqual(result['applied'],[2,3,4])
             tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            self.assertTrue({'attachment_index','extraction_versions'}<=tables)
+            self.assertTrue({'attachment_index','extraction_versions','import_runs'}<=tables)
+            self.assertEqual(db.execute('SELECT count(*) FROM import_runs').fetchone()[0],0)
             self.assertEqual(db.execute('SELECT count(*) FROM messages').fetchone()[0],1)
             self.assertEqual(db.execute("SELECT hash FROM search WHERE search MATCH 'body'").fetchone()[0],'b'*64)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(),[])
