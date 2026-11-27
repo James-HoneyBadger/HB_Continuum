@@ -77,9 +77,14 @@ Phase A — Stabilization (repository audit in progress).
 
 See `BASELINE_AUDIT.md` section 9. In brief: packaged engine (PyInstaller or
 equivalent) and sidecar bundling, local embeddings/hybrid search, Second Me,
-backup and restore (blocked on PR #4), Facebook post revisions, timeline and
-relationships explorers, and the documentation overhaul
+Facebook post revisions and message attachment metadata, relationship
+explorer, and the documentation overhaul
 (ROADMAP/SECURITY/ARCHITECTURE/CHANGELOG).
+
+Archive hardening, verified backup/restore, desktop health/backup surfaces,
+Facebook import and the timeline explorer are implemented on
+`develop/engine-expansion`; the Tkinter workstation remains the fallback
+until the shell's flows are exercised against real archives.
 
 ## Architectural decisions
 
