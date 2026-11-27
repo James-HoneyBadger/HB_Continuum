@@ -59,6 +59,8 @@ python3 dispatch.py export evidence HASH
 python3 -m unittest discover -s tests -v
 ```
 
+For mailbox names containing spaces, use normal shell quoting, e.g. `--folder "Sent Items"` or `--folder "Sent Messages"`. HB_Dispatch quotes the IMAP mailbox internally and recognizes origins recorded by older versions with literal surrounding quotes.
+
 Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, read-only mailbox selection and BODY.PEEK. Passwords are prompted for, never stored by the application. Provider-specific authentication may be required. Gmail OAuth and a native MCP integration remain future work. Manual synchronization prompts for passwords; scheduled synchronization is macOS-only and reads credentials from the login Keychain.
 
 ## Privacy and limitations

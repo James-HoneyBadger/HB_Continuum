@@ -29,6 +29,27 @@ class Tests(unittest.TestCase):
         m.select.return_value=('OK',[b'1']); m.response.return_value=('UIDVALIDITY',[None])
         with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
             self.assertRaises(RuntimeError,self.a.sync,'host','user','pw')
+    def test_sync_folder_with_spaces_and_legacy_origin(self):
+        account='host|user'
+        self.a.ingest(RAW,(account,'"Sent Items"','1','2'))
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.select.return_value=('OK',[b'2'])
+        m.response.return_value=('UIDVALIDITY',[b'1'])
+        m.uid.side_effect=[('OK',[b'2 3']),('OK',[(b'3',RAW+b'New message')]),('OK',[b'2 3'])]
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.assertEqual(self.a.sync('host','user','pw','Sent Items'),1)
+            m.select.assert_called_with('"Sent Items"',readonly=True)
+            self.assertEqual(self.a.sync('host','user','pw','"Sent Items"'),0)
+        self.assertEqual(m.uid.call_count,3)
+        self.assertEqual(self.a.stats(),{'messages':2,'origins':2})
+        self.assertIsNotNone(self.a.db.execute(
+            "SELECT 1 FROM origins WHERE folder=? AND uid=?",('Sent Items','3')).fetchone())
+    def test_sync_folder_rejects_control_characters(self):
+        with mock.patch('dispatch.imaplib.IMAP4_SSL') as connect:
+            for folder in ('', 'bad\rname', 'bad\nname', 'bad\x00name'):
+                with self.assertRaises(ValueError):
+                    self.a.sync('host','user','pw',folder)
+            connect.assert_not_called()
     def test_foreign_keys_enforced(self):
         self.assertRaises(sqlite3.IntegrityError,self.a.db.execute,'INSERT INTO origins VALUES(?,?,?,?,?)',('a','f','1','2','0'*64))
     def test_failed_export_cleanup(self):
