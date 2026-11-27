@@ -9,6 +9,11 @@ Run them after stopping other writers (the workstation, scheduled
 synchronization). Back up before upgrading, and use a destination outside
 the archive, ideally on encrypted storage.
 
+The desktop shell exposes the same operations: the **Health** tab shows the
+consistency report and runs reindex/orphan recovery as resumable jobs, and
+the **Backup** tab shows schema versions plus validated backup, snapshot
+verification and restore.
+
 ```sh
 python3 dispatch.py --archive ~/HB_Mail_Archive health
 python3 dispatch.py --archive ~/HB_Mail_Archive recover-orphans

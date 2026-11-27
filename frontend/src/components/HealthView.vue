@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useEngineJob } from "../composables/useEngineJob";
 
 const props = defineProps<{ onError: (message: string) => void; onChanged: () => void }>();
 
@@ -18,12 +18,8 @@ interface Diagnosis {
 }
 
 const diagnosis = ref<Diagnosis | null>(null);
-const busy = ref(false);
-const progress = ref("");
-const activeJob = ref("");
 const checked = ref("");
-
-let unlisten: UnlistenFn | null = null;
+const { busy, progress, start } = useEngineJob();
 
 function problemCount(d: Diagnosis) {
   return (
@@ -47,47 +43,24 @@ async function refresh() {
 }
 
 async function startRepair(kind: "reindex" | "recover_orphans") {
-  if (busy.value) return;
-  busy.value = true;
-  progress.value = "starting…";
   try {
-    const response = (await invoke(kind)) as { job_id: string };
-    activeJob.value = response.job_id;
+    const outcome = await start(kind);
+    if (outcome.event === "job_error") {
+      props.onError(String(outcome.message || "repair failed"));
+      return;
+    }
+    const result = outcome.result || {};
+    const count = result.reindexed ?? result.recovered?.length ?? 0;
+    progress.value = `${result.action === "recover" ? "Recovered" : "Reindexed"} ${count}` +
+      (result.cancelled ? " (cancelled, progress kept)" : "");
+    await refresh();
+    props.onChanged();
   } catch (e) {
-    busy.value = false;
-    progress.value = "";
     props.onError(String(e));
   }
 }
 
-function handleEvent(payload: any) {
-  if (!activeJob.value || payload.job_id !== activeJob.value) return;
-  if (payload.event === "progress") {
-    progress.value = `${payload.done}/${payload.total} ${payload.status}`;
-  } else if (payload.event === "job_complete") {
-    const result = payload.result || {};
-    const count = result.reindexed ?? result.recovered?.length ?? 0;
-    progress.value = `${result.action === "recover" ? "Recovered" : "Reindexed"} ${count}` +
-      (result.cancelled ? " (cancelled, progress kept)" : "");
-    busy.value = false;
-    activeJob.value = "";
-    void refresh().then(() => props.onChanged());
-  } else if (payload.event === "job_error") {
-    progress.value = "";
-    busy.value = false;
-    activeJob.value = "";
-    props.onError(String(payload.message || "repair failed"));
-  }
-}
-
-onMounted(async () => {
-  unlisten = await listen("engine-event", (event) => handleEvent(event.payload));
-  await refresh();
-});
-
-onUnmounted(() => {
-  if (unlisten) unlisten();
-});
+onMounted(refresh);
 </script>
 
 <template>

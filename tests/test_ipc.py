@@ -327,6 +327,55 @@ class IPCServerTests(unittest.TestCase):
         self.assertFalse(terminal['result']['cancelled'])
         self.assertEqual(self.server.handle(request('health'))['result']['raw_unindexed'],[])
 
+    def test_migrate_status_reports_versions(self):
+        report=self.server.handle(request('migrate_status'))['result']
+        self.assertTrue(report['archive']['present'])
+        self.assertEqual(report['archive']['version'],report['archive']['target'])
+        self.assertEqual(report['archive']['pending'],[])
+        self.assertFalse(report['research']['present'])
+
+    def test_backup_verify_and_restore_jobs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base=Path(tmp); snapshot=base/'snapshot'; restored=base/'restored'
+            started=self.server.handle(request('backup',destination=str(snapshot)))
+            terminal=self.finish_job(started['result']['job_id'])
+            self.assertEqual(terminal['event'],'job_complete')
+            self.assertEqual(terminal['result']['verified'],True)
+            self.assertTrue((snapshot/'backup-manifest.json').is_file())
+            started=self.server.handle(request('verify_backup',snapshot=str(snapshot)))
+            self.assertEqual(self.finish_job(started['result']['job_id'])['result']['verified'],True)
+            started=self.server.handle(request('restore',snapshot=str(snapshot),destination=str(restored)))
+            terminal=self.finish_job(started['result']['job_id'])
+            self.assertEqual(terminal['event'],'job_complete')
+            self.assertTrue((restored/'archive.sqlite3').is_file())
+            self.assertFalse((restored/'backup-manifest.json').exists())
+
+    def test_verify_backup_job_reports_tampering(self):
+        from backup import backup
+        with tempfile.TemporaryDirectory() as tmp:
+            snapshot=Path(tmp)/'snapshot'
+            backup(self.root, snapshot)
+            next((snapshot/'raw').glob('*.eml')).write_bytes(b'changed')
+            started=self.server.handle(request('verify_backup',snapshot=str(snapshot)))
+            terminal=self.finish_job(started['result']['job_id'])
+            self.assertEqual(terminal['event'],'job_error')
+            self.assertEqual(terminal['code'],'BACKUP_INVALID')
+
+    def test_backup_job_reports_existing_destination(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination=Path(tmp)/'snapshot'
+            destination.mkdir()
+            started=self.server.handle(request('backup',destination=str(destination)))
+            terminal=self.finish_job(started['result']['job_id'])
+            self.assertEqual(terminal['event'],'job_error')
+            self.assertEqual(terminal['code'],'BACKUP_FAILED')
+
+    def test_backup_actions_require_paths(self):
+        self.assertEqual(self.server.handle(request('backup'))['error']['code'],'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request('verify_backup'))['error']['code'],'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request('restore',snapshot='x'))['error']['code'],'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request('restore',snapshot='x',destination='y'))['result']['status'],'started')
+
     def test_serve_subprocess(self):
         proc=subprocess.Popen(
             [sys.executable, 'dispatch.py', '--archive', str(self.root), 'serve'],

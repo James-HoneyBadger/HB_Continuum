@@ -171,6 +171,11 @@ def _health(root):
     finally:
         conn.close()
 
+def _migration_report(root):
+    """Report on-disk schema versions and pending steps without migrating."""
+    from migrations import report
+    return report(Path(root).expanduser(), dry_run=True)
+
 def _import_eml(root, paths):
     from dispatch import Archive
     if not isinstance(paths, list):
@@ -585,6 +590,35 @@ class IPCServer:
 
         return self._start_job(work)
 
+    def _start_backup_action(self, action, params):
+        import backup as backup_engine
+        field = 'destination' if action == 'backup' else 'snapshot'
+        path = params.get(field)
+        if not isinstance(path, str) or not path.strip():
+            raise IPCError('INVALID_PARAMS', f'{field} is required')
+        if action == 'restore':
+            destination = params.get('destination')
+            if not isinstance(destination, str) or not destination.strip():
+                raise IPCError('INVALID_PARAMS', 'destination is required')
+
+        def work(job_id, cancel_event):
+            self._write(_event('progress', job_id=job_id, done=0, total=1, hash='', status=action))
+            try:
+                if action == 'backup':
+                    result = backup_engine.backup(self.root, path)
+                elif action == 'verify_backup':
+                    result = backup_engine.validate_snapshot(Path(path).expanduser())
+                else:
+                    result = backup_engine.restore(path, params['destination'])
+            except (ValueError, FileExistsError, OSError, sqlite3.Error) as exc:
+                code = {'backup': 'BACKUP_FAILED', 'verify_backup': 'BACKUP_INVALID',
+                        'restore': 'RESTORE_FAILED'}[action]
+                raise IPCError(code, str(exc)) from None
+            self._write(_event('progress', job_id=job_id, done=1, total=1, hash='', status='complete'))
+            return result
+
+        return self._start_job(work)
+
     def _cancel(self, params):
         job_id = params.get('job_id')
         job = self._jobs.get(job_id) if isinstance(job_id, str) else None
@@ -621,10 +655,18 @@ class IPCServer:
                 return _result(request_id, _verify(self.root))
             if method == 'health':
                 return _result(request_id, _health(self.root))
+            if method == 'migrate_status':
+                return _result(request_id, _migration_report(self.root))
             if method == 'reindex':
                 return _result(request_id, self._start_repair('reindex'))
             if method == 'recover_orphans':
                 return _result(request_id, self._start_repair('recover'))
+            if method == 'backup':
+                return _result(request_id, self._start_backup_action('backup', params))
+            if method == 'verify_backup':
+                return _result(request_id, self._start_backup_action('verify_backup', params))
+            if method == 'restore':
+                return _result(request_id, self._start_backup_action('restore', params))
             if method == 'import_eml':
                 return _result(request_id, _import_eml(self.root, params.get('paths', [])))
             if method == 'preferences':

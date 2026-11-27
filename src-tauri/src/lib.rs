@@ -194,6 +194,30 @@ fn recover_orphans(state: State<AppState>) -> Result<Value, String> {
 }
 
 #[tauri::command]
+fn migrate_status(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "migrate_status", json!({}))
+}
+
+#[tauri::command]
+fn backup(state: State<AppState>, destination: String) -> Result<Value, String> {
+    call(&state, "backup", json!({ "destination": destination }))
+}
+
+#[tauri::command]
+fn verify_backup(state: State<AppState>, snapshot: String) -> Result<Value, String> {
+    call(&state, "verify_backup", json!({ "snapshot": snapshot }))
+}
+
+#[tauri::command]
+fn restore(
+    state: State<AppState>,
+    snapshot: String,
+    destination: String,
+) -> Result<Value, String> {
+    call(&state, "restore", json!({ "snapshot": snapshot, "destination": destination }))
+}
+
+#[tauri::command]
 fn import_eml(state: State<AppState>, paths: Vec<String>) -> Result<Value, String> {
     call(&state, "import_eml", json!({ "paths": paths }))
 }
@@ -383,7 +407,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ping, stats, search, message, thread, record, verify, health,
-            reindex, recover_orphans,
+            reindex, recover_orphans, migrate_status, backup, verify_backup, restore,
             import_eml, preferences, preferences_set, research_list, research_results,
             research_workspace_save, research_search_save, research_tag, research_untag,
             research_apply_rules, research_field_define, research_metadata_set,

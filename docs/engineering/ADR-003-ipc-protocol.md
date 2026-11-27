@@ -21,10 +21,11 @@ spawned as `python3 dispatch.py --archive <root> serve`.
 - Long-running jobs emit `event` objects (`progress`, `job_complete`,
   `job_error`) tagged with a `job_id`.
 - Methods are an explicit allowlist: `ping`, `stats`, `search`, `message`,
-  `thread`, `record`, `verify`, `health`, `reindex`, `recover_orphans`,
-  `import_eml`, `preferences`, `preferences_set`, the `research_*` overlay
-  methods, `export_evidence`, the `schedule_*` methods, `summarize`,
-  `cancel` and `shutdown`.
+  `thread`, `record`, `verify`, `health`, `migrate_status`, `reindex`,
+  `recover_orphans`, `backup`, `verify_backup`, `restore`, `import_eml`,
+  `preferences`, `preferences_set`, the `research_*` overlay methods,
+  `export_evidence`, the `schedule_*` methods, `summarize`, `cancel` and
+  `shutdown`.
 - `health` inspects an existing archive through a read-only connection and
   never migrates or writes during the request, returning
   `ARCHIVE_NOT_AVAILABLE` or `ARCHIVE_BUSY` instead. `reindex` and
@@ -32,6 +33,11 @@ spawned as `python3 dispatch.py --archive <root> serve`.
   a terminal `job_complete` with what they repaired; they migrate the archive
   when they open it, exactly like the CLI, and report `MIGRATION_ERROR` if
   the schema is newer than this build.
+- `migrate_status` reports on-disk schema versions and pending steps in
+  dry-run mode. `backup`, `verify_backup` and `restore` are background jobs
+  that validate before publishing; failures report `BACKUP_FAILED`,
+  `BACKUP_INVALID` or `RESTORE_FAILED`, and missing paths are rejected as
+  `INVALID_PARAMS` before a job starts.
 - `message` and `thread` results carry the body text and indexed attachment
   metadata (`filename`, `mime`, `characters`); an archive without the
   attachment index reports an empty list rather than failing.
@@ -51,6 +57,11 @@ line that carries `event` instead of `request_id`, so background job
 progress and completion reach Vue components through
 `@tauri-apps/api/event` rather than polling. Job identifiers are returned by
 the starting request and used to filter events.
+
+Events are asynchronous: a fast job can emit `progress` and even its
+terminal event before the start response reaches the client. Consumers must
+buffer events by `job_id` (`frontend/src/composables/useEngineJob.ts` does
+this) instead of assuming the response arrives first.
 
 ## Consequences
 
