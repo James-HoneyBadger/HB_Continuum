@@ -1,6 +1,6 @@
 # Migration and legacy compatibility
 
-HB Dispatch keeps its data in three SQLite files inside the archive
+HB Continuum keeps its data in three SQLite files inside the archive
 directory. Schema changes are versioned, transactional and reversible in the
 sense that the previous database file is preserved before any migration.
 
@@ -90,7 +90,7 @@ modified. The copy has the pre-migration version and contents.
 
 To roll back:
 
-1. Close every HB Dispatch window and stop scheduled synchronization
+1. Close every HB Continuum window and stop scheduled synchronization
    (`python3 dispatch.py --archive ~/HB_Mail_Archive schedule uninstall`).
 2. Copy the archive directory to a safe place.
 3. Replace `archive.sqlite3` (or the affected database) with the snapshot:

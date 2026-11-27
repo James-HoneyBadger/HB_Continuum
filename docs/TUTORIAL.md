@@ -27,15 +27,15 @@ This is not a replacement mail client, cloud backup service, or automated mailbo
 Install Python 3.12 or newer with SQLite FTS5 support. Tkinter is optional for desktop browsing; some Linux distributions package it separately. From a terminal:
 
 ```sh
-git clone https://github.com/James-HoneyBadger/HB_Dispatch.git
-cd HB_Dispatch
+git clone https://github.com/James-HoneyBadger/HB_Continuum.git
+cd HB_Continuum
 python3 --version
 python3 -c "import sqlite3; c=sqlite3.connect(':memory:'); c.execute('CREATE VIRTUAL TABLE t USING fts5(body)'); print('FTS5 available')"
 python3 dispatch.py --version
 python3 -m unittest discover -s tests -v
 ```
 
-Examples below use a POSIX shell (Linux/macOS); on Windows use your Python launcher and equivalent paths. Main is the public beta and the source of the [v0.3.0 release](https://github.com/James-HoneyBadger/HB_Dispatch/releases/tag/v0.3.0); anything on a public development branch beyond that tag is an alpha experiment that is not part of it.
+Examples below use a POSIX shell (Linux/macOS); on Windows use your Python launcher and equivalent paths. Main is the public beta and the source of the [v0.3.0 release](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.3.0); anything on a public development branch beyond that tag is an alpha experiment that is not part of it.
 
 Create a synthetic email outside the repository using a plain-text editor, saving it as `~/dispatch-practice.eml` (not .txt):
 
