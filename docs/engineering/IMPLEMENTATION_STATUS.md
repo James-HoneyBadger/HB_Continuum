@@ -249,10 +249,10 @@ landed (Overview dashboard, design tokens, timeline pagination).
   UI modules.
 - Verified: 253 tests with no failures, CLI `--version`/`import`/`search`,
   a subprocess IPC `ping`/`shutdown` session, and a fresh PyInstaller 6.22.3
-  sidecar built on macOS ARM64 with Python 3.13.7. `build_engine.py
-  --no-copy --smoke` passed, including a real IPC session that asserts
-  `search_advanced` returns both messages and `relationships` builds the
-  thread edge. Tkinter was absent from the build environment; the Tauri shell
+  sidecar rebuilt on macOS ARM64 with Python 3.13.7 after the final
+  increments. `build_engine.py --no-copy --smoke` passed, including a real
+  IPC session that asserts `search_advanced` returns both messages and
+  `relationships` builds the thread edge. Tkinter was absent from the build environment; the Tauri shell
   does not use it.
 
 ### Advanced boolean queries (2026-11-27)
@@ -587,9 +587,8 @@ until the shell's flows are exercised against real archives.
   5 report tests, 11 source management/verification tests, 11 unified-search
   tests, 10 advanced-query tests, 5 saved-query tests, 8 relationship tests,
   58 IPC tests, 19 Facebook tests and a packaging-smoke test.
-- `mypy` (2.4.1, matching CI) is configured for `hb_engine` and the Tk UI
-  modules. It was not available in this environment, so the CI type-check job
-  is the verification.
+- `mypy` 2.4.1 (matching CI): no issues in 23 source files, covering
+  `hb_engine` and the Tk UI modules.
 - `cargo test` (src-tauri): 3 tests pass, covering bundled-sidecar
   preference, the development script fallback and resolution from a bare
   directory.
@@ -597,8 +596,8 @@ until the shell's flows are exercised against real archives.
   smoke-tested outside the repository: `--version`, `import`, `search`,
   `health` and an IPC `ping`/`health`/`shutdown` session all pass.
 - Engine package sidecar rebuilt with PyInstaller 6.22.3 on macOS ARM64
-  (Python 3.13.7): `--no-copy --smoke` passed, including the new IPC checks
-  for `search_advanced` and `relationships`.
+  (Python 3.13.7) after the final increments: `--no-copy --smoke` passed,
+  including the IPC checks for `search_advanced` and `relationships`.
 - Packaging layout verified with `tauri build --debug --no-bundle --config
   src-tauri/tauri.bundle.conf.json`: Tauri copied `hb-engine` next to the
   application, and the app launched under Xvfb spawned that engine and served

@@ -63,7 +63,7 @@ class UnifiedSearchTests(unittest.TestCase):
         results=search_unified(self.root, 'bullion', after=1704067200)
         self.assertEqual({r['source'] for r in results},{'email'})
         self.assertTrue(all(r['source']=='email' for r in results))
-        self.assertEqual(search_unified(self.root, 'bullion', after=1704067200, before=1704153600),[]) 
+        self.assertEqual(search_unified(self.root, 'bullion', after=1704067200, before=1704153600),[])
 
     def test_sender_and_kind_filters(self):
         email_only=search_unified(self.root,'bullion',senders=['a@example.invalid'])
