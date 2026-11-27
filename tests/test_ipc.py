@@ -274,6 +274,28 @@ class IPCServerTests(unittest.TestCase):
             'collection_add',collection_id=created['id'],item_type='email',
             item_id=self.h))['error']['code'],'INVALID_PARAMS')
 
+    def test_report_draft_round_trip(self):
+        collection=self.server.handle(request(
+            'collection_create',workspace='General',name='Case'))['result']
+        self.server.handle(request(
+            'collection_add',collection_id=collection['id'],item_type='email',item_id=self.h))
+        draft=self.server.handle(request(
+            'draft_save',collection_id=collection['id'],
+            title='Chronology',notes='initial'))['result']
+        self.assertEqual(draft['collection']['item_count'],1)
+        listed=self.server.handle(request(
+            'draft_list',collection_id=collection['id']))['result']['drafts']
+        self.assertEqual([row['title'] for row in listed],['Chronology'])
+        updated=self.server.handle(request(
+            'draft_save',draft_id=draft['id'],collection_id=collection['id'],
+            title='Chronology',notes='revised'))['result']
+        self.assertEqual(updated['notes'],'revised')
+        self.assertEqual(self.server.handle(request(
+            'draft_delete',draft_id=draft['id']))['result']['deleted'],True)
+        missing=self.server.handle(request(
+            'draft_save',collection_id=9999,title='x'))
+        self.assertEqual(missing['error']['code'],'INVALID_PARAMS')
+
     def test_journal_round_trip_and_revision_history(self):
         created=self.server.handle(request(
             'journal_save',title='Remembered',body='first text',event_date='2015-06-01'))['result']

@@ -92,6 +92,61 @@ class CollectionTests(unittest.TestCase):
         self.assertFalse(manifest['items'][0]['exists'])
         self.assertIn('(missing)',render_collection(manifest,'markdown'))
 
+    def test_draft_crud_and_collection_cascade(self):
+        draft=self.research.draft_create(self.collection['id'],'Timeline of events','Initial notes')
+        self.assertEqual(draft['collection']['id'],self.collection['id'])
+        self.assertEqual(self.research.draft_list(self.collection['id'])[0]['title'],'Timeline of events')
+        updated=self.research.draft_update(draft['id'],'Timeline of events','Revised notes')
+        self.assertEqual(updated['notes'],'Revised notes')
+        self.assertEqual(updated['id'],draft['id'])
+        with self.assertRaises(ValueError):
+            self.research.draft_create(self.collection['id'],'')
+        with self.assertRaises(ValueError):
+            self.research.draft_create(self.collection['id'],'x','y'*20001)
+        self.research.collection_delete(self.collection['id'])
+        self.assertEqual(self.research.draft_list(),[])
+        with self.assertRaises(ValueError):
+            self.research.draft_get(draft['id'])
+
+    def test_draft_report_orders_chronology_and_reports_gaps(self):
+        from reporting import build_draft_report, render_draft, write_draft_report
+        second=self.archive.ingest(
+            b'From: b@example.invalid\r\nSubject: Later evidence\r\n'
+            b'Date: Wed, 03 Jan 2024 10:00:00 +0000\r\n\r\nbody')
+        self.research.collection_add(self.collection['id'],'email',self.email,note='earliest')
+        self.research.collection_add(self.collection['id'],'email',second)
+        missing=self.archive.ingest(
+            b'From: c@example.invalid\r\nSubject: Lost evidence\r\n'
+            b'Date: Fri, 05 Jan 2024 10:00:00 +0000\r\n\r\nbody')
+        self.research.collection_add(self.collection['id'],'email',missing)
+        with self.archive.db:
+            for table in ('attachment_index','extraction_versions','search'):
+                self.archive.db.execute(f'DELETE FROM {table} WHERE hash=?',(missing,))
+            self.archive.db.execute('DELETE FROM messages WHERE hash=?',(missing,))
+        draft=self.research.draft_create(self.collection['id'],'Case chronology','Draft notes here')
+        report=build_draft_report(draft)
+        self.assertEqual(report['item_count'],3)
+        self.assertEqual(report['missing_count'],1)
+        self.assertEqual(report['period']['earliest'],'Mon, 01 Jan 2024 10:00:00 +0000')
+        order=[item['item_id'] for item in report['items']]
+        self.assertEqual(order,[self.email,second,missing])
+        markdown=render_draft(report,'markdown')
+        self.assertIn('Case chronology',markdown)
+        self.assertIn('Draft notes here',markdown)
+        self.assertIn('## Evidence gaps',markdown)
+        self.assertIn('(missing)',markdown)
+        self.assertIn('not archived evidence',markdown)
+        payload=json.loads(render_draft(report,'json'))
+        self.assertEqual(payload['missing_count'],1)
+        destination=Path(self.tmp.name)/'draft.html'
+        result=write_draft_report(report,'html',destination)
+        self.assertEqual(result['format'],'html')
+        self.assertIn('Case chronology',destination.read_text())
+        with self.assertRaises(FileExistsError):
+            write_draft_report(report,'html',destination)
+        with self.assertRaises(ValueError):
+            render_draft(report,'pdf')
+
     def test_manifest_renders_json_markdown_and_refuses_overwrite(self):
         self.research.collection_add(self.collection['id'],'email',self.email,note='primary')
         manifest=build_collection_manifest(self.research.collection_get(self.collection['id']))

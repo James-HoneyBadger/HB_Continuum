@@ -329,3 +329,136 @@ def write_report(report, fmt, destination):
                    'w', encoding='utf-8') as handle:
         handle.write(text)
     return {'path': str(path), 'format': fmt, 'bytes': len(text.encode('utf-8'))}
+
+DRAFT_EXTENSIONS = {'markdown': '.md', 'json': '.json', 'html': '.html'}
+
+DRAFT_LIMITATIONS = (
+    'This draft is generated from references in the research overlay. It does not copy record '
+    'contents.',
+    'Draft text and item notes are user annotations, not archived evidence.',
+    'Dates are the declared record dates; records without a usable date are listed last.',
+    'Content hashes detect changed bytes. They are not proof of authenticity, legal '
+    'admissibility or chain of custody.',
+    'Referenced records that could not be found are reported, not silently omitted.',
+)
+
+def _draft_items(draft):
+    from timestamps import parse_timestamp
+    collection = draft.get('collection') or {}
+    items = list(collection.get('items', []))
+    def key(item):
+        epoch, _ = parse_timestamp(item.get('date') or '')
+        return (epoch is None, epoch or 0, item.get('item_type', ''), item.get('item_id', ''))
+    items.sort(key=key)
+    return items, parse_timestamp
+
+def build_draft_report(draft):
+    items, parse_timestamp = _draft_items(draft)
+    dated = [item for item in items if parse_timestamp(item.get('date') or '')[0] is not None]
+    missing = [item for item in items if not item.get('exists')]
+    collection = draft.get('collection') or {}
+    return {
+        'title': draft.get('title', 'Report draft'),
+        'generated_at': _now(),
+        'workspace': collection.get('workspace', ''),
+        'collection': collection.get('name', ''),
+        'description': collection.get('description', ''),
+        'notes': draft.get('notes', ''),
+        'period': {'earliest': dated[0].get('date') if dated else None,
+                   'latest': dated[-1].get('date') if dated else None},
+        'item_count': len(items),
+        'missing_count': len(missing),
+        'items': [{key: item.get(key) for key in (
+            'item_type', 'item_id', 'kind', 'title', 'actor', 'date',
+            'note', 'exists')} for item in items],
+        'limitations': list(DRAFT_LIMITATIONS),
+    }
+
+def render_draft_markdown(report):
+    lines = [f"# {report['title']}", '',
+             f"Generated: {report['generated_at']}", '',
+             f"Workspace: {_value(report.get('workspace'))} · "
+             f"Collection: {_value(report.get('collection'))}", '',
+             f"Period: {_value((report.get('period') or {}).get('earliest'))} to "
+             f"{_value((report.get('period') or {}).get('latest'))}", '',
+             f"Records: {report.get('item_count', 0)} · "
+             f"Missing: {report.get('missing_count', 0)}", '',
+             '## Draft notes', '',
+             report.get('notes') or 'No draft notes.', '',
+             '## Chronology', '']
+    lines += _markdown_table(
+        ('Date', 'Type', 'Title', 'Actor', 'Note', 'Identifier'),
+        [(item.get('date') or 'undated', item.get('kind') or item.get('item_type'),
+          item.get('title') or '(missing record)',
+          item.get('actor'), item.get('note'),
+          item.get('item_id') + ('' if item.get('exists') else ' (missing)'))
+         for item in report.get('items', [])]) + ['']
+    missing = [item for item in report.get('items', []) if not item.get('exists')]
+    lines += ['## Evidence gaps', '']
+    lines += ([f"- {item.get('item_id')} ({item.get('item_type')}) was not found."
+               for item in missing] if missing else ['No referenced record is currently missing.'])
+    lines += ['', '## Limitations', '']
+    lines += [f"- {item}" for item in report.get('limitations', [])]
+    return '\n'.join(lines).rstrip() + '\n'
+
+def render_draft_html(report):
+    esc = html.escape
+    period = report.get('period') or {}
+    body = [f"<h1>{esc(report['title'])}</h1>",
+            f"<p class=\"meta\">Generated {esc(report['generated_at'])} · workspace "
+            f"{esc(_value(report.get('workspace')))} · collection "
+            f"{esc(_value(report.get('collection')))}</p>",
+            f"<p class=\"meta\">Period {esc(_value(period.get('earliest')))} to "
+            f"{esc(_value(period.get('latest')))} · {report.get('item_count', 0)} records · "
+            f"{report.get('missing_count', 0)} missing</p>",
+            '<h2>Draft notes</h2>',
+            f"<p>{esc(report.get('notes') or 'No draft notes.')}</p>",
+            '<h2>Chronology</h2>',
+            _html_table(('Date', 'Type', 'Title', 'Actor', 'Note', 'Identifier'),
+                        [(item.get('date') or 'undated',
+                          item.get('kind') or item.get('item_type'),
+                          item.get('title') or '(missing record)', item.get('actor'),
+                          item.get('note'),
+                          item.get('item_id') + ('' if item.get('exists') else ' (missing)'))
+                         for item in report.get('items', [])])]
+    missing = [item for item in report.get('items', []) if not item.get('exists')]
+    body += ['<h2>Evidence gaps</h2>']
+    if missing:
+        body += ['<ul>'] + [f"<li>{esc(item.get('item_id'))} was not found.</li>"
+                            for item in missing] + ['</ul>']
+    else:
+        body.append('<p class="meta">No referenced record is currently missing.</p>')
+    body += ['<h2>Limitations</h2><ul>']
+    body += [f'<li>{esc(item)}</li>' for item in report.get('limitations', [])]
+    body.append('</ul>')
+    return (
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        f'<title>{esc(report["title"])}</title><style>'
+        'body{background:#f5f3eb;color:#354650;font:13px/1.5 -apple-system,'
+        'BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;margin:24px;max-width:980px}'
+        'h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:22px 0 8px;'
+        'color:#536b79;border-bottom:1px solid #b6bcb8;padding-bottom:3px}'
+        'table{border-collapse:collapse;width:100%;font-size:12px}'
+        'th,td{text-align:left;padding:5px 7px;border-bottom:1px solid #b6bcb8}'
+        'th{background:#e1e3de;color:#59656a}.meta{color:#59656a;font-size:12px}'
+        '</style></head><body>' + ''.join(body) + '</body></html>\n')
+
+def render_draft(report, fmt):
+    if fmt == 'markdown':
+        return render_draft_markdown(report)
+    if fmt == 'json':
+        return json.dumps(report, indent=2, ensure_ascii=False) + '\n'
+    if fmt == 'html':
+        return render_draft_html(report)
+    raise ValueError(f'Unsupported draft format {fmt!r}')
+
+def write_draft_report(report, fmt, destination):
+    """Write a draft report, refusing to replace an existing file."""
+    text = render_draft(report, fmt)
+    path = Path(destination)
+    if path.suffix.lower() != DRAFT_EXTENSIONS[fmt]:
+        raise ValueError(f'{fmt} drafts use the {DRAFT_EXTENSIONS[fmt]} extension')
+    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600),
+                   'w', encoding='utf-8') as handle:
+        handle.write(text)
+    return {'path': str(path), 'format': fmt, 'bytes': len(text.encode('utf-8'))}

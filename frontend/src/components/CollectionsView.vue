@@ -29,6 +29,14 @@ interface Collection extends CollectionSummary {
   item_count: number;
   items: CollectionItem[];
 }
+interface DraftSummary {
+  id: number;
+  collection_id: number;
+  title: string;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+}
 
 const workspaces = ref<string[]>([]);
 const collections = ref<CollectionSummary[]>([]);
@@ -38,6 +46,11 @@ const addition = ref({ itemType: "email", itemId: "", note: "" });
 const notice = ref("");
 const busy = ref(false);
 const confirmingDelete = ref(false);
+const drafts = ref<DraftSummary[]>([]);
+const currentDraft = ref<DraftSummary | null>(null);
+const draftForm = ref({ title: "", notes: "" });
+const draftNotice = ref("");
+const confirmingDraftDelete = ref(false);
 
 async function load() {
   try {
@@ -55,6 +68,17 @@ async function load() {
   }
 }
 
+async function loadDrafts(collectionId: number) {
+  try {
+    const response = (await invoke("draft_list", {
+      collectionId,
+    })) as { drafts: DraftSummary[] };
+    drafts.value = response.drafts;
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
 async function open(collection: CollectionSummary) {
   try {
     current.value = (await invoke("collection_get", {
@@ -62,8 +86,100 @@ async function open(collection: CollectionSummary) {
     })) as Collection;
     confirmingDelete.value = false;
     notice.value = "";
+    currentDraft.value = null;
+    draftForm.value = { title: "", notes: "" };
+    confirmingDraftDelete.value = false;
+    draftNotice.value = "";
+    await loadDrafts(collection.id);
   } catch (e) {
     props.onError(String(e));
+  }
+}
+
+function newDraft() {
+  currentDraft.value = null;
+  draftForm.value = { title: "", notes: "" };
+  confirmingDraftDelete.value = false;
+  draftNotice.value = "";
+}
+
+function editDraft(draft: DraftSummary) {
+  currentDraft.value = draft;
+  draftForm.value = { title: draft.title, notes: draft.notes };
+  confirmingDraftDelete.value = false;
+  draftNotice.value = "";
+}
+
+async function saveDraft() {
+  if (!current.value) return;
+  busy.value = true;
+  draftNotice.value = "";
+  try {
+    const saved = (await invoke("draft_save", {
+      draftId: currentDraft.value?.id ?? null,
+      collectionId: current.value.id,
+      title: draftForm.value.title,
+      notes: draftForm.value.notes,
+    })) as DraftSummary;
+    currentDraft.value = saved;
+    draftNotice.value = "Draft saved.";
+    await loadDrafts(current.value.id);
+    props.onChanged();
+  } catch (e) {
+    props.onError(String(e));
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function deleteDraft() {
+  if (!currentDraft.value) return;
+  if (!confirmingDraftDelete.value) {
+    confirmingDraftDelete.value = true;
+    return;
+  }
+  busy.value = true;
+  try {
+    await invoke("draft_delete", { draftId: currentDraft.value.id });
+    currentDraft.value = null;
+    draftForm.value = { title: "", notes: "" };
+    confirmingDraftDelete.value = false;
+    draftNotice.value = "Draft deleted. The collection and its records are unchanged.";
+    if (current.value) await loadDrafts(current.value.id);
+    props.onChanged();
+  } catch (e) {
+    props.onError(String(e));
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function exportDraft() {
+  if (!currentDraft.value) return;
+  busy.value = true;
+  try {
+    const destination = await save({
+      title: "Save report draft",
+      defaultPath: `draft-${currentDraft.value.id}.md`,
+      filters: [
+        { name: "Markdown", extensions: ["md"] },
+        { name: "JSON", extensions: ["json"] },
+        { name: "HTML", extensions: ["html"] },
+      ],
+    });
+    if (!destination) return;
+    const lower = destination.toLowerCase();
+    const format = lower.endsWith(".json") ? "json" : lower.endsWith(".html") ? "html" : "markdown";
+    const result = (await invoke("draft_export", {
+      draftId: currentDraft.value.id,
+      destination,
+      format,
+    })) as { path: string; bytes: number };
+    draftNotice.value = `Draft written to ${result.path} (${result.bytes} bytes).`;
+  } catch (e) {
+    props.onError(String(e));
+  } finally {
+    busy.value = false;
   }
 }
 
@@ -140,6 +256,8 @@ async function deleteCollection() {
   try {
     await invoke("collection_delete", { collectionId: current.value.id });
     current.value = null;
+    currentDraft.value = null;
+    drafts.value = [];
     confirmingDelete.value = false;
     notice.value = "Collection deleted. Referenced records were not affected.";
     await load();
@@ -294,6 +412,52 @@ onMounted(load);
             </tbody>
           </table>
           <p v-else class="meta">No records in this collection yet.</p>
+
+          <h3>Report drafts</h3>
+          <p class="meta">
+            A draft turns the collection into a chronology with notes, evidence gaps and explicit
+            limitations. It stores text in the research overlay and never copies record contents.
+          </p>
+          <div class="row">
+            <button :disabled="busy" @click="newDraft">New draft</button>
+            <span v-if="currentDraft" class="meta">Editing “{{ currentDraft.title }}”</span>
+          </div>
+          <ul v-if="drafts.length" class="drafts">
+            <li v-for="draft in drafts" :key="draft.id">
+              <button
+                :class="['entry', { active: currentDraft?.id === draft.id }]"
+                @click="editDraft(draft)"
+              >
+                <span class="name">{{ draft.title }}</span>
+                <span class="meta">updated {{ draft.updated_at }}</span>
+              </button>
+            </li>
+          </ul>
+          <p v-else class="meta">No drafts in this collection yet.</p>
+
+          <label class="field">
+            Draft title
+            <input v-model="draftForm.title" maxlength="200" />
+          </label>
+          <label class="field">
+            Draft notes
+            <textarea v-model="draftForm.notes" rows="6" maxlength="20000"></textarea>
+          </label>
+          <div class="row">
+            <button :disabled="busy || !draftForm.title.trim()" @click="saveDraft">
+              {{ currentDraft ? "Save draft" : "Create draft" }}
+            </button>
+            <button v-if="currentDraft" :disabled="busy" @click="exportDraft">Export draft…</button>
+            <button v-if="currentDraft" class="danger" :disabled="busy" @click="deleteDraft">
+              {{ confirmingDraftDelete ? "Confirm delete" : "Delete draft" }}
+            </button>
+            <button v-if="confirmingDraftDelete" @click="confirmingDraftDelete = false">Keep</button>
+          </div>
+          <p v-if="confirmingDraftDelete" class="meta">
+            Deleting the draft removes its text only. The collection, its notes and the referenced
+            records are unchanged.
+          </p>
+          <p v-if="draftNotice" class="notice">{{ draftNotice }}</p>
         </template>
         <p v-else class="meta">Select a collection or create one.</p>
       </div>
@@ -382,12 +546,18 @@ ul {
   min-width: 160px;
 }
 .field input,
-.field select {
+.field select,
+.field textarea {
   padding: 5px 7px;
   border: 1px solid var(--hb-border);
   background: var(--hb-workspace);
   color: var(--hb-text);
   border-radius: var(--hb-radius);
+}
+.field textarea {
+  resize: vertical;
+  font-family: var(--hb-font);
+  font-size: 12px;
 }
 .add {
   align-items: flex-end;

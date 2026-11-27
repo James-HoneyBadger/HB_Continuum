@@ -13,6 +13,21 @@ FIELDS=('subject','sender','body','date')
 TYPES=('text','number','date','choice','boolean')
 JOURNAL_TITLE_MAX=200
 JOURNAL_BODY_MAX=1_000_000
+DRAFT_TITLE_MAX=200
+DRAFT_NOTES_MAX=20_000
+
+def draft_title(value):
+    if (not isinstance(value,str) or not value.strip() or len(value)>DRAFT_TITLE_MAX
+            or any(ord(c)<32 for c in value)):
+        raise ValueError('Report title must contain 1–200 printable characters')
+    return value.strip()
+
+def draft_notes(value):
+    if value is None:
+        return ''
+    if not isinstance(value,str) or len(value)>DRAFT_NOTES_MAX:
+        raise ValueError('Draft notes must be text up to 20,000 characters')
+    return value
 
 def namecheck(value):
     if not isinstance(value,str) or not value.strip() or len(value)>100 or any(ord(c)<32 for c in value):
@@ -335,6 +350,55 @@ class Research:
         with self.db:
             self.db.execute('DELETE FROM collections WHERE id=?',(collection_id,))
         return {'deleted':True,'id':collection_id}
+    def _draft_row(self,draft_id):
+        if type(draft_id) is not int or draft_id<1:
+            raise ValueError('Invalid report draft id')
+        row=self.db.execute(
+            'SELECT id,collection_id,title,notes,created_at,updated_at '
+            'FROM report_drafts WHERE id=?',(draft_id,)).fetchone()
+        if row is None: raise ValueError('Unknown report draft')
+        return row
+    def draft_list(self,collection_id=None):
+        keys=('id','collection_id','title','notes','created_at','updated_at')
+        if collection_id is not None:
+            self._collection_row(collection_id)
+            sql=('SELECT id,collection_id,title,notes,created_at,updated_at '
+                 'FROM report_drafts WHERE collection_id=? '
+                 'ORDER BY updated_at DESC, id DESC')
+            rows=self.db.execute(sql,(collection_id,))
+        else:
+            rows=self.db.execute(
+                'SELECT id,collection_id,title,notes,created_at,updated_at '
+                'FROM report_drafts ORDER BY updated_at DESC, id DESC')
+        return [dict(zip(keys,row)) for row in rows]
+    def draft_create(self,collection_id,title,notes=''):
+        self._collection_row(collection_id)
+        title=draft_title(title); notes=draft_notes(notes)
+        now=self._collection_clock()
+        with self.db:
+            draft_id=self.db.execute(
+                'INSERT INTO report_drafts(collection_id,title,notes,created_at,updated_at) '
+                'VALUES(?,?,?,?,?)',(collection_id,title,notes,now,now)).lastrowid
+        return self.draft_get(draft_id)
+    def draft_update(self,draft_id,title,notes=''):
+        self._draft_row(draft_id)
+        title=draft_title(title); notes=draft_notes(notes)
+        now=self._collection_clock()
+        with self.db:
+            self.db.execute(
+                'UPDATE report_drafts SET title=?,notes=?,updated_at=? WHERE id=?',
+                (title,notes,now,draft_id))
+        return self.draft_get(draft_id)
+    def draft_get(self,draft_id):
+        row=self._draft_row(draft_id)
+        draft=dict(zip(('id','collection_id','title','notes','created_at','updated_at'),row))
+        draft['collection']=self.collection_get(row[1])
+        return draft
+    def draft_delete(self,draft_id):
+        self._draft_row(draft_id)
+        with self.db:
+            self.db.execute('DELETE FROM report_drafts WHERE id=?',(draft_id,))
+        return {'deleted':True,'id':draft_id}
     def export_report(self,name,path):
         cols,rows=self.report(name)
         def safe(v):

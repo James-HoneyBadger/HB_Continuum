@@ -159,6 +159,16 @@ RESEARCH_V3 = (
     'ON collection_items(item_type, item_id)',
 )
 
+RESEARCH_V4 = (
+    'CREATE TABLE IF NOT EXISTS report_drafts('
+    'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+    'collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE, '
+    "title TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '', "
+    'created_at TEXT NOT NULL, updated_at TEXT NOT NULL)',
+    'CREATE INDEX IF NOT EXISTS report_drafts_by_collection '
+    'ON report_drafts(collection_id, updated_at DESC)',
+)
+
 CATALOG_V1 = (
     'CREATE TABLE IF NOT EXISTS source_files('
     'file_hash TEXT PRIMARY KEY, source_type TEXT NOT NULL, source_key TEXT NOT NULL, '
@@ -197,7 +207,7 @@ CATALOG_V3 = (
 MIGRATIONS = {
     'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3, 4: ARCHIVE_V4,
                 5: ARCHIVE_V5, 6: ARCHIVE_V6},
-    'research': {1: RESEARCH_V1, 2: RESEARCH_V2, 3: RESEARCH_V3},
+    'research': {1: RESEARCH_V1, 2: RESEARCH_V2, 3: RESEARCH_V3, 4: RESEARCH_V4},
     'catalog': {1: CATALOG_V1, 2: CATALOG_V2, 3: CATALOG_V3},
 }
 

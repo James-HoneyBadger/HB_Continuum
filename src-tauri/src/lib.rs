@@ -571,6 +571,62 @@ fn collection_export(
 }
 
 #[tauri::command]
+fn draft_list(
+    state: State<AppState>,
+    collection_id: Option<i64>,
+) -> Result<Value, String> {
+    call(&state, "draft_list", json!({ "collection_id": collection_id }))
+}
+
+#[tauri::command]
+fn draft_get(state: State<AppState>, draft_id: i64) -> Result<Value, String> {
+    call(&state, "draft_get", json!({ "draft_id": draft_id }))
+}
+
+#[tauri::command]
+fn draft_save(
+    state: State<AppState>,
+    draft_id: Option<i64>,
+    collection_id: i64,
+    title: String,
+    notes: Option<String>,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "draft_save",
+        json!({
+            "draft_id": draft_id,
+            "collection_id": collection_id,
+            "title": title,
+            "notes": notes.unwrap_or_default(),
+        }),
+    )
+}
+
+#[tauri::command]
+fn draft_delete(state: State<AppState>, draft_id: i64) -> Result<Value, String> {
+    call(&state, "draft_delete", json!({ "draft_id": draft_id }))
+}
+
+#[tauri::command]
+fn draft_export(
+    state: State<AppState>,
+    draft_id: i64,
+    destination: String,
+    format: Option<String>,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "draft_export",
+        json!({
+            "draft_id": draft_id,
+            "destination": destination,
+            "format": format.unwrap_or_else(|| "markdown".into()),
+        }),
+    )
+}
+
+#[tauri::command]
 fn preferences(state: State<AppState>) -> Result<Value, String> {
     call(&state, "preferences", json!({}))
 }
@@ -765,6 +821,7 @@ pub fn run() {
             journal_list, journal_get, journal_save, journal_delete, journal_restore,
             collections_list, collection_get, collection_create, collection_delete,
             collection_add, collection_remove, collection_export,
+            draft_list, draft_get, draft_save, draft_delete, draft_export,
             preferences, preferences_set, research_list, research_results,
             research_workspace_save, research_search_save, research_tag, research_untag,
             research_apply_rules, research_field_define, research_metadata_set,

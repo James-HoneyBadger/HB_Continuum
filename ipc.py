@@ -793,6 +793,70 @@ def _collection_export(root, params):
 
     return _with_research(root, action)
 
+
+def _draft_list(root, collection_id=None):
+    if collection_id is not None and (not isinstance(collection_id, int)
+                                      or isinstance(collection_id, bool)):
+        raise IPCError('INVALID_PARAMS', 'collection_id must be an integer or null')
+    return _with_research(root, lambda a, r: {'drafts': r.draft_list(collection_id)})
+
+def _draft_get(root, draft_id):
+    return _with_research(root, lambda a, r: r.draft_get(draft_id))
+
+def _draft_save(root, params):
+    collection_id = params.get('collection_id')
+    if not isinstance(collection_id, int) or isinstance(collection_id, bool):
+        raise IPCError('INVALID_PARAMS', 'collection_id must be an integer')
+    title = _text(params.get('title'), 'title', 200)
+    notes = params.get('notes', '')
+    if not isinstance(notes, str):
+        raise IPCError('INVALID_PARAMS', 'notes must be a string')
+    draft_id = params.get('draft_id')
+
+    def action(archive, research):
+        if draft_id is None:
+            return research.draft_create(collection_id, title, notes)
+        if not isinstance(draft_id, int) or isinstance(draft_id, bool):
+            raise IPCError('INVALID_PARAMS', 'draft_id must be an integer or null')
+        return research.draft_update(draft_id, title, notes)
+
+    return _with_research(root, action)
+
+def _draft_delete(root, draft_id):
+    return _with_research(root, lambda a, r: r.draft_delete(draft_id))
+
+def _draft_export(root, params):
+    from reporting import DRAFT_EXTENSIONS, build_draft_report, write_draft_report
+    draft_id = params.get('draft_id')
+    if not isinstance(draft_id, int) or isinstance(draft_id, bool):
+        raise IPCError('INVALID_PARAMS', 'draft_id must be an integer')
+    destination = params.get('destination')
+    fmt = params.get('format', 'markdown')
+    if not isinstance(destination, str) or not destination.strip():
+        raise IPCError('INVALID_PARAMS', 'destination is required')
+    if fmt not in DRAFT_EXTENSIONS:
+        raise IPCError('INVALID_PARAMS', 'format must be markdown, json or html')
+    root_path = Path(root).expanduser().resolve()
+    dest = Path(destination).expanduser().resolve()
+    if dest.is_relative_to(root_path) or root_path.is_relative_to(dest):
+        raise IPCError('INVALID_PARAMS', 'A draft must be written outside the archive')
+    if not dest.parent.is_dir():
+        raise IPCError('INVALID_PARAMS', 'Destination folder does not exist')
+    if dest.suffix.lower() != DRAFT_EXTENSIONS[fmt]:
+        raise IPCError('INVALID_PARAMS',
+                       f'{fmt} drafts use the {DRAFT_EXTENSIONS[fmt]} extension')
+    if dest.exists():
+        raise IPCError('DESTINATION_EXISTS', 'Destination already exists')
+
+    def action(archive, research):
+        report = build_draft_report(research.draft_get(draft_id))
+        try:
+            return write_draft_report(report, fmt, dest)
+        except FileExistsError:
+            raise IPCError('DESTINATION_EXISTS', 'Destination already exists') from None
+
+    return _with_research(root, action)
+
 def _export_evidence(root, hashes, destination):
     from dispatch import Archive
     targets = _hash_list(hashes)
@@ -1319,6 +1383,17 @@ class IPCServer:
                 return _result(request_id, _collection_remove(self.root, params))
             if method == 'collection_export':
                 return _result(request_id, _collection_export(self.root, params))
+            if method == 'draft_list':
+                return _result(request_id, _draft_list(
+                    self.root, params.get('collection_id')))
+            if method == 'draft_get':
+                return _result(request_id, _draft_get(self.root, params.get('draft_id')))
+            if method == 'draft_save':
+                return _result(request_id, _draft_save(self.root, params))
+            if method == 'draft_delete':
+                return _result(request_id, _draft_delete(self.root, params.get('draft_id')))
+            if method == 'draft_export':
+                return _result(request_id, _draft_export(self.root, params))
             if method == 'export_evidence':
                 return _result(request_id, _export_evidence(
                     self.root, params.get('hashes'), params.get('destination')))
