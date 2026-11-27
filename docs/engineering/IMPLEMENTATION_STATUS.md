@@ -211,9 +211,9 @@ until the shell's flows are exercised against real archives.
 
 - `python3 -m py_compile` on changed files: pass.
 - `python3 -m unittest discover -s tests`: 176 tests, 175 pass and 1 is
-  skipped on this machine (macOS has no `systemd`, so one scheduler smoke
-  assertion is skipped). Includes the new 8 timestamp/chronology tests, 2
-  real-process lock tests, 6 unified-search tests and 42 IPC tests.
+  skipped on this machine (the optional `keyring` backend is not
+  installed). Includes the new 8 timestamp/chronology tests, 2 real-process
+  lock tests, 6 unified-search tests and 42 IPC tests.
 - `mypy` (2.4.1, matching CI): no issues in 19 source files.
 - `cargo test` (src-tauri): 3 tests pass, covering bundled-sidecar
   preference, the development script fallback and resolution from a bare
