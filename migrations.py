@@ -100,6 +100,21 @@ RESEARCH_V1 = (
     'summary_type, model_name, prompt_version, message_hash)',
 )
 
+RESEARCH_V2 = (
+    'CREATE TABLE IF NOT EXISTS journal_entries('
+    'id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, body TEXT NOT NULL, '
+    'event_date TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, '
+    'revision INTEGER NOT NULL DEFAULT 1, deleted_at TEXT)',
+    'CREATE TABLE IF NOT EXISTS journal_revisions('
+    'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+    'entry_id INTEGER NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE, '
+    'revision INTEGER NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, '
+    'event_date TEXT, recorded_at TEXT NOT NULL, UNIQUE(entry_id, revision))',
+    'CREATE INDEX IF NOT EXISTS journal_revisions_by_entry '
+    'ON journal_revisions(entry_id, revision DESC)',
+    'CREATE INDEX IF NOT EXISTS journal_entries_by_date ON journal_entries(event_date DESC)',
+)
+
 CATALOG_V1 = (
     'CREATE TABLE IF NOT EXISTS source_files('
     'file_hash TEXT PRIMARY KEY, source_type TEXT NOT NULL, source_key TEXT NOT NULL, '
@@ -127,7 +142,7 @@ CATALOG_V2 = (
 
 MIGRATIONS = {
     'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3, 4: ARCHIVE_V4},
-    'research': {1: RESEARCH_V1},
+    'research': {1: RESEARCH_V1, 2: RESEARCH_V2},
     'catalog': {1: CATALOG_V1, 2: CATALOG_V2},
 }
 

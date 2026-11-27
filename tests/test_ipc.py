@@ -152,6 +152,29 @@ class IPCServerTests(unittest.TestCase):
         self.assertGreater(sources['storage']['total_bytes'],0)
         self.assertEqual(sources['catalog']['records'],0)
 
+    def test_journal_round_trip_and_revision_history(self):
+        created=self.server.handle(request(
+            'journal_save',title='Remembered',body='first text',event_date='2015-06-01'))['result']
+        self.assertEqual(created['revision'],1)
+        updated=self.server.handle(request(
+            'journal_save',entry_id=created['id'],title='Remembered',body='revised text',
+            event_date='2015-06-01'))['result']
+        self.assertEqual(updated['revision'],2)
+        self.assertEqual([r['revision'] for r in updated['revisions']],[2,1])
+        listed=self.server.handle(request('journal_list'))['result']['entries']
+        self.assertEqual([row['id'] for row in listed],[created['id']])
+        self.assertEqual(self.server.handle(request('journal_get',entry_id=created['id']))['result']['body'],
+                         'revised text')
+        deleted=self.server.handle(request('journal_delete',entry_id=created['id']))['result']
+        self.assertIsNotNone(deleted['deleted_at'])
+        self.assertEqual(self.server.handle(request('journal_list'))['result']['entries'],[])
+        self.assertEqual(len(self.server.handle(
+            request('journal_list',include_deleted=True))['result']['entries']),1)
+        self.assertEqual(self.server.handle(request('journal_save',title=''))['error']['code'],
+                         'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request('journal_get',entry_id='x'))['error']['code'],
+                         'INVALID_PARAMS')
+
     def test_preferences_get_set(self):
         resp=self.server.handle(request('preferences'))
         self.assertIn('values',resp['result'])

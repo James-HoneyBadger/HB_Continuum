@@ -172,6 +172,23 @@ class MigrationTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_research_upgrades_to_journal_schema(self):
+        db=sqlite3.connect(self.root/'research.sqlite3')
+        try:
+            for statement in MIGRATIONS['research'][1]:
+                db.execute(statement)
+            db.execute('PRAGMA user_version=1')
+            db.execute("INSERT INTO workspaces VALUES('Keep','unchanged')")
+            db.commit()
+            result=apply(db,'research')
+            self.assertEqual(result['applied'],[2])
+            tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            self.assertTrue({'journal_entries','journal_revisions'}<=tables)
+            self.assertEqual(db.execute("SELECT description FROM workspaces WHERE name='Keep'").fetchone()[0],
+                             'unchanged')
+        finally:
+            db.close()
+
     def test_catalog_upgrades_from_v1(self):
         db=sqlite3.connect(self.root/'catalog.sqlite3')
         for statement in MIGRATIONS['catalog'][1]:

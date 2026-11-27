@@ -589,6 +589,44 @@ def _facebook_preview(root, paths):
     except OSError as exc:
         raise IPCError('IMPORT_FAILED', str(exc)) from None
 
+def _journal_list(root, limit=100, include_deleted=False):
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 500:
+        raise IPCError('INVALID_PARAMS', 'limit must be an integer between 1 and 500')
+    if not isinstance(include_deleted, bool):
+        raise IPCError('INVALID_PARAMS', 'include_deleted must be a boolean')
+    return _with_research(root, lambda a, r: {'entries': r.journal_list(limit, include_deleted)})
+
+def _journal_get(root, entry_id):
+    return _with_research(root, lambda a, r: r.journal_get(entry_id))
+
+def _journal_save(root, params):
+    entry_id = params.get('entry_id')
+    body = params.get('body', '')
+    event_date = params.get('event_date')
+    if not isinstance(body, str):
+        raise IPCError('INVALID_PARAMS', 'body must be text')
+    if event_date is not None and not isinstance(event_date, str):
+        raise IPCError('INVALID_PARAMS', 'event_date must be an ISO 8601 string or null')
+
+    def action(archive, research):
+        if entry_id is None:
+            return research.journal_create(params.get('title'), body, event_date)
+        if not isinstance(entry_id, int) or isinstance(entry_id, bool):
+            raise IPCError('INVALID_PARAMS', 'entry_id must be an integer or null')
+        return research.journal_update(entry_id, params.get('title'), body, event_date)
+
+    return _with_research(root, action)
+
+def _journal_delete(root, entry_id):
+    if not isinstance(entry_id, int) or isinstance(entry_id, bool):
+        raise IPCError('INVALID_PARAMS', 'entry_id must be an integer')
+    return _with_research(root, lambda a, r: r.journal_delete(entry_id))
+
+def _journal_restore(root, entry_id):
+    if not isinstance(entry_id, int) or isinstance(entry_id, bool):
+        raise IPCError('INVALID_PARAMS', 'entry_id must be an integer')
+    return _with_research(root, lambda a, r: r.journal_restore(entry_id))
+
 def _export_evidence(root, hashes, destination):
     from dispatch import Archive
     targets = _hash_list(hashes)
@@ -994,6 +1032,17 @@ class IPCServer:
             if method == 'research_report_export':
                 return _result(request_id, _research_report_export(
                     self.root, params.get('name'), params.get('path')))
+            if method == 'journal_list':
+                return _result(request_id, _journal_list(
+                    self.root, params.get('limit', 100), params.get('include_deleted', False)))
+            if method == 'journal_get':
+                return _result(request_id, _journal_get(self.root, params.get('entry_id')))
+            if method == 'journal_save':
+                return _result(request_id, _journal_save(self.root, params))
+            if method == 'journal_delete':
+                return _result(request_id, _journal_delete(self.root, params.get('entry_id')))
+            if method == 'journal_restore':
+                return _result(request_id, _journal_restore(self.root, params.get('entry_id')))
             if method == 'export_evidence':
                 return _result(request_id, _export_evidence(
                     self.root, params.get('hashes'), params.get('destination')))

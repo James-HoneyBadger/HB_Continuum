@@ -10,11 +10,36 @@ GROUPS=('sender','year','tag')
 OPERATORS=('contains','equals','starts with')
 FIELDS=('subject','sender','body','date')
 TYPES=('text','number','date','choice','boolean')
+JOURNAL_TITLE_MAX=200
+JOURNAL_BODY_MAX=1_000_000
 
 def namecheck(value):
     if not isinstance(value,str) or not value.strip() or len(value)>100 or any(ord(c)<32 for c in value):
         raise ValueError('Name must contain 1–100 printable characters')
     return value.strip()
+
+def journal_title(value):
+    if (not isinstance(value,str) or not value.strip() or len(value)>JOURNAL_TITLE_MAX
+            or any(ord(c)<32 for c in value)):
+        raise ValueError('Journal title must contain 1–200 printable characters')
+    return value.strip()
+
+def journal_body(value):
+    if not isinstance(value,str) or len(value)>JOURNAL_BODY_MAX:
+        raise ValueError('Journal body must be text up to 1,000,000 characters')
+    return value
+
+def journal_date(value):
+    """Accept an ISO 8601 event date or None; the entry may be retrospective."""
+    if value is None or value=='':
+        return None
+    if not isinstance(value,str) or len(value)>64:
+        raise ValueError('Journal date must be an ISO 8601 string')
+    try:
+        datetime.fromisoformat(value.replace('Z','+00:00'))
+    except ValueError:
+        raise ValueError('Journal date must be an ISO 8601 string') from None
+    return value
 
 class Research:
     def __init__(self,archive):
@@ -123,6 +148,72 @@ class Research:
             return [group,'count'],[dict(zip((group,'count'),x)) for x in counts.most_common()]
         columns=json.loads(cols)
         return columns,[{k:r[k] for k in columns} for r in rows]
+    def _journal_clock(self):
+        return datetime.now(timezone.utc).isoformat(timespec='seconds')
+    def _journal_row(self,entry_id):
+        if type(entry_id) is not int or entry_id<1: raise ValueError('Invalid journal entry id')
+        row=self.db.execute(
+            'SELECT id,title,body,event_date,created_at,updated_at,revision,deleted_at '
+            'FROM journal_entries WHERE id=?',(entry_id,)).fetchone()
+        if row is None: raise ValueError('Unknown journal entry')
+        return row
+    def journal_list(self,limit=100,include_deleted=False):
+        if type(limit) is not int or not 1<=limit<=500: raise ValueError('Limit must be 1–500')
+        sql='SELECT id,title,event_date,created_at,updated_at,revision,deleted_at FROM journal_entries'
+        if not include_deleted: sql+=' WHERE deleted_at IS NULL'
+        sql+=' ORDER BY COALESCE(event_date,substr(created_at,1,10)) DESC, id DESC LIMIT ?'
+        keys=('id','title','event_date','created_at','updated_at','revision','deleted_at')
+        return [dict(zip(keys,row)) for row in self.db.execute(sql,(limit,))]
+    def journal_get(self,entry_id):
+        entry=dict(zip(('id','title','body','event_date','created_at','updated_at','revision','deleted_at'),
+                       self._journal_row(entry_id)))
+        entry['revisions']=[dict(zip(('revision','title','body','event_date','recorded_at'),row))
+                            for row in self.db.execute(
+                                'SELECT revision,title,body,event_date,recorded_at '
+                                'FROM journal_revisions WHERE entry_id=? ORDER BY revision DESC',
+                                (entry_id,))]
+        return entry
+    def journal_create(self,title,body='',event_date=None):
+        title=journal_title(title); body=journal_body(body); event_date=journal_date(event_date)
+        now=self._journal_clock()
+        with self.db:
+            entry_id=self.db.execute(
+                'INSERT INTO journal_entries(title,body,event_date,created_at,updated_at,revision) '
+                'VALUES(?,?,?,?,?,1)',(title,body,event_date,now,now)).lastrowid
+            self.db.execute(
+                'INSERT INTO journal_revisions(entry_id,revision,title,body,event_date,recorded_at) '
+                'VALUES(?,?,?,?,?,?)',(entry_id,1,title,body,event_date,now))
+        return self.journal_get(entry_id)
+    def journal_update(self,entry_id,title,body,event_date=None):
+        current=self._journal_row(entry_id)
+        title=journal_title(title); body=journal_body(body); event_date=journal_date(event_date)
+        if (title,body,event_date)==(current[1],current[2],current[3]):
+            return self.journal_get(entry_id)
+        now=self._journal_clock(); revision=current[6]+1
+        with self.db:
+            self.db.execute(
+                'UPDATE journal_entries SET title=?,body=?,event_date=?,updated_at=?,revision=? '
+                'WHERE id=?',(title,body,event_date,now,revision,entry_id))
+            self.db.execute(
+                'INSERT INTO journal_revisions(entry_id,revision,title,body,event_date,recorded_at) '
+                'VALUES(?,?,?,?,?,?)',(entry_id,revision,title,body,event_date,now))
+        return self.journal_get(entry_id)
+    def journal_delete(self,entry_id):
+        """Soft-delete an entry; its revisions stay available for inspection."""
+        self._journal_row(entry_id)
+        now=self._journal_clock()
+        with self.db:
+            self.db.execute(
+                'UPDATE journal_entries SET deleted_at=COALESCE(deleted_at,?),updated_at=? '
+                'WHERE id=?',(now,now,entry_id))
+        return self.journal_get(entry_id)
+    def journal_restore(self,entry_id):
+        self._journal_row(entry_id)
+        now=self._journal_clock()
+        with self.db:
+            self.db.execute('UPDATE journal_entries SET deleted_at=NULL,updated_at=? WHERE id=?',
+                            (now,entry_id))
+        return self.journal_get(entry_id)
     def export_report(self,name,path):
         cols,rows=self.report(name)
         def safe(v):
