@@ -175,6 +175,20 @@ landed (Overview dashboard, design tokens, timeline pagination).
 - Tests cover sender/kind/tag filters, exact counts, inexact tag totals,
   query validation and IPC validation.
 
+### Report drafts from collections (2026-11-27)
+
+- Research schema 4 adds `report_drafts`, linked to a collection with
+  cascade deletion. A draft stores a title, notes and timestamps; it is user
+  annotation, not evidence.
+- Draft exports render a chronology ordered by declared date (unknown last),
+  the draft notes, an evidence-gaps section for missing references and
+  explicit limitations, in Markdown, JSON or standalone HTML. Exports are
+  written outside the archive and never replace an existing file.
+- The Collections workspace gains draft create/edit/delete and export, with
+  two-step deletion that states the collection and records are unaffected.
+- Tests cover draft CRUD, collection cascade, chronology ordering, missing
+  references, all three renderers, exclusive writing and the IPC surface.
+
 ### Evidence collections (2026-11-27)
 
 - Research schema 3 adds `collections` and `collection_items`. A collection is
@@ -295,6 +309,10 @@ until the shell's flows are exercised against real archives.
 
 ## Files changed
 
+- Draft increment (2026-11-27): `migrations.py`, `research.py`,
+  `reporting.py`, `ipc.py`, `src-tauri/src/lib.rs`,
+  `frontend/src/components/CollectionsView.vue`, `tests/test_collections.py`,
+  `tests/test_ipc.py`, `tests/test_migrations.py`, `docs/MIGRATION.md`.
 - Search-filter increment (2026-11-27): `unified.py`, `catalog.py`, `ipc.py`,
   `src-tauri/src/lib.rs`, `frontend/src/components/SearchView.vue`,
   `tests/test_unified.py`, `tests/test_ipc.py`.
@@ -368,14 +386,15 @@ until the shell's flows are exercised against real archives.
 
 - Schema versioning lives in `migrations.py`, shared by all three databases
   and tracked with `PRAGMA user_version`; `archive` is at version 6, `catalog`
-  at version 3 and `research` at version 3. Archive version 2 adds
+  at version 3 and `research` at version 4. Archive version 2 adds
   `attachment_index` and `extraction_versions`; version 3 adds `sort_ts`,
   `date_precision` and the `messages_sort_ts` index (additive, with a
   transactional backfill); version 4 adds `import_runs` and its time index;
   version 5 adds `messages.size`, backfilled from the stored originals;
   version 6 adds `source_settings` and `source_events`. Research version 2
   adds `journal_entries` and `journal_revisions`; research version 3 adds
-  `collections` and `collection_items`. Catalog version 3 repairs the
+  `collections` and `collection_items`; research version 4 adds
+  `report_drafts`. Catalog version 3 repairs the
   delete/update FTS triggers.
 - New source-independent catalog database `catalog.sqlite3` with
   `source_files` and `records` tables plus a trigger-maintained FTS5
@@ -401,12 +420,12 @@ until the shell's flows are exercised against real archives.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 229 tests, 228 pass and 1 is
+- `python3 -m unittest discover -s tests`: 232 tests, 231 pass and 1 is
   skipped on this machine (the optional `keyring` backend is not
   installed). Includes 8 timestamp/chronology tests, 2 real-process lock
-  tests, 5 import-run tests, 6 journal tests, 6 collection tests, 5 report
-  tests, 11 source management/verification tests, 10 unified-search tests and
-  53 IPC tests.
+  tests, 5 import-run tests, 6 journal tests, 8 collection/draft tests,
+  5 report tests, 11 source management/verification tests, 10 unified-search
+  tests and 54 IPC tests.
 - `mypy` (2.4.1, matching CI): no issues in 19 source files.
 - `cargo test` (src-tauri): 3 tests pass, covering bundled-sidecar
   preference, the development script fallback and resolution from a bare
@@ -432,7 +451,7 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-229 Python tests ran: 228 passed, 0 failed, 1 skipped (Python 3.13.6,
+232 Python tests ran: 231 passed, 0 failed, 1 skipped (Python 3.13.6,
 macOS ARM64); `npm run build` (vue-tsc + vite), `cargo check` and
 `cargo test` pass; background EML import, import history, sources, source
 removal, source verification, journal, collections and archive-report IPC
@@ -503,9 +522,9 @@ Scheduler verification status:
   processes on macOS; the Windows code path has not yet run on Windows in
   this environment.
 - The desktop shell now has a Source Manager with enable/disable, per-source
-  verification and preview-first removal, import history, Collections, a
-  Journal and archive reports, but still lacks the relationship explorer,
-  research report drafts and full nested boolean query groups.
+  verification and preview-first removal, import history, Collections with
+  report drafts, a Journal and archive reports, but still lacks the
+  relationship explorer and full nested boolean query groups.
 - Disabling a source stops new automatic imports; it does not hide that
   source's historical records from search or the timeline.
 - Import history is best-effort for Facebook imports: a completed import
@@ -527,9 +546,8 @@ Scheduler verification status:
 3. Close PR #4 as superseded and reconcile PR #5 branding with this branch.
 4. Extend unified search with a paged FTS contract so results are not
    capped at 5000, and add record-kind filters to the advanced query UI.
-5. Add collection selection from the timeline and record reader, report
-   drafts built from a collection, and an optional "hide disabled sources
-   from default views" preference.
+5. Add collection selection from the timeline and record reader, and an
+   optional "hide disabled sources from default views" preference.
 6. Implement the relationship/network explorer over documented associations.
 7. Run the benchmark harness on Windows and Linux and add a 1M-record run
    before making large-archive claims.

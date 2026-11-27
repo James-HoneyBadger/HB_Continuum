@@ -172,6 +172,18 @@ still lists the item and marks it missing rather than silently dropping it.
 Manifests (Markdown or JSON) contain the identifiers, titles, notes and
 limitations, not the record contents.
 
+## Research version 4: report drafts
+
+Version 4 adds `report_drafts`: a title, notes, timestamps and a reference to
+one collection, with `ON DELETE CASCADE` from the collection. Drafts are user
+annotations in the research overlay; they do not copy record contents.
+
+Exporting a draft renders a chronology ordered by declared date (unknown
+dates last), the draft notes, an evidence-gaps section for referenced records
+that no longer exist, and explicit limitations. Deleting a collection removes
+its drafts; deleting a draft leaves the collection, its notes and every
+archived record untouched.
+
 ## Inspecting and migrating
 
 Opening the archive at all (`dispatch`, `dispatch gui`, the desktop shell)
