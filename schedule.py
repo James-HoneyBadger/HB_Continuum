@@ -7,6 +7,12 @@ from pathlib import Path
 from dispatch import Archive
 from sync_lock import SyncBusy
 
+try:
+    import fcntl
+    HAS_FLOCK = True
+except ImportError:
+    HAS_FLOCK = False
+
 def utcnow():
     return datetime.now(timezone.utc)
 
@@ -16,12 +22,16 @@ def read_json(path, default):
 
 def write_json(path, data):
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as f:
-        temp=Path(f.name)
-        try:
-            json.dump(data,f,indent=2); f.flush(); os.fsync(f.fileno())
-            os.replace(temp,path)
-        finally: temp.unlink(missing_ok=True)
+    fd, name = tempfile.mkstemp(dir=path.parent, prefix='.tmp-')
+    temp = Path(name)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
 
 def profile(name,host,user,folders,minutes=None,daily=None,enabled=True):
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,40}',name): raise ValueError('Invalid profile name')
@@ -49,14 +59,18 @@ def due(p,state,now):
 def config(root): return read_json(root/'schedule.json',{})
 
 def tick(root,force=None,now=None,get_password=None):
-    import fcntl
     if get_password is None:
         get_password=lambda p: credential(p,root)
     root.mkdir(mode=0o700,parents=True,exist_ok=True)
-    fd=os.open(root/'schedule.lock',os.O_CREAT|os.O_RDWR,0o600)
-    try:
+    locked=HAS_FLOCK
+    fd=None
+    if locked:
+        fd=os.open(root/'schedule.lock',os.O_CREAT|os.O_RDWR,0o600)
         try: fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        except BlockingIOError: return {'status':'scheduler already running'}
+        except BlockingIOError:
+            os.close(fd)
+            return {'status':'scheduler already running'}
+    try:
         profiles=config(root)
         if force and force not in profiles: raise ValueError('Unknown profile')
         states=read_json(root/'schedule-status.json',{})
@@ -82,7 +96,8 @@ def tick(root,force=None,now=None,get_password=None):
                 finally: write_json(root/'schedule-status.json',states)
         finally: ar.db.close()
         return states
-    finally: os.close(fd)
+    finally:
+        if fd is not None: os.close(fd)
 
 def agent(root):
     from schedulers import get_scheduler

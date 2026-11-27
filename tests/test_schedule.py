@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 from dispatch import Archive
 from schedule import profile,due,tick,write_json,read_json,service
+import schedule
 from sync_lock import sync_lock,SyncBusy
 
 class SchedulingTests(unittest.TestCase):
@@ -58,6 +59,15 @@ class SchedulingTests(unittest.TestCase):
             result=tick(self.root,now=self.now,get_password=lambda p:'fake')
         self.assertEqual(result['mail']['status'],'deferred: archive busy')
         self.assertNotIn('last_attempt',result['mail'])
+
+    def test_tick_without_flock_runs_unescorted(self):
+        write_json(self.root/'schedule.json',{'mail':self.p})
+        with mock.patch.object(schedule,'HAS_FLOCK',False), \
+             mock.patch.object(Archive,'sync',return_value=2) as sync:
+            result=tick(self.root,now=self.now,get_password=lambda p:'fake')
+        self.assertEqual(result['mail']['status'],'ok')
+        self.assertEqual(result['mail']['imported'],2)
+        sync.assert_called_once()
     def test_legacy_gmail_folder(self):
         ar=Archive(self.root)
         try:

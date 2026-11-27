@@ -135,6 +135,7 @@ class SystemdTests(unittest.TestCase):
         with mock.patch('schedulers._run',return_value=result):
             self.assertEqual(self.s.status(FAKE_ROOT),'active')
 
+@unittest.skipUnless(hasattr(os,'getuid'),'launchd is a POSIX-only scheduler')
 class LaunchdTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.home=Path(self.tmp.name)

@@ -96,6 +96,8 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 - New `summaries` table in `research.sqlite3` (additive, via
   `CREATE TABLE IF NOT EXISTS`) with `input_digest` and `thread_members`
   companion columns for staleness detection and provenance.
+- No schema change for scheduling; `write_json` now closes the temp file
+  before `os.replace` (Windows requires this).
 
 ## Migration considerations
 
@@ -107,9 +109,10 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 111 tests, all pass (29 baseline
+- `python3 -m unittest discover -s tests`: 112 tests, all pass (29 baseline
   + 5 search-worker + 14 Facebook importer + 9 summarization + 4 unified
-  search + 24 IPC + 26 scheduler).
+  search + 24 IPC + 26 scheduler + 1 Windows-path tick).
+- `mypy` (2.4.1, matching CI): no issues in 16 source files.
 - End-to-end CLI smoke tests of `dispatch facebook preview/import/search/
   list`, `dispatch summarize run --all` (fake loopback Ollama),
   `dispatch search-all`, and `dispatch serve` (subprocess protocol): pass.
@@ -125,15 +128,15 @@ real subprocess protocol.
 
 Scheduler verification status:
 
-- **Linux systemd: verified for real** on a machine with a running user
-  session — install produced an `active` timer due at the configured time,
-  `systemd-analyze verify` reported no problems, and uninstall removed the
-  unit files and the `timers.target.wants` symlink with no residue.
-- **macOS launchd and Windows Task Scheduler: verified by mocked
-  subprocess tests only.** `scripts/scheduler_smoke.py` performs a real
-  install/status/uninstall on each platform and is wired into CI
-  (`scheduler` job, ubuntu/macos/windows). It exits 0 with a printed reason
-  when a runner cannot host the scheduler, and fails on a real defect.
+- **All three platforms verified for real** by
+  `scripts/scheduler_smoke.py` in CI: systemd reached `active` on Ubuntu,
+  `schtasks` reported `Ready` on Windows, and launchd reported `Loaded` on
+  macOS — each with a real install, status check, secret-free file check and
+  clean uninstall. Also verified locally on Linux (`systemd-analyze verify`
+  clean, no residue).
+- Cross-platform CI (Ubuntu/macOS/Windows) found and fixed three Windows
+  defects: `os.replace` on an open handle in `write_json`, an unconditional
+  `fcntl` import in `tick()`, and `os.getuid` reachable from tests.
 
 ## CI status
 
@@ -162,9 +165,8 @@ Scheduler verification status:
 
 - No encryption at rest; no OAuth; HTML not rendered on `main` (PR #4 adds
   bounded HTML-to-text); no attachment search on `main`; no migrations.
-- Cross-platform scheduling: systemd path verified for real; launchd and
-  schtasks are covered by mocked unit tests plus `scripts/scheduler_smoke.py`
-  in CI, not yet by a manual run on macOS or Windows.
+- Cross-platform scheduling verified on all three operating systems via CI;
+  Windows has no archive-level write lock (`sync_lock` is POSIX-only).
 - `sync_lock` is POSIX-only, so Windows has no archive-level write lock.
 
 ## Outstanding defects
