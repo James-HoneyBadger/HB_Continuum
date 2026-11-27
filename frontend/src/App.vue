@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import OverviewView from "./components/OverviewView.vue";
 import SearchView from "./components/SearchView.vue";
 import ImportView from "./components/ImportView.vue";
 import ResearchView from "./components/ResearchView.vue";
@@ -15,8 +16,18 @@ interface Stats {
   catalog: { files: number; records: number };
 }
 
-const tabs = ["Search", "Timeline", "Import", "Research", "Sync", "Preferences", "Health", "Backup"] as const;
-const tab = ref<(typeof tabs)[number]>("Search");
+const tabs = [
+  "Overview",
+  "Search",
+  "Timeline",
+  "Import",
+  "Research",
+  "Sync",
+  "Health",
+  "Backup",
+  "Preferences",
+] as const;
+const tab = ref<(typeof tabs)[number]>("Overview");
 
 const archive = ref("~/.hb-dispatch");
 const stats = ref<Stats | null>(null);
@@ -60,119 +71,210 @@ onMounted(refreshStats);
 </script>
 
 <template>
-  <main class="app">
-    <header>
-      <h1>HB Continuum</h1>
-      <section class="row">
+  <div class="shell">
+    <header class="app-header">
+      <div class="brand">
+        <h1>HB Continuum</h1>
+        <span class="tagline">Personal historical research workstation</span>
+      </div>
+      <div class="archive-bar">
         <label class="grow">
           Archive
-          <input v-model="archive" placeholder="~/.hb-dispatch" />
+          <input v-model="archive" placeholder="~/.hb-dispatch" spellcheck="false" />
         </label>
         <button @click="applyArchive">Open</button>
         <button @click="runVerify">Verify integrity</button>
-      </section>
-      <p v-if="stats" class="stats">
-        {{ stats.archive.messages }} messages · {{ stats.archive.origins }} mailbox origins ·
-        {{ stats.catalog.records }} catalog records
-      </p>
-      <p v-if="verifyResult" class="stats">
-        {{ verifyResult.checked }} checked · {{ verifyResult.bad.length }} failed
-      </p>
-      <p v-if="error" class="error">{{ error }}</p>
+      </div>
     </header>
 
-    <nav class="tabs">
-      <button
-        v-for="name in tabs"
-        :key="name"
-        :class="['tab', { active: tab === name }]"
-        @click="tab = name"
-      >
-        {{ name }}
-      </button>
-    </nav>
+    <div class="body">
+      <nav class="nav" aria-label="Workspaces">
+        <button
+          v-for="name in tabs"
+          :key="name"
+          type="button"
+          :class="['nav-item', { active: tab === name }]"
+          :aria-current="tab === name ? 'page' : undefined"
+          @click="tab = name"
+        >
+          {{ name }}
+        </button>
+      </nav>
 
-    <div class="panel">
-      <SearchView v-if="tab === 'Search'" :on-error="reportError" :on-changed="refreshStats" />
-      <TimelineView v-else-if="tab === 'Timeline'" :on-error="reportError" :on-changed="refreshStats" />
-      <ImportView v-else-if="tab === 'Import'" :on-error="reportError" :on-changed="refreshStats" />
-      <ResearchView v-else-if="tab === 'Research'" :on-error="reportError" :on-changed="refreshStats" />
-      <SyncView v-else-if="tab === 'Sync'" :on-error="reportError" :on-changed="refreshStats" />
-      <PreferencesView v-else-if="tab === 'Preferences'" :on-error="reportError" :on-changed="refreshStats" />
-      <HealthView v-else-if="tab === 'Health'" :on-error="reportError" :on-changed="refreshStats" />
-      <BackupView v-else :on-error="reportError" :on-changed="refreshStats" />
+      <main class="workspace" :aria-label="tab">
+        <p v-if="error" class="error" role="alert">{{ error }}</p>
+        <OverviewView v-if="tab === 'Overview'" :on-error="reportError" :on-changed="refreshStats" />
+        <SearchView v-else-if="tab === 'Search'" :on-error="reportError" :on-changed="refreshStats" />
+        <TimelineView v-else-if="tab === 'Timeline'" :on-error="reportError" :on-changed="refreshStats" />
+        <ImportView v-else-if="tab === 'Import'" :on-error="reportError" :on-changed="refreshStats" />
+        <ResearchView v-else-if="tab === 'Research'" :on-error="reportError" :on-changed="refreshStats" />
+        <SyncView v-else-if="tab === 'Sync'" :on-error="reportError" :on-changed="refreshStats" />
+        <HealthView v-else-if="tab === 'Health'" :on-error="reportError" :on-changed="refreshStats" />
+        <BackupView v-else-if="tab === 'Backup'" :on-error="reportError" :on-changed="refreshStats" />
+        <PreferencesView v-else :on-error="reportError" :on-changed="refreshStats" />
+      </main>
     </div>
-  </main>
+
+    <footer class="statusbar">
+      <span v-if="stats">
+        {{ stats.archive.messages.toLocaleString() }} messages ·
+        {{ stats.archive.origins.toLocaleString() }} mailbox origins ·
+        {{ stats.catalog.records.toLocaleString() }} catalog records
+      </span>
+      <span v-else>No archive statistics yet.</span>
+      <span v-if="verifyResult" :class="verifyResult.bad.length ? 'status-error' : 'status-ok'">
+        {{ verifyResult.checked }} checked · {{ verifyResult.bad.length }} failed
+      </span>
+    </footer>
+  </div>
 </template>
 
-<style>
-body {
-  margin: 0;
-  background: #fbfbfc;
-}
-</style>
-
 <style scoped>
-.app {
-  max-width: 980px;
-  margin: 0 auto;
-  padding: 24px;
-  font-family: system-ui, sans-serif;
-  color: #1b1b1b;
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--hb-app-bg);
+}
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--hb-header);
+  color: var(--hb-header-text);
+  border-bottom: 1px solid var(--hb-border-strong);
+}
+.brand {
+  display: flex;
+  flex-direction: column;
 }
 h1 {
-  font-size: 22px;
-  margin: 0 0 14px;
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: 0.01em;
 }
-.row {
+.tagline {
+  font-size: 11px;
+  opacity: 0.85;
+}
+.archive-bar {
   display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
   align-items: flex-end;
+  gap: 8px;
+  min-width: 360px;
+  flex: 1;
+  max-width: 620px;
 }
 .grow {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
 }
 input {
-  padding: 8px;
-  font-size: 14px;
-  box-sizing: border-box;
+  padding: 5px 7px;
+  border: 1px solid var(--hb-border-strong);
+  border-radius: var(--hb-radius);
+  background: var(--hb-workspace);
+  color: var(--hb-text);
   width: 100%;
 }
 button {
-  padding: 8px 16px;
+  padding: 5px 12px;
+  border: 1px solid var(--hb-border-strong);
+  border-radius: var(--hb-radius);
+  background: var(--hb-toolbar);
+  color: var(--hb-text);
   cursor: pointer;
 }
-.stats {
-  color: #555;
-  font-size: 13px;
-  margin: 4px 0;
+button:hover:not(:disabled) {
+  background: var(--hb-panel);
 }
-.error {
-  color: #b00020;
-  font-size: 13px;
+button:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
-.tabs {
+.body {
+  flex: 1;
   display: flex;
-  gap: 4px;
-  border-bottom: 1px solid #ddd;
-  margin: 16px 0 18px;
+  min-height: 0;
 }
-.tab {
-  border: none;
-  background: none;
-  padding: 10px 16px;
-  font-size: 14px;
-  color: #555;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
+.nav {
+  width: 168px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px;
+  background: var(--hb-panel);
+  border-right: 1px solid var(--hb-border);
+  overflow-y: auto;
 }
-.tab.active {
-  color: #123a6b;
-  border-bottom-color: #123a6b;
+.nav-item {
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  padding: 6px 9px;
+  border-radius: var(--hb-radius);
+}
+.nav-item:hover {
+  background: var(--hb-panel-alt);
+}
+.nav-item.active {
+  background: var(--hb-workspace);
+  border-color: var(--hb-border);
+  color: var(--hb-info-text);
   font-weight: 600;
 }
-.panel {
-  min-height: 320px;
+.workspace {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 16px 20px;
+  background: var(--hb-workspace);
+}
+.error {
+  color: var(--hb-error-text);
+  background: var(--hb-panel);
+  border: 1px solid var(--hb-error);
+  border-radius: var(--hb-radius);
+  padding: 6px 10px;
+  margin: 0 0 12px;
+}
+.statusbar {
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--hb-text-secondary);
+  background: var(--hb-toolbar);
+  border-top: 1px solid var(--hb-border);
+}
+.status-ok {
+  color: var(--hb-success-text);
+}
+.status-error {
+  color: var(--hb-error-text);
+}
+@media (max-width: 720px) {
+  .body {
+    flex-direction: column;
+  }
+  .nav {
+    width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--hb-border);
+  }
+  .archive-bar {
+    min-width: 0;
+  }
 }
 </style>

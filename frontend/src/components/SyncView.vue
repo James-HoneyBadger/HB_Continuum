@@ -170,23 +170,23 @@ button {
 }
 .plain li {
   padding: 6px 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--hb-border);
   font-size: 13px;
 }
 .meta {
-  color: #777;
+  color: var(--hb-text-secondary);
   font-size: 12px;
   margin-left: 8px;
 }
 .warn {
-  background: #fff8e1;
-  border-left: 3px solid #d8a400;
+  background: var(--hb-panel-alt);
+  border-left: 3px solid var(--hb-warning);
   padding: 8px 12px;
   font-size: 13px;
-  color: #4a3b00;
+  color: var(--hb-warning-text);
 }
 .notice {
-  color: #2e6b2e;
+  color: var(--hb-success-text);
 }
 .inline {
   display: flex;

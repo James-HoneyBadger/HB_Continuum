@@ -19,24 +19,39 @@ const query = ref("");
 const results = ref<ResultItem[]>([]);
 const total = ref(0);
 const busy = ref(false);
+const page = ref(1);
+const pageSize = 50;
+const hasMore = ref(false);
+const fromDate = ref("");
+const toDate = ref("");
 const detail = ref<any>(null);
 const threadView = ref<any[] | null>(null);
 const selected = ref<string[]>([]);
 const tagName = ref("");
 const notice = ref("");
 
-async function runSearch() {
+async function runSearch(target = 1) {
   busy.value = true;
   notice.value = "";
   try {
+    const after = fromDate.value
+      ? Math.floor(new Date(`${fromDate.value}T00:00:00Z`).getTime() / 1000)
+      : undefined;
+    const before = toDate.value
+      ? Math.floor(new Date(`${toDate.value}T00:00:00Z`).getTime() / 1000) + 86400
+      : undefined;
     const response = (await invoke("search", {
       query: query.value,
       sources: ["email", "facebook"],
-      page: 1,
-      pageSize: 50,
-    })) as { items: ResultItem[]; total: number };
+      page: target,
+      pageSize,
+      after,
+      before,
+    })) as { items: ResultItem[]; total: number; has_more: boolean };
     results.value = response.items;
     total.value = response.total;
+    hasMore.value = response.has_more;
+    page.value = target;
     selected.value = [];
     detail.value = null;
     threadView.value = null;
@@ -133,17 +148,31 @@ async function exportSelected() {
 
 <template>
   <section>
-    <form class="row" @submit.prevent="runSearch">
+    <form class="row" @submit.prevent="runSearch(1)">
       <input
         class="grow"
         v-model="query"
         placeholder="Search archived email and Facebook records"
         autocomplete="off"
       />
+      <label class="range">
+        From
+        <input v-model="fromDate" type="date" />
+      </label>
+      <label class="range">
+        To
+        <input v-model="toDate" type="date" />
+      </label>
       <button type="submit" :disabled="busy">{{ busy ? "Searching…" : "Search" }}</button>
     </form>
 
-    <p v-if="total" class="count">{{ total }} results · {{ selected.length }} selected</p>
+    <p v-if="total !== null && query" class="count">
+      {{ total }} results · page {{ page }} · {{ selected.length }} selected
+    </p>
+    <div v-if="query && (page > 1 || hasMore)" class="row">
+      <button :disabled="busy || page <= 1" @click="runSearch(page - 1)">Previous</button>
+      <button :disabled="busy || !hasMore" @click="runSearch(page + 1)">Next</button>
+    </div>
     <p v-if="notice" class="notice">{{ notice }}</p>
 
     <div v-if="results.length" class="row">
@@ -206,6 +235,18 @@ async function exportSelected() {
 .grow {
   flex: 1;
 }
+.range {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--hb-text-secondary);
+}
+.range input {
+  padding: 4px 6px;
+  border: 1px solid var(--hb-border);
+  background: var(--hb-workspace);
+}
 input {
   padding: 8px;
   font-size: 14px;
@@ -219,14 +260,14 @@ button {
 }
 .count,
 .notice {
-  color: #444;
+  color: var(--hb-text-secondary);
 }
 .results {
   list-style: none;
   padding: 0;
 }
 .results li {
-  border-top: 1px solid #e0e0e0;
+  border-top: 1px solid var(--hb-border);
   padding: 12px 0;
 }
 .badge {
@@ -234,24 +275,24 @@ button {
   padding: 2px 8px;
   margin: 0 8px;
   border-radius: 999px;
-  background: #eef1f6;
+  background: var(--hb-selection);
   font-size: 12px;
 }
 .meta {
-  color: #777;
+  color: var(--hb-text-secondary);
   margin-left: 8px;
   font-size: 12px;
 }
 .snippet {
   margin: 6px 0 0;
-  color: #333;
+  color: var(--hb-text);
   white-space: pre-wrap;
 }
 .row-actions {
   margin: 6px 0 0;
 }
 .detail {
-  border-top: 2px solid #ccc;
+  border-top: 2px solid var(--hb-border-strong);
   margin-top: 20px;
   padding-top: 12px;
 }
@@ -265,8 +306,8 @@ button {
 .body {
   white-space: pre-wrap;
   font-family: system-ui, sans-serif;
-  color: #222;
-  background: #f7f7f7;
+  color: var(--hb-text);
+  background: var(--hb-panel-alt);
   padding: 12px;
   border-radius: 4px;
 }
@@ -275,7 +316,7 @@ button {
   font-size: 12px;
 }
 .thread-message {
-  border-top: 1px solid #e0e0e0;
+  border-top: 1px solid var(--hb-border);
   padding: 10px 0;
 }
 .title {

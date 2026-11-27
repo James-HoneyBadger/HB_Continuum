@@ -180,15 +180,15 @@ button {
   padding: 8px 16px;
 }
 .meta {
-  color: #666;
+  color: var(--hb-text-secondary);
   font-size: 13px;
 }
 .notice {
-  color: #0b6b2f;
+  color: var(--hb-success-text);
   font-size: 13px;
 }
 .bad {
-  color: #b00020;
+  color: var(--hb-error-text);
 }
 .schema {
   font-size: 13px;

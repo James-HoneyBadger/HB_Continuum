@@ -180,11 +180,11 @@ button {
   padding: 8px 16px;
 }
 .meta {
-  color: #666;
+  color: var(--hb-text-secondary);
   font-size: 13px;
 }
 .errors {
-  color: #b00020;
+  color: var(--hb-error-text);
   font-size: 13px;
 }
 </style>

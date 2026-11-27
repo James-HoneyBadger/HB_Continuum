@@ -233,12 +233,28 @@ fn timeline(
     state: State<AppState>,
     sender: Option<String>,
     limit: Option<u32>,
+    offset: Option<u32>,
+    order: Option<String>,
+    after: Option<i64>,
+    before: Option<i64>,
 ) -> Result<Value, String> {
     call(
         &state,
         "timeline",
-        json!({ "sender": sender, "limit": limit.unwrap_or(100) }),
+        json!({
+            "sender": sender,
+            "limit": limit.unwrap_or(100),
+            "offset": offset.unwrap_or(0),
+            "order": order.unwrap_or_else(|| "asc".into()),
+            "after": after,
+            "before": before,
+        }),
     )
+}
+
+#[tauri::command]
+fn dashboard(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "dashboard", json!({}))
 }
 
 #[tauri::command]
@@ -494,7 +510,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            ping, stats, search, message, thread, timeline, correspondents,
+            ping, stats, search, message, thread, timeline, dashboard, correspondents,
             record, verify, health,
             reindex, recover_orphans, migrate_status, backup, verify_backup, restore,
             facebook_preview, facebook_import,

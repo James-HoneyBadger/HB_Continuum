@@ -86,10 +86,10 @@ button {
   padding: 8px 16px;
 }
 .meta {
-  color: #666;
+  color: var(--hb-text-secondary);
   font-size: 13px;
 }
 .notice {
-  color: #2e6b2e;
+  color: var(--hb-success-text);
 }
 </style>

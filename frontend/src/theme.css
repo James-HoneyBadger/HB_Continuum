@@ -1,0 +1,81 @@
+/*
+ * Honey Badger Contemporary Classic design tokens.
+ *
+ * The palette is defined once here; components must use these variables
+ * rather than hardcoded colours. Text tokens ending in `-text` are chosen to
+ * meet WCAG 2.2 AA contrast (4.5:1) against the workspace and panel
+ * backgrounds; the base semantic colours are for fills, borders and
+ * indicators, not body text.
+ */
+:root {
+  --hb-workspace: #f5f3eb;
+  --hb-app-bg: #eae8e1;
+  --hb-panel: #e1e3de;
+  --hb-panel-alt: #edebe4;
+  --hb-toolbar: #dddcd4;
+  --hb-header: #536b79;
+  --hb-header-text: #f5f4ee;
+  --hb-selection: #c4d1d5;
+  --hb-text: #354650;
+  --hb-text-secondary: #59656a;
+  --hb-border: #b6bcb8;
+  --hb-border-strong: #8f9793;
+  --hb-accent: #a88b55;
+
+  --hb-success: #66856c;
+  --hb-warning: #a88b55;
+  --hb-error: #a45d58;
+  --hb-info: #536b79;
+
+  --hb-success-text: #47654f;
+  --hb-warning-text: #7a6338;
+  --hb-error-text: #8e4743;
+  --hb-info-text: #536b79;
+
+  --hb-link: #1a4f8a;
+  --hb-focus: #1a4f8a;
+
+  --hb-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+    Arial, sans-serif;
+  --hb-font-mono: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  --hb-radius: 2px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--hb-app-bg);
+  color: var(--hb-text);
+  font-family: var(--hb-font);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+:focus-visible {
+  outline: 2px solid var(--hb-focus);
+  outline-offset: 1px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

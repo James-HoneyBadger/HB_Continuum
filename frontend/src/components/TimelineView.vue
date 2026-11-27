@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
 const props = defineProps<{ onError: (message: string) => void; onChanged: () => void }>();
@@ -21,14 +21,34 @@ const rows = ref<TimelineRow[]>([]);
 const selectedSender = ref<string | null>(null);
 const detail = ref<any>(null);
 const loading = ref(false);
+const pageSize = 100;
+const offset = ref(0);
+const order = ref<"asc" | "desc">("asc");
+const fromDate = ref("");
+const toDate = ref("");
+const canPrev = computed(() => offset.value > 0);
+const canNext = computed(() => rows.value.length === pageSize);
 
 async function refresh() {
   loading.value = true;
   try {
     const sender = selectedSender.value ?? undefined;
+    const after = fromDate.value
+      ? Math.floor(new Date(`${fromDate.value}T00:00:00Z`).getTime() / 1000)
+      : undefined;
+    const before = toDate.value
+      ? Math.floor(new Date(`${toDate.value}T00:00:00Z`).getTime() / 1000) + 86400
+      : undefined;
     const [senderList, timeline] = await Promise.all([
       invoke("correspondents", { limit: 100 }) as Promise<Correspondent[]>,
-      invoke("timeline", { sender, limit: 500 }) as Promise<TimelineRow[]>,
+      invoke("timeline", {
+        sender,
+        limit: pageSize,
+        offset: offset.value,
+        order: order.value,
+        after,
+        before,
+      }) as Promise<TimelineRow[]>,
     ]);
     senders.value = senderList;
     rows.value = timeline;
@@ -41,6 +61,32 @@ async function refresh() {
 
 function filter(sender: string | null) {
   selectedSender.value = sender;
+  offset.value = 0;
+  detail.value = null;
+  void refresh();
+}
+
+function turn(direction: -1 | 1) {
+  offset.value = Math.max(0, offset.value + direction * pageSize);
+  detail.value = null;
+  void refresh();
+}
+
+function applyRange() {
+  offset.value = 0;
+  detail.value = null;
+  void refresh();
+}
+
+function clearRange() {
+  fromDate.value = "";
+  toDate.value = "";
+  applyRange();
+}
+
+function setOrder(next: "asc" | "desc") {
+  order.value = next;
+  offset.value = 0;
   detail.value = null;
   void refresh();
 }
@@ -60,11 +106,28 @@ onMounted(refresh);
   <section class="view">
     <div class="row">
       <button :disabled="loading" @click="refresh">Refresh</button>
+      <button :disabled="loading" @click="setOrder(order === 'asc' ? 'desc' : 'asc')">
+        {{ order === "asc" ? "Oldest first" : "Newest first" }}
+      </button>
+      <button :disabled="loading || !canPrev" @click="turn(-1)">Previous</button>
+      <button :disabled="loading || !canNext" @click="turn(1)">Next</button>
+      <label class="range">
+        From
+        <input v-model="fromDate" type="date" @change="applyRange" />
+      </label>
+      <label class="range">
+        To
+        <input v-model="toDate" type="date" @change="applyRange" />
+      </label>
+      <button v-if="fromDate || toDate" @click="clearRange">Clear range</button>
       <span v-if="selectedSender" class="meta">
         Filtered to {{ selectedSender }}
         <button class="link" @click="filter(null)">Show all</button>
       </span>
-      <span v-else class="meta">{{ rows.length }} messages, undated last</span>
+      <span v-else class="meta">
+        {{ rows.length }} messages from position {{ offset + 1 }},
+        {{ fromDate || toDate ? "filtered by date" : "undated last" }}
+      </span>
     </div>
 
     <div class="panes">
@@ -113,9 +176,22 @@ onMounted(refresh);
 <style scoped>
 .row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
   align-items: center;
+}
+.range {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--hb-text-secondary);
+}
+.range input {
+  padding: 4px 6px;
+  border: 1px solid var(--hb-border);
+  background: var(--hb-workspace);
 }
 .panes {
   display: flex;
@@ -150,8 +226,8 @@ ul {
   cursor: pointer;
 }
 .senders button.active {
-  border-color: #888;
-  background: #f2f3f5;
+  border-color: var(--hb-border-strong);
+  background: var(--hb-panel-alt);
 }
 .name {
   overflow: hidden;
@@ -159,7 +235,7 @@ ul {
   white-space: nowrap;
 }
 .count {
-  color: #666;
+  color: var(--hb-text-secondary);
   font-size: 12px;
 }
 .timeline {
@@ -173,17 +249,17 @@ ul {
   padding: 6px 8px;
   background: transparent;
   border: none;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--hb-border);
   text-align: left;
   cursor: pointer;
   font-size: 13px;
 }
 .entry:hover {
-  background: #f7f7f8;
+  background: var(--hb-panel-alt);
 }
 .date {
   width: 190px;
-  color: #666;
+  color: var(--hb-text-secondary);
   flex-shrink: 0;
 }
 .subject {
@@ -193,7 +269,7 @@ ul {
   white-space: nowrap;
 }
 .sender {
-  color: #666;
+  color: var(--hb-text-secondary);
   width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -203,18 +279,18 @@ ul {
   margin-top: 16px;
 }
 .body {
-  background: #f2f3f5;
+  background: var(--hb-panel-alt);
   padding: 10px;
   white-space: pre-wrap;
 }
 .meta {
-  color: #666;
+  color: var(--hb-text-secondary);
   font-size: 13px;
 }
 .link {
   border: none;
   background: transparent;
-  color: #0b5cad;
+  color: var(--hb-link);
   cursor: pointer;
   padding: 0 4px;
   text-decoration: underline;

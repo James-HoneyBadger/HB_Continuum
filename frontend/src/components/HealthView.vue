@@ -15,6 +15,7 @@ interface Diagnosis {
   raw_missing: string[];
   raw_unindexed: string[];
   raw_invalid: string[];
+  undated: number | null;
 }
 
 const diagnosis = ref<Diagnosis | null>(null);
@@ -91,6 +92,9 @@ onMounted(refresh);
         <li>Missing original files: {{ diagnosis.raw_missing.length }}</li>
         <li>Unindexed originals: {{ diagnosis.raw_unindexed.length }}</li>
         <li>Altered or unsafe originals: {{ diagnosis.raw_invalid.length }}</li>
+        <li v-if="diagnosis.undated !== null">
+          Records without a normalized date: {{ diagnosis.undated }} (sorted last in the timeline)
+        </li>
       </ul>
       <details>
         <summary>Full report</summary>
@@ -115,21 +119,21 @@ button {
   padding: 8px 16px;
 }
 .meta {
-  color: #666;
+  color: var(--hb-text-secondary);
   font-size: 13px;
 }
 .headline {
   font-size: 15px;
 }
 .headline.bad {
-  color: #b00020;
+  color: var(--hb-error-text);
 }
 .counts {
   font-size: 13px;
-  color: #333;
+  color: var(--hb-text);
 }
 .json {
-  background: #f2f3f5;
+  background: var(--hb-panel-alt);
   padding: 10px;
   font-size: 12px;
   overflow-x: auto;

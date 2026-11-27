@@ -311,7 +311,7 @@ button {
 .link {
   background: none;
   border: none;
-  color: #1a4f8a;
+  color: var(--hb-link);
   cursor: pointer;
   padding: 0;
   text-decoration: underline;
@@ -327,12 +327,12 @@ button {
   font-size: 13px;
 }
 .meta {
-  color: #777;
+  color: var(--hb-text-secondary);
   font-size: 12px;
   margin-left: 8px;
 }
 .notice {
-  color: #2e6b2e;
+  color: var(--hb-success-text);
 }
 table {
   border-collapse: collapse;
@@ -341,7 +341,7 @@ table {
 }
 th,
 td {
-  border: 1px solid #ddd;
+  border: 1px solid var(--hb-border);
   padding: 4px 8px;
   text-align: left;
 }
