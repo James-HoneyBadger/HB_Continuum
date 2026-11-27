@@ -72,6 +72,15 @@ class UnifiedSearchTests(unittest.TestCase):
         self.assertEqual({r['source'] for r in results},{'email'})
         self.assertEqual(len(results),1)
 
+    def test_query_validation_explains_rejections(self):
+        from unified import validate_query
+        self.assertTrue(validate_query(self.root,'bullion')['valid'])
+        self.assertTrue(validate_query(self.root,'"bull ion"')['valid'])
+        bad=validate_query(self.root,'a:b')
+        self.assertFalse(bad['valid'])
+        self.assertIn('AND/OR/NOT',bad['message'])
+        self.assertFalse(validate_query(self.root,'   ')['valid'])
+
     def test_exact_counts(self):
         from unified import search_unified_count
         self.assertEqual(search_unified_count(self.root,'bullion'),2)

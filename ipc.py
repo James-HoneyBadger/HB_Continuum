@@ -1201,6 +1201,10 @@ class IPCServer:
                                             'catalog': self._catalog_stats()})
             if method == 'search':
                 return _result(request_id, self._search(params))
+            if method == 'search_validate':
+                from unified import validate_query
+                return _result(request_id, validate_query(
+                    self.root, params.get('query')))
             if method == 'message':
                 return _result(request_id, _message(self.root, params.get('hash')))
             if method == 'thread':

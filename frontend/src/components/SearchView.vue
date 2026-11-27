@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -31,6 +31,23 @@ const kind = ref("");
 const tagsText = ref("");
 const totalIsExact = ref(true);
 const capped = ref(false);
+const validationError = ref("");
+const humanQuery = computed(() => {
+  const parts: string[] = [];
+  if (query.value.trim()) parts.push(`text "${query.value.trim()}"`);
+  const chosen = [
+    sourceEmail.value ? "email" : null,
+    sourceFacebook.value ? "Facebook" : null,
+  ].filter((value): value is string => value !== null);
+  parts.push(chosen.length ? `in ${chosen.join(" and ")}` : "no source selected");
+  if (sendersText.value.trim()) parts.push(`sender/actor ${sendersText.value.trim()}`);
+  if (kind.value) parts.push(`kind ${kind.value}`);
+  if (tagsText.value.trim()) parts.push(`tagged ${tagsText.value.trim()}`);
+  if (fromDate.value || toDate.value) {
+    parts.push(`dated ${fromDate.value || "..."} to ${toDate.value || "..."}`);
+  }
+  return parts.join(" · ");
+});
 const collections = ref<{ id: number; workspace: string; name: string }[]>([]);
 const collectionId = ref<number | null>(null);
 const collectionNote = ref("");
@@ -95,6 +112,19 @@ async function runSearch(target = 1) {
   ].filter((value): value is string => value !== null);
   if (!sources.length) {
     notice.value = "Choose at least one source.";
+    return;
+  }
+  validationError.value = "";
+  try {
+    const validation = (await invoke("search_validate", {
+      query: query.value,
+    })) as { valid: boolean; message: string };
+    if (!validation.valid) {
+      validationError.value = validation.message;
+      return;
+    }
+  } catch (e) {
+    props.onError(String(e));
     return;
   }
   busy.value = true;
@@ -269,6 +299,19 @@ async function exportSelected() {
       </label>
     </div>
 
+    <p class="query-summary">{{ humanQuery }}</p>
+    <p v-if="validationError" class="error" role="alert">{{ validationError }}</p>
+    <details class="syntax">
+      <summary>Query syntax</summary>
+      <ul>
+        <li>Quotes match an exact phrase: <code>"silver invoice"</code>.</li>
+        <li>A trailing asterisk matches a prefix: <code>invoice*</code>.</li>
+        <li>Uppercase <code>AND</code>, <code>OR</code> and <code>NOT</code> combine terms.</li>
+        <li>Parentheses group expressions; <code>NEAR(a b, 5)</code> finds nearby terms.</li>
+        <li>Filters above are applied in addition to the text expression.</li>
+      </ul>
+    </details>
+
     <p v-if="total !== null && query" class="count">
       {{ total }} results<span v-if="!totalIsExact"> (at least)</span> · page {{ page }} ·
       {{ selected.length }} selected
@@ -377,6 +420,31 @@ async function exportSelected() {
   gap: 4px;
   font-size: 12px;
   color: var(--hb-text-secondary);
+}
+.query-summary {
+  font-size: 12px;
+  color: var(--hb-text-secondary);
+  margin: 0 0 8px;
+}
+.error {
+  color: var(--hb-error-text);
+  font-size: 12px;
+  margin: 0 0 8px;
+}
+.syntax {
+  font-size: 12px;
+  color: var(--hb-text-secondary);
+  margin-bottom: 8px;
+}
+.syntax summary {
+  cursor: pointer;
+}
+.syntax ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.syntax code {
+  font-family: var(--hb-font-mono);
 }
 input {
   padding: 8px;

@@ -219,6 +219,11 @@ fn search(
 }
 
 #[tauri::command]
+fn search_validate(state: State<AppState>, query: String) -> Result<Value, String> {
+    call(&state, "search_validate", json!({ "query": query }))
+}
+
+#[tauri::command]
 fn message(state: State<AppState>, hash: String) -> Result<Value, String> {
     call(&state, "message", json!({ "hash": hash }))
 }
@@ -749,7 +754,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            ping, stats, search, message, thread, timeline, dashboard, correspondents,
+            ping, stats, search, search_validate, message, thread, timeline, dashboard,
+            correspondents,
             record, verify, health,
             reindex, recover_orphans, migrate_status, backup, verify_backup, restore,
             facebook_preview, facebook_import,

@@ -207,3 +207,39 @@ def search_unified_count(root, query, sources=('email', 'facebook'),
             return None
         total += count
     return total
+
+def validate_query(root, query):
+    """Return whether the FTS5 expression is accepted, with an explanation.
+
+    Search currently treats a rejected expression as no matches. This check
+    runs the expression against every available index without returning rows,
+    so the UI can explain a syntax problem instead of showing an empty list.
+    """
+    if not isinstance(query, str) or not query.strip():
+        return {'valid': False, 'message': 'Enter a non-empty search query.'}
+    root = Path(root)
+    errors = []
+    tried = 0
+    attempts = []
+    if (root / 'archive.sqlite3').is_file():
+        attempts.append(('archive.sqlite3', 'SELECT 1 FROM search WHERE search MATCH ? LIMIT 1'))
+    if (root / 'catalog.sqlite3').is_file():
+        attempts.append(('catalog.sqlite3',
+                         'SELECT 1 FROM record_search WHERE record_search MATCH ? LIMIT 1'))
+    if not attempts:
+        return {'valid': False, 'message': 'This archive has no searchable index.'}
+    for filename, sql in attempts:
+        tried += 1
+        conn = sqlite3.connect(str(root / filename), timeout=30)
+        conn.execute('PRAGMA query_only=ON')
+        try:
+            conn.execute(sql, (query,)).fetchone()
+            return {'valid': True, 'message': ''}
+        except sqlite3.OperationalError as exc:
+            errors.append(str(exc))
+        finally:
+            conn.close()
+    message = errors[0] if errors else 'The query was rejected by the index.'
+    return {'valid': False,
+            'message': f'{message}. Use quotes for phrases, * for a prefix, and uppercase '
+                       'AND/OR/NOT for boolean expressions.'}

@@ -46,6 +46,14 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(self.server.handle(request(
             'search',query='bullion',senders=[1]))['error']['code'],'INVALID_PARAMS')
 
+    def test_search_validate(self):
+        self.assertTrue(self.server.handle(request(
+            'search_validate',query='bullion'))['result']['valid'])
+        rejected=self.server.handle(request(
+            'search_validate',query='a:b'))['result']
+        self.assertFalse(rejected['valid'])
+        self.assertTrue(rejected['message'])
+
     def test_search_tag_filter_reports_inexact_total(self):
         self.server.handle(request('research_tag',hashes=[self.h],tag='important'))
         response=self.server.handle(request(
