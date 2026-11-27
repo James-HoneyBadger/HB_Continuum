@@ -327,6 +327,22 @@ fn import_eml(state: State<AppState>, paths: Vec<String>) -> Result<Value, Strin
 }
 
 #[tauri::command]
+fn report_archive(
+    state: State<AppState>,
+    destination: String,
+    format: Option<String>,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "report_archive",
+        json!({
+            "destination": destination,
+            "format": format.unwrap_or_else(|| "markdown".into()),
+        }),
+    )
+}
+
+#[tauri::command]
 fn cancel(state: State<AppState>, job_id: String) -> Result<Value, String> {
     call(&state, "cancel", json!({ "job_id": job_id }))
 }
@@ -580,7 +596,7 @@ pub fn run() {
             record, verify, health,
             reindex, recover_orphans, migrate_status, backup, verify_backup, restore,
             facebook_preview, facebook_import,
-            import_eml, import_history, sources, cancel,
+            import_eml, import_history, sources, report_archive, cancel,
             journal_list, journal_get, journal_save, journal_delete, journal_restore,
             preferences, preferences_set, research_list, research_results,
             research_workspace_save, research_search_save, research_tag, research_untag,
