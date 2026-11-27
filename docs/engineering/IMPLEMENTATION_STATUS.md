@@ -42,9 +42,9 @@ Phase A — Stabilization (repository audit in progress).
   `summarize` jobs with progress events and cancellation, and graceful
   `shutdown`; `dispatch serve` entry point (working tree, uncommitted).
 - Tauri 2 + Vue 3 desktop shell (`frontend/`, `src-tauri/`): a managed
-  Python subprocess client that drives `stats` and `search` through Rust
-  commands; frontend production build verified, Rust build in progress
-  (working tree, uncommitted).
+  Python subprocess client that drives `stats`, `search`, `message`,
+  `thread`, `record`, and `verify` through Rust commands; frontend
+  production build and Rust build verified (working tree, uncommitted).
 
 ## Pending capabilities
 
@@ -100,17 +100,20 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 71 tests, all pass (29 baseline
+- `python3 -m unittest discover -s tests`: 75 tests, all pass (29 baseline
   + 5 search-worker + 14 Facebook importer + 9 summarization + 4 unified
-  search + 10 IPC).
+  search + 14 IPC).
 - End-to-end CLI smoke tests of `dispatch facebook preview/import/search/
   list`, `dispatch summarize run --all` (fake loopback Ollama),
   `dispatch search-all`, and `dispatch serve` (subprocess protocol): pass.
+- Frontend `npm run build` (vue-tsc + vite) and `cargo build` (Tauri):
+  pass.
 - `mypy` not run locally (not installed); CI runs `mypy` on Python 3.13.
 
 ## Test results
 
-71 passed, 0 failed, 0 skipped (Python 3.12, Linux).
+75 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
+frontend and Rust builds pass.
 
 ## CI status
 

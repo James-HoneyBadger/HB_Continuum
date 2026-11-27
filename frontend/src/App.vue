@@ -74,6 +74,51 @@ async function runSearch() {
   }
 }
 
+const detail = ref<any>(null);
+const threadView = ref<any[] | null>(null);
+const verifyResult = ref<{ checked: number; bad: string[] } | null>(null);
+
+async function openMessage(id: string) {
+  error.value = "";
+  try {
+    detail.value = await invoke("message", { hash: id });
+    threadView.value = null;
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function openRecord(id: string) {
+  error.value = "";
+  try {
+    detail.value = await invoke("record", { recordId: id });
+    threadView.value = null;
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function openThread(id: string) {
+  error.value = "";
+  try {
+    const response = (await invoke("thread", { hash: id })) as { messages: any[] };
+    threadView.value = response.messages;
+    detail.value = null;
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function runVerify() {
+  error.value = "";
+  verifyResult.value = null;
+  try {
+    verifyResult.value = (await invoke("verify")) as { checked: number; bad: string[] };
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
 onMounted(refreshStats);
 </script>
 
@@ -99,6 +144,13 @@ onMounted(refreshStats);
       <button type="submit" :disabled="busy">{{ busy ? "Searching…" : "Search" }}</button>
     </form>
 
+    <p class="actions">
+      <button @click="runVerify">Verify integrity</button>
+    </p>
+    <p v-if="verifyResult" class="verify">
+      {{ verifyResult.checked }} checked · {{ verifyResult.bad.length }} failed
+    </p>
+
     <p v-if="stats" class="stats">
       {{ stats.archive.messages }} messages · {{ stats.archive.origins }} mailbox origins ·
       {{ stats.catalog.records }} catalog records
@@ -112,8 +164,32 @@ onMounted(refreshStats);
         <strong>{{ item.title || item.kind }}</strong>
         <span class="meta">{{ item.actor }} {{ item.date }}</span>
         <p class="snippet">{{ item.snippet }}</p>
+        <p class="row-actions">
+          <button v-if="item.source === 'email'" @click="openMessage(item.id)">Open</button>
+          <button v-if="item.source === 'email'" @click="openThread(item.id)">Thread</button>
+          <button v-else @click="openRecord(item.id)">Open</button>
+        </p>
       </li>
     </ul>
+
+    <section v-if="detail" class="detail">
+      <h2>{{ detail.subject || detail.source_key }}</h2>
+      <p class="meta">{{ detail.sender || detail.actor }} {{ detail.date || detail.occurred_at }}</p>
+      <pre class="body">{{ detail.body }}</pre>
+      <details v-if="detail.original_json">
+        <summary>Original record JSON</summary>
+        <pre class="json">{{ detail.original_json }}</pre>
+      </details>
+    </section>
+
+    <section v-if="threadView" class="detail">
+      <h2>Conversation</h2>
+      <div v-for="m in threadView" :key="m.hash" class="thread-message">
+        <p class="meta">{{ m.sender }} {{ m.date }}</p>
+        <p class="title">{{ m.subject }}</p>
+        <pre class="body">{{ m.body }}</pre>
+      </div>
+    </section>
   </main>
 </template>
 
@@ -175,5 +251,39 @@ button {
   margin: 6px 0 0;
   color: #333;
   white-space: pre-wrap;
+}
+.actions {
+  margin: 8px 0;
+}
+.verify {
+  color: #444;
+}
+.row-actions {
+  margin: 6px 0 0;
+}
+.detail {
+  border-top: 2px solid #ccc;
+  margin-top: 20px;
+  padding-top: 12px;
+}
+.body {
+  white-space: pre-wrap;
+  font-family: system-ui, sans-serif;
+  color: #222;
+  background: #f7f7f7;
+  padding: 12px;
+  border-radius: 4px;
+}
+.json {
+  white-space: pre-wrap;
+  font-size: 12px;
+  color: #333;
+}
+.thread-message {
+  border-top: 1px solid #e0e0e0;
+  padding: 10px 0;
+}
+.title {
+  font-weight: 600;
 }
 </style>

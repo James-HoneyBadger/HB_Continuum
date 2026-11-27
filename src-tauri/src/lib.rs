@@ -154,6 +154,26 @@ fn search(
 }
 
 #[tauri::command]
+fn message(state: State<AppState>, hash: String) -> Result<Value, String> {
+    call(&state, "message", json!({ "hash": hash }))
+}
+
+#[tauri::command]
+fn thread(state: State<AppState>, hash: String) -> Result<Value, String> {
+    call(&state, "thread", json!({ "hash": hash }))
+}
+
+#[tauri::command]
+fn record(state: State<AppState>, record_id: String) -> Result<Value, String> {
+    call(&state, "record", json!({ "record_id": record_id }))
+}
+
+#[tauri::command]
+fn verify(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "verify", json!({}))
+}
+
+#[tauri::command]
 fn set_archive(state: State<AppState>, path: String) -> Result<(), String> {
     let mut guard = state.engine.lock().expect("engine lock");
     if let Some(mut engine) = guard.take() {
@@ -190,7 +210,7 @@ pub fn run() {
             archive: Mutex::new(default_archive),
             engine: Mutex::new(None),
         })
-        .invoke_handler(tauri::generate_handler![ping, stats, search, set_archive, shutdown])
+        .invoke_handler(tauri::generate_handler![ping, stats, search, message, thread, record, verify, set_archive, shutdown])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

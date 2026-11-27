@@ -7,7 +7,7 @@ method, and params. Responses carry the same protocol_version and
 request_id with either result or error. Long-running jobs emit progress
 events and a terminal job_complete or job_error event.
 """
-import json, sqlite3, sys, threading, uuid
+import hashlib, json, sqlite3, sys, threading, uuid
 from pathlib import Path
 
 PROTOCOL_VERSION = 1
@@ -35,6 +35,111 @@ def _archive_stats(root):
     finally:
         conn.close()
     return {'messages': messages, 'origins': origins}
+
+def _valid_hash(value):
+    return isinstance(value, str) and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
+
+def _ro_connect(path):
+    conn = sqlite3.connect(str(path), timeout=30)
+    conn.execute('PRAGMA query_only=ON')
+    return conn
+
+def _message(root, digest):
+    path = Path(root) / 'archive.sqlite3'
+    if not path.is_file():
+        raise IPCError('ARCHIVE_NOT_AVAILABLE', 'The selected archive has no archive.sqlite3')
+    conn = _ro_connect(path)
+    try:
+        row = conn.execute(
+            'SELECT subject,sender,date,message_id,reply_to,body FROM messages WHERE hash=?',
+            (digest,)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise IPCError('NOT_FOUND', 'message not found')
+    return {'hash': digest, 'subject': row[0] or '', 'sender': row[1] or '',
+            'date': row[2] or '', 'message_id': row[3] or '', 'reply_to': row[4] or '',
+            'body': row[5] or ''}
+
+def _thread_hashes(conn, digest):
+    row = conn.execute('SELECT message_id,reply_to FROM messages WHERE hash=?', (digest,)).fetchone()
+    if row is None:
+        raise IPCError('NOT_FOUND', 'message not found')
+    visited = {digest}
+    frontier = {value for value in row if value}
+    identifiers = set()
+    while frontier:
+        value = frontier.pop()
+        if value in identifiers:
+            continue
+        identifiers.add(value)
+        for member, mid, parent in conn.execute(
+                'SELECT hash,message_id,reply_to FROM messages WHERE message_id=? OR reply_to=?',
+                (value, value)):
+            visited.add(member)
+            frontier.update(v for v in (mid, parent) if v and v not in identifiers)
+    return sorted(visited)
+
+def _thread(root, digest):
+    path = Path(root) / 'archive.sqlite3'
+    if not path.is_file():
+        raise IPCError('ARCHIVE_NOT_AVAILABLE', 'The selected archive has no archive.sqlite3')
+    conn = _ro_connect(path)
+    try:
+        members = _thread_hashes(conn, digest)
+        messages = []
+        for member in members:
+            row = conn.execute(
+                'SELECT subject,sender,date,body FROM messages WHERE hash=?', (member,)).fetchone()
+            messages.append({'hash': member, 'subject': row[0] or '', 'sender': row[1] or '',
+                             'date': row[2] or '', 'body': row[3] or ''})
+    finally:
+        conn.close()
+    return {'hash': digest, 'messages': messages}
+
+def _record(root, record_id):
+    path = Path(root) / 'catalog.sqlite3'
+    if not path.is_file():
+        raise IPCError('CATALOG_NOT_AVAILABLE', 'The selected archive has no catalog.sqlite3')
+    conn = _ro_connect(path)
+    try:
+        row = conn.execute(
+            'SELECT record_id,source_type,source_key,record_kind,actor,occurred_at,body,original_json '
+            'FROM records WHERE record_id=?', (record_id,)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise IPCError('NOT_FOUND', 'record not found')
+    return {'record_id': row[0], 'source_type': row[1], 'source_key': row[2],
+            'record_kind': row[3], 'actor': row[4] or '', 'occurred_at': row[5] or '',
+            'body': row[6] or '', 'original_json': row[7] or ''}
+
+def _verify(root):
+    root = Path(root)
+    path = root / 'archive.sqlite3'
+    if not path.is_file():
+        raise IPCError('ARCHIVE_NOT_AVAILABLE', 'The selected archive has no archive.sqlite3')
+    conn = _ro_connect(path)
+    try:
+        hashes = [h for h, in conn.execute('SELECT hash FROM messages')]
+    finally:
+        conn.close()
+    bad = []
+    for h in hashes:
+        if not _valid_hash(h):
+            bad.append(h)
+            continue
+        raw = root / 'raw' / (h + '.eml')
+        try:
+            if raw.is_symlink() or not raw.is_file():
+                bad.append(h)
+                continue
+            with raw.open('rb') as f:
+                if hashlib.file_digest(f, 'sha256').hexdigest() != h:
+                    bad.append(h)
+        except OSError:
+            bad.append(h)
+    return {'checked': len(hashes), 'bad': bad}
 
 class IPCError(RuntimeError):
     def __init__(self, code, message):
@@ -160,6 +265,14 @@ class IPCServer:
                                             'catalog': self._catalog_stats()})
             if method == 'search':
                 return _result(request_id, self._search(params))
+            if method == 'message':
+                return _result(request_id, _message(self.root, params.get('hash')))
+            if method == 'thread':
+                return _result(request_id, _thread(self.root, params.get('hash')))
+            if method == 'record':
+                return _result(request_id, _record(self.root, params.get('record_id')))
+            if method == 'verify':
+                return _result(request_id, _verify(self.root))
             if method == 'summarize':
                 return _result(request_id, self._start_summarize(params))
             if method == 'cancel':

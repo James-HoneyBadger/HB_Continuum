@@ -16,7 +16,8 @@ class IPCServerTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory()
         self.root=Path(self.tmp.name)
         self.a=Archive(self.root)
-        self.h=self.a.ingest(b'From: a@example.invalid\r\nSubject: Silver invoice\r\n\r\nBullion receipt')
+        self.h=self.a.ingest(b'From: a@example.invalid\r\nSubject: Silver invoice\r\n'
+                             b'Message-ID: <test@example.invalid>\r\n\r\nBullion receipt')
         self.server=IPCServer(self.root, out=io.StringIO())
     def tearDown(self):
         self.a.db.close(); self.tmp.cleanup()
@@ -56,6 +57,42 @@ class IPCServerTests(unittest.TestCase):
         server=IPCServer(self.root/'missing', out=io.StringIO())
         resp=server.handle(request('stats'))
         self.assertEqual(resp['error']['code'],'ARCHIVE_NOT_AVAILABLE')
+
+    def test_message(self):
+        resp=self.server.handle(request('message',hash=self.h))
+        self.assertEqual(resp['result']['subject'],'Silver invoice')
+        self.assertIn('Bullion receipt',resp['result']['body'])
+        self.assertEqual(self.server.handle(request('message',hash='0'*64))['error']['code'],'NOT_FOUND')
+
+    def test_thread(self):
+        reply=self.a.ingest(b'From: b@example.invalid\r\nSubject: Re: invoice\r\n'
+                            b'Message-ID: <reply@example.invalid>\r\nIn-Reply-To: <test@example.invalid>\r\n\r\nReply.\r\n')
+        resp=self.server.handle(request('thread',hash=reply))
+        self.assertEqual({m['hash'] for m in resp['result']['messages']},{self.h,reply})
+
+    def test_record(self):
+        from facebook import import_files
+        from catalog import Catalog
+        posts=self.root/'posts.json'
+        posts.write_text(json.dumps({'your_posts':[
+            {'timestamp': 1700000000, 'data': [{'post': 'Hello world'}]},
+        ]}))
+        import_files([str(posts)], self.root)
+        catalog=Catalog(self.root)
+        try:
+            rid=catalog.db.execute('SELECT record_id FROM records').fetchone()[0]
+        finally:
+            catalog.close()
+        resp=self.server.handle(request('record',record_id=rid))
+        self.assertEqual(resp['result']['record_kind'],'post')
+        self.assertIn('Hello world',resp['result']['body'])
+
+    def test_verify(self):
+        resp=self.server.handle(request('verify'))
+        self.assertEqual(resp['result']['checked'],1)
+        self.assertEqual(resp['result']['bad'],[])
+        (self.root/'raw'/(self.h+'.eml')).write_bytes(b'changed')
+        self.assertEqual(self.server.handle(request('verify'))['result']['bad'],[self.h])
 
     def test_summarize_disabled(self):
         resp=self.server.handle(request('summarize',hashes=[self.h]))
