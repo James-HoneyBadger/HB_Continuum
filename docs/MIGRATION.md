@@ -184,6 +184,18 @@ that no longer exist, and explicit limitations. Deleting a collection removes
 its drafts; deleting a draft leaves the collection, its notes and every
 archived record untouched.
 
+## Research version 5: saved advanced queries
+
+Version 5 adds `advanced_queries`: a workspace-scoped name, description,
+serialized boolean query tree, selected sources and timestamps. Names are
+unique per workspace; saving an existing name updates it. Deleting a
+workspace cascades to its saved queries.
+
+The query tree is stored as JSON only after the IPC boundary validates it and
+requires a group root, so a saved query can be loaded back into the graphical
+builder. Saved queries are user annotations in the research overlay; they do
+not contain record contents and do not modify the archive or catalog.
+
 ## Inspecting and migrating
 
 Opening the archive at all (`dispatch`, `dispatch gui`, the desktop shell)

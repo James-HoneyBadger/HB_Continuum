@@ -15,6 +15,8 @@ JOURNAL_TITLE_MAX=200
 JOURNAL_BODY_MAX=1_000_000
 DRAFT_TITLE_MAX=200
 DRAFT_NOTES_MAX=20_000
+ADVANCED_QUERY_MAX=65_536
+ADVANCED_QUERY_DESCRIPTION_MAX=4_000
 
 def draft_title(value):
     if (not isinstance(value,str) or not value.strip() or len(value)>DRAFT_TITLE_MAX
@@ -139,6 +141,91 @@ class Research:
         elif kind=='choice' and value not in json.loads(choices):raise ValueError('Invalid choice')
         elif kind=='boolean' and value not in ('true','false'):raise ValueError('Use true or false')
         with self.db:self.db.execute('INSERT OR REPLACE INTO metadata VALUES(?,?,?)',(h,field,value))
+    @staticmethod
+    def _advanced_sources(sources):
+        if isinstance(sources,str):
+            sources=[part.strip() for part in sources.split(',') if part.strip()]
+        if not isinstance(sources,(list,tuple)) or not sources:
+            raise ValueError('Sources must be email and/or facebook')
+        values=list(dict.fromkeys(sources))
+        if any(value not in ('email','facebook') for value in values):
+            raise ValueError('Sources must be email and/or facebook')
+        return ','.join(values)
+    @staticmethod
+    def _advanced_id(query_id):
+        if type(query_id) is not int or query_id<1:
+            raise ValueError('Invalid advanced query id')
+        return query_id
+    def _advanced_row(self,query_id):
+        row=self.db.execute(
+            'SELECT id,workspace,name,description,sources,created_at,updated_at '
+            'FROM advanced_queries WHERE id=?',(self._advanced_id(query_id),)).fetchone()
+        if row is None: raise ValueError('Unknown advanced query')
+        return row
+    @staticmethod
+    def _advanced_summary(row):
+        keys=('id','workspace','name','description','sources','created_at','updated_at')
+        result=dict(zip(keys,row))
+        result['sources']=[value for value in result['sources'].split(',') if value]
+        return result
+    def advanced_query_list(self,workspace=None):
+        sql=('SELECT id,workspace,name,description,sources,created_at,updated_at '
+             'FROM advanced_queries')
+        params=()
+        if workspace:
+            sql+=' WHERE workspace=?'; params=(workspace,)
+        sql+=' ORDER BY workspace,name'
+        return [self._advanced_summary(row) for row in self.db.execute(sql,params)]
+    def advanced_query_get(self,query_id):
+        row=self._advanced_row(query_id)
+        result=self._advanced_summary(row)
+        stored=self.db.execute(
+            'SELECT query_json FROM advanced_queries WHERE id=?',(result['id'],)).fetchone()[0]
+        try:
+            result['tree']=json.loads(stored)
+        except (TypeError,ValueError):
+            raise ValueError('Stored advanced query is not valid JSON') from None
+        return result
+    def advanced_query_save(self,workspace,name,description,tree,sources=('email','facebook')):
+        name=namecheck(name)
+        if not isinstance(description,str) or len(description)>ADVANCED_QUERY_DESCRIPTION_MAX:
+            raise ValueError('Description must be text up to 4,000 characters')
+        if not isinstance(tree,dict) or not tree:
+            raise ValueError('Query tree must be a non-empty object')
+        if tree.get('type')!='group':
+            raise ValueError('Query tree root must be a group')
+        if not self.db.execute('SELECT 1 FROM workspaces WHERE name=?',(workspace,)).fetchone():
+            raise ValueError('Unknown workspace')
+        source_text=self._advanced_sources(sources)
+        try:
+            query_json=json.dumps(tree,ensure_ascii=False,separators=(',',':'),sort_keys=True)
+        except (TypeError,ValueError):
+            raise ValueError('Query tree must be JSON-serializable') from None
+        if len(query_json)>ADVANCED_QUERY_MAX:
+            raise ValueError('Query tree exceeds the 65,536 character limit')
+        now=datetime.now(timezone.utc).isoformat(timespec='seconds')
+        with self.db:
+            row=self.db.execute(
+                'SELECT id FROM advanced_queries WHERE workspace=? AND name=?',
+                (workspace,name)).fetchone()
+            if row:
+                query_id=row[0]
+                self.db.execute(
+                    'UPDATE advanced_queries SET description=?,query_json=?,sources=?,'
+                    'updated_at=? WHERE id=?',
+                    (description,query_json,source_text,now,query_id))
+            else:
+                query_id=self.db.execute(
+                    'INSERT INTO advanced_queries(workspace,name,description,query_json,'
+                    'sources,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',
+                    (workspace,name,description,query_json,source_text,now,now)).lastrowid
+        return self.advanced_query_get(query_id)
+    def advanced_query_delete(self,query_id):
+        with self.db:
+            cursor=self.db.execute(
+                'DELETE FROM advanced_queries WHERE id=?',(self._advanced_id(query_id),))
+        if not cursor.rowcount: raise ValueError('Unknown advanced query')
+        return {'deleted': query_id}
     def save_report(self,name,workspace,search,columns,group_by=''):
         name=namecheck(name)
         if not columns or len(set(columns))!=len(columns) or any(c not in COLUMNS for c in columns):raise ValueError('Invalid report columns')

@@ -244,6 +244,46 @@ fn search_validate(state: State<AppState>, query: String) -> Result<Value, Strin
 }
 
 #[tauri::command]
+fn advanced_queries_list(
+    state: State<AppState>,
+    workspace: Option<String>,
+) -> Result<Value, String> {
+    call(&state, "advanced_queries_list", json!({ "workspace": workspace }))
+}
+
+#[tauri::command]
+fn advanced_query_get(state: State<AppState>, query_id: i64) -> Result<Value, String> {
+    call(&state, "advanced_query_get", json!({ "query_id": query_id }))
+}
+
+#[tauri::command]
+fn advanced_query_save(
+    state: State<AppState>,
+    workspace: String,
+    name: String,
+    description: Option<String>,
+    query: Value,
+    sources: Option<Vec<String>>,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "advanced_query_save",
+        json!({
+            "workspace": workspace,
+            "name": name,
+            "description": description.unwrap_or_default(),
+            "query": query,
+            "sources": sources.unwrap_or_else(|| vec!["email".to_string(), "facebook".to_string()]),
+        }),
+    )
+}
+
+#[tauri::command]
+fn advanced_query_delete(state: State<AppState>, query_id: i64) -> Result<Value, String> {
+    call(&state, "advanced_query_delete", json!({ "query_id": query_id }))
+}
+
+#[tauri::command]
 fn message(state: State<AppState>, hash: String) -> Result<Value, String> {
     call(&state, "message", json!({ "hash": hash }))
 }
@@ -850,8 +890,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            ping, stats, search, search_advanced, search_validate, message, thread,
-            timeline, dashboard,
+            ping, stats, search, search_advanced, search_validate,
+            advanced_queries_list, advanced_query_get, advanced_query_save, advanced_query_delete,
+            message, thread, timeline, dashboard,
             correspondents, relationships,
             record, verify, health,
             reindex, recover_orphans, migrate_status, backup, verify_backup, restore,

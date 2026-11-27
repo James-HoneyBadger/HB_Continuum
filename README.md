@@ -167,7 +167,9 @@ groups over text, sender/actor, record kind, source, date and tag rules. Each
 rule is evaluated as a set; NOT excludes its child from the selected sources,
 so negation is exact rather than a filter on an already-ranked page. Text
 rules use FTS5 syntax, tag rules apply to email only, and results are ranked by
-summed text relevance then newest declared date with an exact total.
+summed text relevance then newest declared date with an exact total. Query
+trees can be saved by name inside a research workspace and loaded or deleted
+later; saving an existing name updates that query.
 
 ```sh
 python3 dispatch.py search-all "receipt"

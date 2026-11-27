@@ -618,6 +618,44 @@ def _string_list(value, name, max_items, limit=200):
                        f'{name} contains a value longer than {limit} characters')
     return cleaned or None
 
+def _advanced_query_sources(value):
+    sources = _string_list(value, 'sources', 2, 20)
+    sources = sources or ['email', 'facebook']
+    if any(source not in ('email', 'facebook') for source in sources):
+        raise IPCError('INVALID_PARAMS', 'sources must be email and/or facebook')
+    return sources
+
+def _advanced_queries_list(root, workspace=None):
+    if workspace is not None:
+        workspace = _text(workspace, 'workspace', 100)
+    return _with_research(
+        root, lambda a, r: {'queries': r.advanced_query_list(workspace)})
+
+def _advanced_query_get(root, query_id):
+    if not isinstance(query_id, int) or isinstance(query_id, bool) or query_id < 1:
+        raise IPCError('INVALID_PARAMS', 'advanced query id must be a positive integer')
+    return _with_research(root, lambda a, r: r.advanced_query_get(query_id))
+
+def _advanced_query_save(root, params):
+    from .advanced_search import normalize_query
+    workspace = _text(params.get('workspace'), 'workspace', 100)
+    name = _text(params.get('name'), 'name', 100)
+    description = _text(params.get('description', ''), 'description', 4000)
+    sources = _advanced_query_sources(params.get('sources'))
+    try:
+        tree = normalize_query(params.get('query'))
+    except ValueError as exc:
+        raise IPCError('INVALID_PARAMS', str(exc)) from None
+    if tree.get('type') != 'group':
+        raise IPCError('INVALID_PARAMS', 'a saved advanced query needs a group root')
+    return _with_research(root, lambda a, r: r.advanced_query_save(
+        workspace, name, description, tree, sources))
+
+def _advanced_query_delete(root, query_id):
+    if not isinstance(query_id, int) or isinstance(query_id, bool) or query_id < 1:
+        raise IPCError('INVALID_PARAMS', 'advanced query id must be a positive integer')
+    return _with_research(root, lambda a, r: r.advanced_query_delete(query_id))
+
 def _research_workspace_save(root, workspace, description=''):
     return _with_research(root, lambda a, r: (
         r.workspace(_text(workspace, 'workspace', 100), _text(description, 'description', 2000)),
@@ -1306,6 +1344,17 @@ class IPCServer:
                 return _result(request_id, self._search(params))
             if method == 'search_advanced':
                 return _result(request_id, self._advanced_search(params))
+            if method == 'advanced_queries_list':
+                return _result(request_id, _advanced_queries_list(
+                    self.root, params.get('workspace')))
+            if method == 'advanced_query_get':
+                return _result(request_id, _advanced_query_get(
+                    self.root, params.get('query_id')))
+            if method == 'advanced_query_save':
+                return _result(request_id, _advanced_query_save(self.root, params))
+            if method == 'advanced_query_delete':
+                return _result(request_id, _advanced_query_delete(
+                    self.root, params.get('query_id')))
             if method == 'search_validate':
                 from .unified import validate_query
                 return _result(request_id, validate_query(

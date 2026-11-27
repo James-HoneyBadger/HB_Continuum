@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import QueryGroup from "./QueryGroup.vue";
 
@@ -40,6 +40,17 @@ interface Result {
   definitions: string[];
 }
 
+interface SavedQuery {
+  id: number;
+  workspace: string;
+  name: string;
+  description: string;
+  sources: string[];
+  created_at: string;
+  updated_at: string;
+  tree?: Group;
+}
+
 function rootQuery(): Group {
   return {
     type: "group",
@@ -55,6 +66,13 @@ const offset = ref(0);
 const result = ref<Result | null>(null);
 const queryError = ref("");
 const loading = ref(false);
+const workspace = ref("General");
+const workspaces = ref<string[]>([]);
+const savedQueries = ref<SavedQuery[]>([]);
+const selectedSavedId = ref<number | null>(null);
+const saveForm = ref({ name: "", description: "" });
+const notice = ref("");
+const confirmingDelete = ref(false);
 
 const sources = computed(() =>
   sourceScope.value === "both" ? ["email", "facebook"] : [sourceScope.value],
@@ -146,6 +164,118 @@ function page(direction: -1 | 1) {
   const next = Math.max(0, offset.value + direction * limit.value);
   void run(next);
 }
+
+const savedForWorkspace = computed(() =>
+  savedQueries.value.filter((query) => query.workspace === workspace.value),
+);
+
+const selectedSaved = computed(
+  () => savedForWorkspace.value.find((query) => query.id === selectedSavedId.value) ?? null,
+);
+
+async function loadSaved() {
+  try {
+    const [workspaceResponse, queryResponse] = await Promise.all([
+      invoke("research_list", { table: "workspaces" }) as Promise<{ rows: any[][] }>,
+      invoke("advanced_queries_list") as Promise<{ queries: SavedQuery[] }>,
+    ]);
+    workspaces.value = workspaceResponse.rows.map((row) => String(row[0]));
+    if (!workspaces.value.length) workspaces.value = ["General"];
+    savedQueries.value = queryResponse.queries;
+    if (!workspaces.value.includes(workspace.value)) {
+      workspace.value = workspaces.value[0];
+    }
+    if (selectedSavedId.value !== null
+        && !savedQueries.value.some((query) => query.id === selectedSavedId.value)) {
+      selectedSavedId.value = null;
+    }
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
+function changeWorkspace() {
+  selectedSavedId.value = null;
+  confirmingDelete.value = false;
+  notice.value = "";
+}
+
+async function loadSelected() {
+  if (selectedSavedId.value === null) return;
+  try {
+    const saved = (await invoke("advanced_query_get", {
+      queryId: selectedSavedId.value,
+    })) as SavedQuery;
+    if (!saved.tree) throw new Error("Saved query has no tree");
+    tree.value = saved.tree;
+    const hasEmail = saved.sources.includes("email");
+    const hasCatalog = saved.sources.includes("facebook");
+    sourceScope.value = hasEmail && hasCatalog ? "both" : hasCatalog ? "facebook" : "email";
+    saveForm.value = { name: saved.name, description: saved.description };
+    result.value = null;
+    queryError.value = "";
+    offset.value = 0;
+    confirmingDelete.value = false;
+    notice.value = `Loaded “${saved.name}”.`;
+  } catch (e) {
+    queryError.value = String(e);
+    props.onError(String(e));
+  }
+}
+
+async function saveQuery() {
+  queryError.value = "";
+  notice.value = "";
+  const name = saveForm.value.name.trim();
+  if (!name) {
+    queryError.value = "Enter a name before saving the query.";
+    return;
+  }
+  const message = validationMessage(tree.value);
+  if (message) {
+    queryError.value = message;
+    return;
+  }
+  try {
+    const saved = (await invoke("advanced_query_save", {
+      workspace: workspace.value,
+      name,
+      description: saveForm.value.description,
+      query: payload(tree.value),
+      sources: sources.value,
+    })) as SavedQuery;
+    await loadSaved();
+    selectedSavedId.value = saved.id;
+    confirmingDelete.value = false;
+    notice.value = `Saved “${saved.name}”. Saving the same name updates it.`;
+  } catch (e) {
+    queryError.value = String(e);
+    props.onError(String(e));
+  }
+}
+
+async function deleteSelected() {
+  if (selectedSavedId.value === null) return;
+  if (!confirmingDelete.value) {
+    confirmingDelete.value = true;
+    notice.value = "Click Confirm delete to remove the saved query. The builder is unaffected.";
+    return;
+  }
+  const name = selectedSaved.value?.name ?? "query";
+  try {
+    await invoke("advanced_query_delete", { queryId: selectedSavedId.value });
+    selectedSavedId.value = null;
+    confirmingDelete.value = false;
+    saveForm.value = { name: "", description: "" };
+    await loadSaved();
+    notice.value = `Deleted “${name}”.`;
+  } catch (e) {
+    queryError.value = String(e);
+    props.onError(String(e));
+  }
+}
+
+onMounted(loadSaved);
 </script>
 
 <template>
@@ -182,6 +312,51 @@ function page(direction: -1 | 1) {
         <button type="button" :disabled="loading" @click="reset">Clear</button>
       </div>
     </header>
+
+    <section class="saved-queries">
+      <div class="saved-row">
+        <label>
+          Workspace
+          <select v-model="workspace" @change="changeWorkspace">
+            <option v-for="name in workspaces" :key="name" :value="name">{{ name }}</option>
+          </select>
+        </label>
+        <label>
+          Saved query
+          <select v-model.number="selectedSavedId" @change="confirmingDelete = false">
+            <option :value="null">Select a saved query…</option>
+            <option v-for="query in savedForWorkspace" :key="query.id" :value="query.id">
+              {{ query.name }}
+            </option>
+          </select>
+        </label>
+        <button type="button" :disabled="selectedSavedId === null" @click="loadSelected">
+          Load
+        </button>
+        <button
+          type="button"
+          class="danger"
+          :disabled="selectedSavedId === null"
+          @click="deleteSelected"
+        >
+          {{ confirmingDelete ? "Confirm delete" : "Delete" }}
+        </button>
+      </div>
+      <div class="saved-row">
+        <input v-model="saveForm.name" placeholder="Query name" spellcheck="false" />
+        <input
+          v-model="saveForm.description"
+          class="grow"
+          placeholder="Description (optional)"
+        />
+        <button type="button" @click="saveQuery">Save query</button>
+        <span v-if="notice" class="notice">{{ notice }}</span>
+      </div>
+      <p class="hint">
+        Saved queries live in the selected research workspace. Saving an existing name
+        updates that query; the archive and builder are otherwise unchanged.
+      </p>
+    </section>
 
     <QueryGroup :node="tree" :depth="0" />
 
@@ -288,6 +463,48 @@ button:disabled {
   margin: 0;
   color: var(--hb-error-text);
   font-size: 12px;
+}
+.saved-queries {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius);
+  background: var(--hb-panel);
+}
+.saved-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.saved-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--hb-text-secondary);
+}
+.saved-row input {
+  padding: 4px 6px;
+  border: 1px solid var(--hb-border-strong);
+  border-radius: var(--hb-radius);
+  background: var(--hb-workspace);
+  color: var(--hb-text);
+  font-size: 12px;
+  min-width: 180px;
+}
+.saved-row input.grow {
+  flex: 1;
+  min-width: 220px;
+}
+.danger {
+  color: var(--hb-error-text);
+}
+.notice {
+  font-size: 11px;
+  color: var(--hb-text-secondary);
 }
 .summary {
   display: flex;

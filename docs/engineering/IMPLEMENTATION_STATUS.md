@@ -176,6 +176,23 @@ landed (Overview dashboard, design tokens, timeline pagination).
 - Tests cover sender/kind/tag filters, exact counts, inexact tag totals,
   query validation and IPC validation.
 
+### Saved advanced queries (2026-11-27)
+
+- Research schema 5 adds `advanced_queries`: workspace-scoped name,
+  description, serialized query tree, selected sources and timestamps, with a
+  unique `(workspace, name)` pair and cascade from the workspace.
+- The IPC boundary validates the tree with `normalize_query`, requires a group
+  root so the graphical builder can load it, caps the stored JSON at 65,536
+  characters and validates the selected sources. Saving an existing name
+  updates it rather than creating a duplicate.
+- The Advanced workspace gains workspace and saved-query selectors, Load,
+  two-step Delete, a name/description form and Save. Loading replaces the
+  builder tree, sources and form fields; the archive is not modified.
+- Tests cover save/list/get/update/delete, workspace scoping, workspace
+  cascade, unknown workspace, empty names, invalid sources, non-JSON and
+  oversized trees, group-root enforcement, IPC validation and the full IPC
+  surface.
+
 ### Engine package extraction (2026-11-27)
 
 - The engine now lives in the `hb_engine` package: archive/CLI, IPC, catalog,
@@ -364,7 +381,7 @@ landed (Overview dashboard, design tokens, timeline pagination).
 
 See `BASELINE_AUDIT.md` section 9. In brief: local embeddings/hybrid
 search, Second Me, Facebook post revisions and message attachment metadata,
-saved advanced queries, and the documentation overhaul
+and the documentation overhaul
 (ROADMAP/SECURITY/ARCHITECTURE/CHANGELOG).
 
 Archive hardening, verified backup/restore, desktop health/backup surfaces,
@@ -388,6 +405,11 @@ until the shell's flows are exercised against real archives.
 
 ## Files changed
 
+- Saved-query increment (2026-11-27): `hb_engine/migrations.py`,
+  `hb_engine/research.py`, `hb_engine/ipc.py`, `src-tauri/src/lib.rs`,
+  `frontend/src/components/AdvancedSearchView.vue`,
+  `tests/test_saved_queries.py` (new), `tests/test_migrations.py`,
+  `docs/MIGRATION.md`, `README.md`.
 - Engine-package increment (2026-11-27): `hb_engine/` (new package: 17 moved
   modules plus `__init__.py`), top-level compatibility aliases for every
   moved module, `dispatch.py`, `desktop.py`, `preferences_ui.py`,
@@ -481,7 +503,7 @@ until the shell's flows are exercised against real archives.
 
 - Schema versioning lives in `migrations.py`, shared by all three databases
   and tracked with `PRAGMA user_version`; `archive` is at version 6, `catalog`
-  at version 3 and `research` at version 4. Archive version 2 adds
+  at version 3 and `research` at version 5. Archive version 2 adds
   `attachment_index` and `extraction_versions`; version 3 adds `sort_ts`,
   `date_precision` and the `messages_sort_ts` index (additive, with a
   transactional backfill); version 4 adds `import_runs` and its time index;
@@ -489,7 +511,8 @@ until the shell's flows are exercised against real archives.
   version 6 adds `source_settings` and `source_events`. Research version 2
   adds `journal_entries` and `journal_revisions`; research version 3 adds
   `collections` and `collection_items`; research version 4 adds
-  `report_drafts`. Catalog version 3 repairs the
+  `report_drafts`; research version 5 adds `advanced_queries`. Catalog
+  version 3 repairs the
   delete/update FTS triggers.
 - New source-independent catalog database `catalog.sqlite3` with
   `source_files` and `records` tables plus a trigger-maintained FTS5
@@ -516,14 +539,14 @@ until the shell's flows are exercised against real archives.
 
 - `compileall` over `hb_engine/`, root wrappers, `tests/` and `scripts/`:
   pass.
-- `python3 -m unittest discover -s tests`: 253 tests, 0 failures; optional
+- `python3 -m unittest discover -s tests`: 258 tests, 0 failures; optional
   credential-backend tests skip when `keyring` or `cryptography` are not
   installed (1 skip on the project Python 3.13 interpreter, 2 on a local
   Python 3.15 interpreter). Includes 8 timestamp/chronology tests, 2 real-process lock
   tests, 5 import-run tests, 6 journal tests, 8 collection/draft tests,
   5 report tests, 11 source management/verification tests, 10 unified-search
-  tests, 10 advanced-query tests, 8 relationship tests, 56 IPC tests and a
-  packaging-smoke test.
+  tests, 10 advanced-query tests, 5 saved-query tests, 8 relationship tests,
+  56 IPC tests and a packaging-smoke test.
 - `mypy` (2.4.1, matching CI) is configured for `hb_engine` and the Tk UI
   modules. It was not available in this environment, so the CI type-check job
   is the verification.
@@ -554,7 +577,7 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-253 Python tests ran: 0 failed; optional credential-backend tests skip when
+258 Python tests ran: 0 failed; optional credential-backend tests skip when
 `keyring` or `cryptography` are unavailable (1 skip on Python 3.13.6, 2 on
 Python 3.15). `npm run build` (vue-tsc + vite), `cargo check` and `cargo test`
 pass; background EML import, import history, sources, source removal, source
@@ -648,9 +671,7 @@ Scheduler verification status:
 2. Close PR #4 as superseded and reconcile PR #5 branding with this branch.
 3. Extend unified search with a paged FTS contract so results are not
    capped at 5000.
-4. Persist advanced query trees as saved advanced searches in the research
-   overlay.
-5. Add collection selection from the timeline and record reader, and an
+4. Add collection selection from the timeline and record reader, and an
    optional "hide disabled sources from default views" preference.
-6. Run the benchmark harness on Windows and Linux and add a 1M-record run
+5. Run the benchmark harness on Windows and Linux and add a 1M-record run
    before making large-archive claims.
