@@ -866,6 +866,47 @@ class IPCServer:
 
         return self._start_job(work)
 
+    def _start_report(self, params):
+        from reporting import build_archive_report, write_report
+        destination = params.get('destination')
+        fmt = params.get('format', 'markdown')
+        if not isinstance(destination, str) or not destination.strip():
+            raise IPCError('INVALID_PARAMS', 'destination is required')
+        if fmt not in ('markdown', 'json', 'html'):
+            raise IPCError('INVALID_PARAMS', 'format must be markdown, json or html')
+        root = Path(self.root).expanduser().resolve()
+        dest = Path(destination).expanduser().resolve()
+        from reporting import EXTENSIONS
+        if dest.is_relative_to(root) or root.is_relative_to(dest):
+            raise IPCError('INVALID_PARAMS', 'A report must be written outside the archive')
+        if not dest.parent.is_dir():
+            raise IPCError('INVALID_PARAMS', 'Destination folder does not exist')
+        if dest.suffix.lower() != EXTENSIONS[fmt]:
+            raise IPCError('INVALID_PARAMS',
+                           f'{fmt} reports use the {EXTENSIONS[fmt]} extension')
+        if dest.exists():
+            raise IPCError('DESTINATION_EXISTS', 'Destination already exists')
+
+        def work(job_id, cancel_event):
+            self._write(_event('progress', job_id=job_id, done=0, total=1,
+                               hash='', status='collecting'))
+            sources = _sources(self.root)
+            dashboard = _dashboard(self.root)
+            health = _health(self.root)
+            history = _import_history(self.root, 20)
+            if cancel_event.is_set():
+                return {'cancelled': True, 'path': str(dest), 'format': fmt}
+            report = build_archive_report(sources, dashboard, health, history)
+            try:
+                result = write_report(report, fmt, dest)
+            except FileExistsError:
+                raise IPCError('DESTINATION_EXISTS', 'Destination already exists') from None
+            self._write(_event('progress', job_id=job_id, done=1, total=1,
+                               hash='', status='complete'))
+            return result
+
+        return self._start_job(work)
+
     def _start_eml_import(self, params):
         from dispatch import Archive
         from migrations import MigrationError
@@ -1000,6 +1041,8 @@ class IPCServer:
                 return _result(request_id, _import_history(self.root, params.get('limit', 50)))
             if method == 'sources':
                 return _result(request_id, _sources(self.root))
+            if method == 'report_archive':
+                return _result(request_id, self._start_report(params))
             if method == 'preferences':
                 return _result(request_id, _preferences(self.root))
             if method == 'preferences_set':

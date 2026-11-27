@@ -152,6 +152,37 @@ class IPCServerTests(unittest.TestCase):
         self.assertGreater(sources['storage']['total_bytes'],0)
         self.assertEqual(sources['catalog']['records'],0)
 
+    def test_archive_report_job_writes_outside_the_archive(self):
+        import shutil
+        outside=tempfile.mkdtemp()
+        try:
+            destination=Path(outside)/'report.md'
+            started=self.server.handle(request(
+                'report_archive',destination=str(destination),format='markdown'))
+            terminal=self.finish_job(started['result']['job_id'])
+            self.assertEqual(terminal['event'],'job_complete')
+            self.assertEqual(terminal['result']['format'],'markdown')
+            text=destination.read_text()
+            self.assertIn('# HB Continuum archive report',text)
+            self.assertIn('## Limitations',text)
+            again=self.server.handle(request(
+                'report_archive',destination=str(destination),format='markdown'))
+            self.assertEqual(again['error']['code'],'DESTINATION_EXISTS')
+            inside=self.server.handle(request(
+                'report_archive',destination=str(self.root/'report.md')))
+            self.assertEqual(inside['error']['code'],'INVALID_PARAMS')
+            bad=self.server.handle(request(
+                'report_archive',destination=str(Path(outside)/'r.pdf'),format='pdf'))
+            self.assertEqual(bad['error']['code'],'INVALID_PARAMS')
+            wrong_ext=self.server.handle(request(
+                'report_archive',destination=str(Path(outside)/'r.md'),format='json'))
+            self.assertEqual(wrong_ext['error']['code'],'INVALID_PARAMS')
+            missing=self.server.handle(request(
+                'report_archive',destination=str(Path(outside)/'nope'/'r.md')))
+            self.assertEqual(missing['error']['code'],'INVALID_PARAMS')
+        finally:
+            shutil.rmtree(outside,ignore_errors=True)
+
     def test_journal_round_trip_and_revision_history(self):
         created=self.server.handle(request(
             'journal_save',title='Remembered',body='first text',event_date='2015-06-01'))['result']
