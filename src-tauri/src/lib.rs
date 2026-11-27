@@ -410,6 +410,19 @@ fn source_events(state: State<AppState>, limit: Option<u32>) -> Result<Value, St
 }
 
 #[tauri::command]
+fn source_verify(
+    state: State<AppState>,
+    source: String,
+    source_key: String,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "source_verify",
+        json!({ "source": source, "source_key": source_key }),
+    )
+}
+
+#[tauri::command]
 fn journal_list(
     state: State<AppState>,
     limit: Option<u32>,
@@ -650,6 +663,7 @@ pub fn run() {
             facebook_preview, facebook_import,
             import_eml, import_history, sources, report_archive, cancel,
             source_set_enabled, source_removal_preview, source_remove, source_events,
+            source_verify,
             journal_list, journal_get, journal_save, journal_delete, journal_restore,
             preferences, preferences_set, research_list, research_results,
             research_workspace_save, research_search_save, research_tag, research_untag,

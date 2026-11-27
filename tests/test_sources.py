@@ -97,6 +97,54 @@ class EmailRemovalTests(unittest.TestCase):
         self.assertEqual(self.a.verify(),[])
         self.assertEqual(self.a.source_events()[0][3],'removed')
 
+class SourceVerificationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name)
+        self.a=Archive(self.root)
+
+    def tearDown(self):
+        self.a.db.close(); self.tmp.cleanup()
+
+    def test_email_verification_is_scoped_and_detects_damage(self):
+        first_raw=message('First','firstword'); second_raw=message('Second','secondword')
+        first=self.a.ingest(first_raw); second=self.a.ingest(second_raw)
+        with self.a.db:
+            self.a.db.execute('INSERT INTO origins VALUES(?,?,?,?,?)',
+                              ('imap.a|me','INBOX','1','1',first))
+            self.a.db.execute('INSERT INTO origins VALUES(?,?,?,?,?)',
+                              ('imap.b|me','INBOX','1','1',second))
+        clean=self.a.verify_source('email','imap.a|me')
+        self.assertEqual((clean['checked'],clean['ok'],clean['bad'],clean['missing']),(1,1,[],[]))
+        (self.a.raw/(first+'.eml')).write_bytes(b'altered')
+        damaged=self.a.verify_source('email','imap.a|me')
+        self.assertEqual(damaged['bad'],[first])
+        self.assertEqual(damaged['ok'],0)
+        # The other account is unaffected by damage to the first.
+        self.assertEqual(self.a.verify_source('email','imap.b|me')['ok'],1)
+        (self.a.raw/(second+'.eml')).unlink()
+        missing=self.a.verify_source('email','imap.b|me')
+        self.assertEqual(missing['missing'],[second])
+
+    def test_catalog_verification_detects_altered_and_missing_export(self):
+        export=self.root/'posts.json'
+        export.write_text(json.dumps({'your_posts':[
+            {'timestamp':1700000000,'data':[{'post':'Bullion note'}]}]}))
+        facebook_import([str(export)],self.root)
+        clean=self.a.verify_source('catalog','facebook')
+        self.assertEqual((clean['checked'],clean['ok']),(1,1))
+        export.write_text('{}')
+        altered=self.a.verify_source('catalog','facebook')
+        self.assertEqual(altered['bad'],[str(export)])
+        export.unlink()
+        missing=self.a.verify_source('catalog','facebook')
+        self.assertEqual(missing['missing'],[str(export)])
+
+    def test_verify_rejects_unknown_sources(self):
+        with self.assertRaises(ValueError):
+            self.a.verify_source('email','unknown|me')
+        with self.assertRaises(ValueError):
+            self.a.verify_source('catalog','nope')
+
 class CatalogRemovalTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name)

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { useEngineJob } from "../composables/useEngineJob";
 
 const props = defineProps<{ onError: (message: string) => void; onChanged: () => void }>();
 
@@ -38,6 +39,15 @@ interface SourceEvent {
   at: string;
   detail: string | null;
 }
+interface Verification {
+  source: string;
+  source_key: string;
+  checked: number;
+  ok: number;
+  bad: string[];
+  missing: string[];
+  cancelled: boolean;
+}
 interface RemovalPreview {
   source: string;
   source_key: string;
@@ -62,6 +72,9 @@ const loading = ref(false);
 const busy = ref(false);
 const events = ref<SourceEvent[]>([]);
 const pending = ref<RemovalPreview | null>(null);
+const verification = ref<Verification | null>(null);
+const { busy: verifying, progress: verifyProgress, start: startVerify, cancel: cancelVerify } =
+  useEngineJob();
 
 function bytes(value: number): string {
   if (!value) return "0 B";
@@ -106,6 +119,20 @@ async function toggle(source: "email" | "catalog", sourceKey: string, enabled: b
     props.onError(String(e));
   } finally {
     busy.value = false;
+  }
+}
+
+async function verify(source: "email" | "catalog", sourceKey: string) {
+  verification.value = null;
+  try {
+    const outcome = await startVerify("source_verify", { source, sourceKey });
+    if (outcome.event === "job_error") {
+      props.onError(String(outcome.message || "Verification failed"));
+      return;
+    }
+    verification.value = outcome.result;
+  } catch (e) {
+    props.onError(String(e));
   }
 }
 
@@ -189,12 +216,15 @@ onMounted(refresh);
           </td>
           <td class="actions">
             <button
-              :disabled="busy"
+              :disabled="busy || verifying"
               @click="toggle('email', account.account, account.disabled)"
             >
               {{ account.disabled ? "Enable" : "Disable" }}
             </button>
-            <button :disabled="busy" @click="previewRemoval('email', account.account)">
+            <button :disabled="busy || verifying" @click="verify('email', account.account)">
+              Verify
+            </button>
+            <button :disabled="busy || verifying" @click="previewRemoval('email', account.account)">
               Remove…
             </button>
           </td>
@@ -233,12 +263,15 @@ onMounted(refresh);
           </td>
           <td class="actions">
             <button
-              :disabled="busy"
+              :disabled="busy || verifying"
               @click="toggle('catalog', source.source_type, source.disabled)"
             >
               {{ source.disabled ? "Enable" : "Disable" }}
             </button>
-            <button :disabled="busy" @click="previewRemoval('catalog', source.source_type)">
+            <button :disabled="busy || verifying" @click="verify('catalog', source.source_type)">
+              Verify
+            </button>
+            <button :disabled="busy || verifying" @click="previewRemoval('catalog', source.source_type)">
               Remove…
             </button>
           </td>
@@ -263,6 +296,37 @@ onMounted(refresh);
         </button>
         <button :disabled="busy" @click="pending = null">Cancel</button>
       </div>
+    </section>
+
+    <p v-if="verifyProgress" class="meta">
+      {{ verifyProgress }}
+      <button v-if="verifying" @click="cancelVerify">Cancel</button>
+    </p>
+
+    <section v-if="verification" class="verify" role="status">
+      <h3>Verification: {{ verification.source_key }}</h3>
+      <p class="meta">
+        {{ verification.checked.toLocaleString() }} checked ·
+        {{ verification.ok.toLocaleString() }} verified ·
+        {{ verification.bad.length.toLocaleString() }} altered ·
+        {{ verification.missing.length.toLocaleString() }} missing
+        <span v-if="verification.cancelled"> · cancelled</span>
+      </p>
+      <p class="meta">
+        Hash checks detect changed bytes. They are not proof of authenticity, legal admissibility
+        or chain of custody.
+      </p>
+      <details v-if="verification.bad.length || verification.missing.length">
+        <summary>Show affected items (first 20 of each)</summary>
+        <ul>
+          <li v-for="item in verification.bad.slice(0, 20)" :key="'bad-' + item" class="bad">
+            altered: {{ item }}
+          </li>
+          <li v-for="item in verification.missing.slice(0, 20)" :key="'missing-' + item">
+            missing: {{ item }}
+          </li>
+        </ul>
+      </details>
     </section>
 
     <h2>Source activity</h2>
@@ -386,6 +450,23 @@ td.actions button {
 .danger {
   border-color: var(--hb-error);
   color: var(--hb-error-text);
+}
+.verify {
+  background: var(--hb-panel-alt);
+  border: 1px solid var(--hb-info);
+  border-radius: var(--hb-radius);
+  padding: 10px 12px;
+}
+.verify h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--hb-info-text);
+}
+.verify ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  word-break: break-all;
 }
 .events td.target {
   max-width: 240px;

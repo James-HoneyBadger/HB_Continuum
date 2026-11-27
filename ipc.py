@@ -384,9 +384,17 @@ def _with_archive(root, action):
     finally:
         archive.db.close()
 
-def _source_set_enabled(root, params):
+def _source_param(params):
     source = _text(params.get('source'), 'source', 20)
     key = _text(params.get('source_key'), 'source_key', 500)
+    if source not in ('email', 'catalog'):
+        raise IPCError('INVALID_PARAMS', 'source must be email or catalog')
+    if not key.strip():
+        raise IPCError('INVALID_PARAMS', 'source_key must not be empty')
+    return source, key
+
+def _source_set_enabled(root, params):
+    source, key = _source_param(params)
     enabled = params.get('enabled')
     if not isinstance(enabled, bool):
         raise IPCError('INVALID_PARAMS', 'enabled must be a boolean')
@@ -396,13 +404,11 @@ def _source_set_enabled(root, params):
     return _with_archive(root, lambda a: a.source_set_enabled(source, key, enabled, note))
 
 def _source_preview(root, params):
-    source = _text(params.get('source'), 'source', 20)
-    key = _text(params.get('source_key'), 'source_key', 500)
+    source, key = _source_param(params)
     return _with_archive(root, lambda a: a.source_removal_preview(source, key))
 
 def _source_remove(root, params):
-    source = _text(params.get('source'), 'source', 20)
-    key = _text(params.get('source_key'), 'source_key', 500)
+    source, key = _source_param(params)
     if params.get('confirm') is not True:
         raise IPCError('CONFIRMATION_REQUIRED',
                        'Review the removal preview and pass confirm=true')
@@ -938,6 +944,27 @@ class IPCServer:
 
         return self._start_job(work)
 
+    def _start_source_verify(self, params):
+        from dispatch import Archive
+        source, key = _source_param(params)
+
+        def work(job_id, cancel_event):
+            archive = None
+            try:
+                archive = Archive(self.root)
+
+                def progress(done, total, item, status):
+                    self._write(_event('progress', job_id=job_id, done=done, total=total,
+                                       hash='', status=f'{status} {item}'))
+
+                return archive.verify_source(source, key, progress=progress,
+                                             cancel_event=cancel_event)
+            finally:
+                if archive is not None:
+                    archive.db.close()
+
+        return self._start_job(work)
+
     def _start_report(self, params):
         from reporting import build_archive_report, write_report
         destination = params.get('destination')
@@ -1122,6 +1149,8 @@ class IPCServer:
             if method == 'source_events':
                 return _result(request_id, _source_events(
                     self.root, params.get('limit', 100)))
+            if method == 'source_verify':
+                return _result(request_id, self._start_source_verify(params))
             if method == 'report_archive':
                 return _result(request_id, self._start_report(params))
             if method == 'preferences':

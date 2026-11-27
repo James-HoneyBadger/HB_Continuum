@@ -313,6 +313,76 @@ class Archive:
                 'Original export files on disk are not modified or deleted.',
                 'Archived email and other catalog sources are unaffected.',
             ]}
+    def verify_source(self, source, source_key, progress=None, cancel_event=None):
+        """Verify integrity for one email account or catalog source only.
+
+        Email checks are scoped to message hashes reachable from the account's
+        mailbox origins. Catalog checks re-hash the recorded export files where
+        they still exist. Hash checks detect changed bytes, not authenticity.
+        """
+        self._validate_source(source,source_key)
+        if source=='email':
+            hashes=[h for h, in self.db.execute(
+                'SELECT DISTINCT hash FROM origins WHERE account=? ORDER BY hash',
+                (source_key,))]
+            if not hashes and not self._settings_exist(source,source_key):
+                raise ValueError('Unknown email account')
+            bad=[]; missing=[]; checked=0; cancelled=False
+            for done,h in enumerate(hashes,1):
+                if cancel_event is not None and cancel_event.is_set():
+                    cancelled=True; break
+                checked+=1
+                if not valid_hash(h):
+                    bad.append(h)
+                else:
+                    path=self.raw/(h+'.eml')
+                    try:
+                        if path.is_symlink() or not path.is_file():
+                            missing.append(h)
+                        else:
+                            with path.open('rb') as handle:
+                                if hashlib.file_digest(handle,'sha256').hexdigest()!=h:
+                                    bad.append(h)
+                    except OSError:
+                        missing.append(h)
+                if progress is not None and (done%50==0 or done==len(hashes)):
+                    progress(done,len(hashes),h,'checked')
+            return {'source':source,'source_key':source_key,'checked':checked,
+                    'ok':checked-len(bad)-len(missing),'bad':bad,'missing':missing,
+                    'cancelled':cancelled}
+        catalog_path=self.root/'catalog.sqlite3'
+        if not catalog_path.is_file():
+            if self._settings_exist(source,source_key):
+                return {'source':source,'source_key':source_key,'checked':0,'ok':0,
+                        'bad':[],'missing':[],'cancelled':False}
+            raise ValueError('Unknown catalog source')
+        with closing(sqlite3.connect(str(catalog_path),timeout=30)) as conn:
+            conn.execute('PRAGMA query_only=ON')
+            rows=conn.execute(
+                'SELECT file_hash,path FROM source_files WHERE source_type=? ORDER BY path',
+                (source_key,)).fetchall()
+        if not rows and not self._settings_exist(source,source_key):
+            raise ValueError('Unknown catalog source')
+        bad=[]; missing=[]; checked=0; cancelled=False
+        for done,(expected,recorded) in enumerate(rows,1):
+            if cancel_event is not None and cancel_event.is_set():
+                cancelled=True; break
+            checked+=1
+            path=Path(recorded).expanduser()
+            try:
+                if path.is_symlink() or not path.is_file():
+                    missing.append(recorded)
+                else:
+                    with path.open('rb') as handle:
+                        if hashlib.file_digest(handle,'sha256').hexdigest()!=expected:
+                            bad.append(recorded)
+            except OSError:
+                missing.append(recorded)
+            if progress is not None:
+                progress(done,len(rows),recorded,'checked')
+        return {'source':source,'source_key':source_key,'checked':checked,
+                'ok':checked-len(bad)-len(missing),'bad':bad,'missing':missing,
+                'cancelled':cancelled}
     def source_remove(self, source, source_key, confirm=False):
         """Remove a source after an explicit confirmation, reporting what was kept."""
         if confirm is not True:

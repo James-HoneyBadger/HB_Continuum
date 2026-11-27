@@ -167,6 +167,18 @@ class IPCServerTests(unittest.TestCase):
             'source_set_enabled',source='email',source_key='x',enabled='yes'))['error']['code'],
             'INVALID_PARAMS')
 
+    def test_source_verify_job_is_scoped_to_an_account(self):
+        with self.a.db:
+            self.a.db.execute('INSERT INTO origins VALUES(?,?,?,?,?)',
+                              ('imap.example|me','INBOX','1','1',self.h))
+        started=self.server.handle(request(
+            'source_verify',source='email',source_key='imap.example|me'))
+        terminal=self.finish_job(started['result']['job_id'])
+        self.assertEqual(terminal['event'],'job_complete')
+        self.assertEqual((terminal['result']['checked'],terminal['result']['ok']),(1,1))
+        bad=self.server.handle(request('source_verify',source='email',source_key=''))
+        self.assertEqual(bad['error']['code'],'INVALID_PARAMS')
+
     def test_sources_reports_accounts_and_footprint(self):
         with self.a.db:
             self.a.db.execute('INSERT INTO origins VALUES(?,?,?,?,?)',
