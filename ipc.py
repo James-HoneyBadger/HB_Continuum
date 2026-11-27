@@ -44,6 +44,17 @@ def _ro_connect(path):
     conn.execute('PRAGMA query_only=ON')
     return conn
 
+def _attachments(conn, digest):
+    """Indexed attachment metadata; legacy archives without the table yield none."""
+    try:
+        rows = conn.execute(
+            'SELECT filename,mime,length(content) FROM attachment_index WHERE hash=? ORDER BY part',
+            (digest,)).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [{'filename': name or '', 'mime': kind or '', 'characters': size or 0}
+            for name, kind, size in rows]
+
 def _message(root, digest):
     path = Path(root) / 'archive.sqlite3'
     if not path.is_file():
@@ -53,13 +64,14 @@ def _message(root, digest):
         row = conn.execute(
             'SELECT subject,sender,date,message_id,reply_to,body FROM messages WHERE hash=?',
             (digest,)).fetchone()
+        attachments = _attachments(conn, digest)
     finally:
         conn.close()
     if row is None:
         raise IPCError('NOT_FOUND', 'message not found')
     return {'hash': digest, 'subject': row[0] or '', 'sender': row[1] or '',
             'date': row[2] or '', 'message_id': row[3] or '', 'reply_to': row[4] or '',
-            'body': row[5] or ''}
+            'body': row[5] or '', 'attachments': attachments}
 
 def _thread_hashes(conn, digest):
     row = conn.execute('SELECT message_id,reply_to FROM messages WHERE hash=?', (digest,)).fetchone()
@@ -92,7 +104,8 @@ def _thread(root, digest):
             row = conn.execute(
                 'SELECT subject,sender,date,body FROM messages WHERE hash=?', (member,)).fetchone()
             messages.append({'hash': member, 'subject': row[0] or '', 'sender': row[1] or '',
-                             'date': row[2] or '', 'body': row[3] or ''})
+                             'date': row[2] or '', 'body': row[3] or '',
+                             'attachments': _attachments(conn, member)})
     finally:
         conn.close()
     return {'hash': digest, 'messages': messages}

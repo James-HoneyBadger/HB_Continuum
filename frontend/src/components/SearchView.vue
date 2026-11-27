@@ -170,6 +170,14 @@ async function exportSelected() {
     <section v-if="detail" class="detail">
       <h2>{{ detail.subject || detail.source_key }}</h2>
       <p class="meta">{{ detail.sender || detail.actor }} {{ detail.date || detail.occurred_at }}</p>
+      <div v-if="detail.attachments?.length" class="attachments">
+        <h3>Attachments (indexed metadata)</h3>
+        <ul>
+          <li v-for="(a, i) in detail.attachments" :key="i">
+            {{ a.filename }} · {{ a.mime }} · {{ a.characters }} indexed characters
+          </li>
+        </ul>
+      </div>
       <pre class="body">{{ detail.body }}</pre>
       <details v-if="detail.original_json">
         <summary>Original record JSON</summary>
@@ -246,6 +254,13 @@ button {
   border-top: 2px solid #ccc;
   margin-top: 20px;
   padding-top: 12px;
+}
+.attachments {
+  margin-bottom: 12px;
+}
+.attachments ul {
+  margin: 4px 0 0;
+  padding-left: 20px;
 }
 .body {
   white-space: pre-wrap;

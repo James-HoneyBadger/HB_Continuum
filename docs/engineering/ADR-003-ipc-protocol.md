@@ -20,8 +20,13 @@ spawned as `python3 dispatch.py --archive <root> serve`.
   either `result` or `error: {code, message}`.
 - Long-running jobs emit `event` objects (`progress`, `job_complete`,
   `job_error`) tagged with a `job_id`.
-- Methods are an explicit allowlist: `ping`, `stats`, `search`, `summarize`,
-  `cancel`, `shutdown`.
+- Methods are an explicit allowlist: `ping`, `stats`, `search`, `message`,
+  `thread`, `record`, `verify`, `import_eml`, `preferences`,
+  `preferences_set`, the `research_*` overlay methods, `export_evidence`,
+  the `schedule_*` methods, `summarize`, `cancel` and `shutdown`.
+- `message` and `thread` results carry the body text and indexed attachment
+  metadata (`filename`, `mime`, `characters`); an archive without the
+  attachment index reports an empty list rather than failing.
 - Parameters are validated; unknown methods and versions are rejected.
 
 ## Alternatives considered

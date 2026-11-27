@@ -57,7 +57,8 @@ Phase A — Stabilization (repository audit in progress).
   foreign keys, index coverage and raw hashes; `dispatch recover-orphans`;
   verified `dispatch backup` / `verify-backup` / `restore` with SHA-256
   manifests; symlink and busy archive rejection; cooperative locking across
-  ingest, sync, reindex, recovery and backup.
+  ingest, sync, reindex, recovery and backup; attachment metadata over IPC
+  and in the Tauri reader.
   Python subprocess client driving `stats`, `search`, `message`, `thread`,
   `record`, `verify`, `import_eml`, `preferences`, and the full research
   overlay (workspaces, saved searches, tags, fields, metadata, reports with
@@ -99,9 +100,10 @@ relationships explorers, and the documentation overhaul
   `docs/AI_SUMMARIZATION.md` added.
 - Archive hardening (branch `develop/engine-expansion`): `mime_index.py`,
   `backup.py`, `tests/test_hardening.py`, `docs/ARCHIVE_HARDENING.md` added;
-  `dispatch.py`, `desktop.py`, `migrations.py`, `mypy.ini`,
+  `dispatch.py`, `desktop.py`, `ipc.py`, `migrations.py`, `mypy.ini`,
   `.github/workflows/ci.yml`, `README.md`, `docs/MIGRATION.md`,
-  `tests/test_migrations.py` modified.
+  `frontend/src/components/SearchView.vue`, `tests/test_migrations.py`,
+  `tests/test_ipc.py` modified.
 
 ## Database changes
 
@@ -134,9 +136,9 @@ relationships explorers, and the documentation overhaul
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 144 tests, all pass (29 baseline
+- `python3 -m unittest discover -s tests`: 146 tests, all pass (29 baseline
   + 5 search-worker + 14 Facebook importer + 9 summarization + 4 unified
-  search + 24 IPC + 26 scheduler + 1 Windows-path tick + 17 migrations + 15
+  search + 26 IPC + 26 scheduler + 1 Windows-path tick + 17 migrations + 15
   archive hardening).
 - `mypy` (2.4.1, matching CI): no issues in 19 source files.
 - End-to-end CLI smoke tests of `dispatch facebook preview/import/search/
@@ -150,7 +152,7 @@ relationships explorers, and the documentation overhaul
 
 ## Test results
 
-144 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
+146 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
 frontend and Rust builds pass; IPC surfaces smoke-tested end-to-end over the
 real subprocess protocol.
 
@@ -208,8 +210,8 @@ Scheduler verification status:
 
 ## Next recommended tasks
 
-1. Surface attachment metadata and archive health through the IPC protocol
-   and the Tauri shell, which currently expose only message bodies.
+1. Surface archive health and recovery through the IPC protocol and the
+   Tauri shell; attachment metadata is now exposed for messages and threads.
 2. Support Facebook post/comment revision entries and message attachments
    metadata.
 3. Close PR #4 as superseded and reconcile PR #5 branding with this branch.

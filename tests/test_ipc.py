@@ -64,6 +64,21 @@ class IPCServerTests(unittest.TestCase):
         self.assertIn('Bullion receipt',resp['result']['body'])
         self.assertEqual(self.server.handle(request('message',hash='0'*64))['error']['code'],'NOT_FOUND')
 
+    def test_message_includes_attachment_metadata(self):
+        from email.message import EmailMessage
+        m=EmailMessage(); m['Subject']='Receipt'; m.set_content('body')
+        m.add_attachment(b'attachedtext',maintype='text',subtype='plain',filename='note.txt')
+        h=self.a.ingest(m.as_bytes())
+        resp=self.server.handle(request('message',hash=h))
+        self.assertEqual([(a['filename'],a['mime']) for a in resp['result']['attachments']],
+                         [('note.txt','text/plain')])
+        self.assertEqual(resp['result']['attachments'][0]['characters'],len('attachedtext'))
+
+    def test_message_tolerates_archive_without_attachment_index(self):
+        with self.a.db: self.a.db.execute('DROP TABLE attachment_index')
+        resp=self.server.handle(request('message',hash=self.h))
+        self.assertEqual(resp['result']['attachments'],[])
+
     def test_thread(self):
         reply=self.a.ingest(b'From: b@example.invalid\r\nSubject: Re: invoice\r\n'
                             b'Message-ID: <reply@example.invalid>\r\nIn-Reply-To: <test@example.invalid>\r\n\r\nReply.\r\n')
