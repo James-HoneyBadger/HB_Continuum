@@ -154,6 +154,35 @@ landed (Overview dashboard, design tokens, timeline pagination).
   retrospective user records stored in the research overlay, never merged
   with preserved evidence.
 
+### Source enable/disable and safe removal (2026-11-27)
+
+- Archive schema 6 adds `source_settings` and an append-only
+  `source_events` audit log. Disabling a source stops new automatic imports
+  (including scheduled runs) while its historical records remain searchable
+  and visible. Manual synchronization refuses a disabled account.
+- `source_removal_preview` returns exact counts before anything changes:
+  mailbox origins, unique messages deleted, shared messages retained, raw
+  bytes freed, catalog records/files, and a plain-language explanation.
+  Removal requires `confirm=true`; the IPC layer refuses otherwise with
+  `CONFIRMATION_REQUIRED`.
+- Email removal deletes only mailbox origins for the account and messages
+  whose only account is that one. Shared messages keep their other origins;
+  `.eml`-imported messages have no account and are untouched. Research
+  annotations remain in the overlay (content-addressed hashes reattach on
+  re-import). Files are removed after the transaction and any failure is
+  reported rather than hidden.
+- Catalog removal deletes that source type's records and file references;
+  original export files on disk are untouched.
+- Found and fixed a real defect while implementing removal: catalog v2 used
+  external-content FTS5 delete syntax on a contentful table, so deleting a
+  catalog record failed with `SQL logic error`. Catalog schema 3 replaces the
+  trigger; existing catalogs are repaired on open.
+- Sources workspace adds status badges, Enable/Disable, a preview-first
+  removal flow and recent source activity. Scheduled profiles skip disabled
+  accounts as `disabled` without recording an attempt.
+- Fixed a leaked archive connection when migration was refused by the
+  archive lock (surfaced by ResourceWarning under the test suite).
+
 ### Benchmarks and stored original sizes (2026-11-27)
 
 - Added `scripts/benchmark.py`, a deterministic synthetic benchmark harness
@@ -219,6 +248,11 @@ until the shell's flows are exercised against real archives.
 
 ## Files changed
 
+- Source-management increment (2026-11-27): `migrations.py`, `dispatch.py`,
+  `schedule.py`, `ipc.py`, `src-tauri/src/lib.rs`,
+  `frontend/src/components/SourcesView.vue`, `tests/test_sources.py` (new),
+  `tests/test_ipc.py`, `tests/test_schedule.py`, `tests/test_migrations.py`,
+  `tests/test_facebook.py`, `docs/MIGRATION.md`.
 - Benchmark increment (2026-11-27): `scripts/benchmark.py` (new),
   `docs/BENCHMARKS.md` (new), `migrations.py`, `dispatch.py`, `ipc.py`,
   `tests/test_benchmark.py` (new), `tests/test_migrations.py`,
@@ -278,13 +312,15 @@ until the shell's flows are exercised against real archives.
 ## Database changes
 
 - Schema versioning lives in `migrations.py`, shared by all three databases
-  and tracked with `PRAGMA user_version`; `archive` is at version 4, `catalog`
-  at version 2 and `research` at version 2. Archive version 2 adds
+  and tracked with `PRAGMA user_version`; `archive` is at version 6, `catalog`
+  at version 3 and `research` at version 2. Archive version 2 adds
   `attachment_index` and `extraction_versions`; version 3 adds `sort_ts`,
   `date_precision` and the `messages_sort_ts` index (additive, with a
   transactional backfill); version 4 adds `import_runs` and its time index;
-  version 5 adds `messages.size`, backfilled from the stored originals.
-  Research version 2 adds `journal_entries` and `journal_revisions`.
+  version 5 adds `messages.size`, backfilled from the stored originals;
+  version 6 adds `source_settings` and `source_events`. Research version 2
+  adds `journal_entries` and `journal_revisions`. Catalog version 3 repairs
+  the delete/update FTS triggers.
 - New source-independent catalog database `catalog.sqlite3` with
   `source_files` and `records` tables plus a trigger-maintained FTS5
   `record_search` index, governed by a `PRAGMA user_version`-based migration
@@ -309,11 +345,11 @@ until the shell's flows are exercised against real archives.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 202 tests, 201 pass and 1 is
+- `python3 -m unittest discover -s tests`: 211 tests, 210 pass and 1 is
   skipped on this machine (the optional `keyring` backend is not
   installed). Includes 8 timestamp/chronology tests, 2 real-process lock
-  tests, 5 import-run tests, 6 journal tests, 5 report tests,
-  6 unified-search tests and 46 IPC tests.
+  tests, 5 import-run tests, 6 journal tests, 5 report tests, 8 source
+  management tests, 6 unified-search tests and 48 IPC tests.
 - `mypy` (2.4.1, matching CI): no issues in 19 source files.
 - `cargo test` (src-tauri): 3 tests pass, covering bundled-sidecar
   preference, the development script fallback and resolution from a bare
@@ -339,11 +375,11 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-202 Python tests ran: 201 passed, 0 failed, 1 skipped (Python 3.13.6,
+211 Python tests ran: 210 passed, 0 failed, 1 skipped (Python 3.13.6,
 macOS ARM64); `npm run build` (vue-tsc + vite), `cargo check` and
-`cargo test` pass; background EML import, import history, sources, journal
-and archive-report IPC surfaces are covered by tests over the real
-subprocess protocol.
+`cargo test` pass; background EML import, import history, sources, source
+removal, journal and archive-report IPC surfaces are covered by tests over
+the real subprocess protocol.
 
 Scheduler verification status:
 
@@ -409,9 +445,11 @@ Scheduler verification status:
 - Archive locking is implemented for POSIX and Windows and tested with real
   processes on macOS; the Windows code path has not yet run on Windows in
   this environment.
-- The desktop shell now has Source Manager, import history, a Journal and
-  archive reports, but still lacks record-collection and relationship
-  workspaces, and source enable/disable/removal.
+- The desktop shell now has a Source Manager with enable/disable and
+  preview-first removal, import history, a Journal and archive reports, but
+  still lacks record-collection and relationship workspaces.
+- Disabling a source stops new automatic imports; it does not hide that
+  source's historical records from search or the timeline.
 - Import history is best-effort for Facebook imports: a completed import
   reports `history_error` rather than failing when the run cannot be logged.
 
@@ -431,7 +469,8 @@ Scheduler verification status:
 3. Close PR #4 as superseded and reconcile PR #5 branding with this branch.
 4. Extend unified search with a paged FTS contract so results are not
    capped at 5000, and add record-kind filters to the advanced query UI.
-5. Add source enable/disable and an explicit removal workflow that explains
-   what happens to shared records; add per-source integrity status.
+5. Add per-source integrity status (verification scoped to one account or
+   catalog source) and an optional "hide disabled sources from default views"
+   preference.
 6. Run the benchmark harness on Windows and Linux and add a 1M-record run
    before making large-archive claims.

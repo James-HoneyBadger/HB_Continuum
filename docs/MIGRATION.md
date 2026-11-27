@@ -117,6 +117,27 @@ A record whose original is missing keeps `NULL`, and summary code falls back
 to inspecting the filesystem, so a damaged archive still reports an honest
 size rather than zero.
 
+## Archive version 6: source settings and activity
+
+Version 6 adds:
+
+- `source_settings` — one row per source with an optional `disabled_at`
+  timestamp and note. A disabled source performs no new automatic imports;
+  its historical records remain searchable and visible.
+- `source_events` — an append-only audit log of enable, disable and removal
+  actions, with a timestamp and detail.
+
+Neither table contains message content or credentials.
+
+## Catalog version 3: corrected FTS delete trigger
+
+The version 2 delete and update triggers used external-content FTS5 syntax
+on the contentful `record_search` table, so deleting a catalog record raised
+`SQL logic error`. Version 3 replaces them with plain
+`DELETE FROM record_search WHERE rowid = old.rowid`, which is correct for a
+contentful table. Existing catalogs are repaired on next open; search rows
+stay consistent.
+
 ## Research version 2: journal entries
 
 Version 2 adds two tables to `research.sqlite3`:

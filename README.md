@@ -106,7 +106,9 @@ Create workspaces, saved queries, classification rules, tags, custom metadata an
 
 Desktop imports run as cancellable background jobs with real progress. Every EML, IMAP and Facebook import appends a run to the archive's import history, recording what was examined, what was new, what already existed and what failed. A killed process is reported as interrupted rather than rewritten as success.
 
-The Sources workspace derives coverage from stored provenance: unique messages and mailbox occurrences per account, folders read, normalized date coverage, last import status, catalog sources and storage footprint. It states explicitly that importing folders never proves an account is complete. Importing `.eml` files preserves messages without inventing an account. See [Migration and compatibility](docs/MIGRATION.md) for the history schema.
+The Sources workspace derives coverage from stored provenance: unique messages and mailbox occurrences per account, folders read, normalized date coverage, last import status, catalog sources and storage footprint. It states explicitly that importing folders never proves an account is complete. Importing `.eml` files preserves messages without inventing an account.
+
+Sources can be disabled — stopping new automatic imports while every historical record stays searchable — and re-enabled. Removal is preview-first: HB Continuum counts the unique messages, shared duplicates and raw bytes involved and explains what will be kept before anything is deleted. Messages shared with another account, and messages imported from `.eml` files, are never removed by an account removal. Removing a catalog source deletes its catalog records, not the original export files. See [Migration and compatibility](docs/MIGRATION.md) for the schemas and audit log.
 
 ## Journal and archive reports
 
