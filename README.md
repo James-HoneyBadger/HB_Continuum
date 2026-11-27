@@ -105,6 +105,17 @@ python3 dispatch.py search-all "receipt"
 python3 dispatch.py search-all "bullion" --sources facebook
 ```
 
+**Desktop app (in development)** — a Tauri 2 shell with a Vue 3 interface
+drives the Python engine over the versioned IPC protocol. From a checkout:
+
+```sh
+cd frontend && npm install
+npm run tauri -- dev
+```
+
+The Tkinter workstation (`dispatch gui`) remains the stable fallback until
+the new shell reaches functional parity.
+
 ## License and community
 
 Copyright (c) 2026 Honey Badger Universe.
