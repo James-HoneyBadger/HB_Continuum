@@ -173,6 +173,12 @@ landed (Overview dashboard, design tokens, timeline pagination).
   reported rather than hidden.
 - Catalog removal deletes that source type's records and file references;
   original export files on disk are untouched.
+- Per-source integrity verification: `verify_source` checks only the message
+  hashes reachable from one email account, or re-hashes the recorded export
+  files for one catalog source where they still exist. It runs as a
+  cancellable background job with progress and reports checked/verified/
+  altered/missing counts; the Sources workspace shows the result and states
+  that hashes are not legal certification.
 - Found and fixed a real defect while implementing removal: catalog v2 used
   external-content FTS5 delete syntax on a contentful table, so deleting a
   catalog record failed with `SQL logic error`. Catalog schema 3 replaces the
@@ -345,11 +351,11 @@ until the shell's flows are exercised against real archives.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 211 tests, 210 pass and 1 is
+- `python3 -m unittest discover -s tests`: 215 tests, 214 pass and 1 is
   skipped on this machine (the optional `keyring` backend is not
   installed). Includes 8 timestamp/chronology tests, 2 real-process lock
-  tests, 5 import-run tests, 6 journal tests, 5 report tests, 8 source
-  management tests, 6 unified-search tests and 48 IPC tests.
+  tests, 5 import-run tests, 6 journal tests, 5 report tests, 11 source
+  management/verification tests, 6 unified-search tests and 49 IPC tests.
 - `mypy` (2.4.1, matching CI): no issues in 19 source files.
 - `cargo test` (src-tauri): 3 tests pass, covering bundled-sidecar
   preference, the development script fallback and resolution from a bare
@@ -375,11 +381,11 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-211 Python tests ran: 210 passed, 0 failed, 1 skipped (Python 3.13.6,
+215 Python tests ran: 214 passed, 0 failed, 1 skipped (Python 3.13.6,
 macOS ARM64); `npm run build` (vue-tsc + vite), `cargo check` and
 `cargo test` pass; background EML import, import history, sources, source
-removal, journal and archive-report IPC surfaces are covered by tests over
-the real subprocess protocol.
+removal, source verification, journal and archive-report IPC surfaces are
+covered by tests over the real subprocess protocol.
 
 Scheduler verification status:
 
@@ -469,8 +475,7 @@ Scheduler verification status:
 3. Close PR #4 as superseded and reconcile PR #5 branding with this branch.
 4. Extend unified search with a paged FTS contract so results are not
    capped at 5000, and add record-kind filters to the advanced query UI.
-5. Add per-source integrity status (verification scoped to one account or
-   catalog source) and an optional "hide disabled sources from default views"
-   preference.
+5. Add an optional "hide disabled sources from default views" preference and
+   a source-level repair workflow for altered or missing originals.
 6. Run the benchmark harness on Windows and Linux and add a 1M-record run
    before making large-archive claims.
