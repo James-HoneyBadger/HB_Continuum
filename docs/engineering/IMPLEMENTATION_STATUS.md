@@ -198,10 +198,11 @@ landed (Overview dashboard, design tokens, timeline pagination).
   root wrappers, tests and scripts, and mypy checks the package plus the Tk
   UI modules.
 - Verified: 252 tests with no failures, CLI `--version`/`import`/`search`,
-  a subprocess IPC `ping`/`shutdown` session, and `build_engine.py
-  --print-command`. A fresh PyInstaller binary was not built in this
-  environment because PyInstaller is not installed; the CI packaging job
-  remains the build verification.
+  a subprocess IPC `ping`/`shutdown` session, and a fresh PyInstaller 6.22.3
+  sidecar built on macOS ARM64 with Python 3.13.7. `build_engine.py
+  --no-copy --smoke` passed, and the frozen binary served `search_advanced`
+  and `relationships` over IPC. Tkinter was absent from the build
+  environment; the Tauri shell does not use it.
 
 ### Advanced boolean queries (2026-11-27)
 
@@ -529,6 +530,9 @@ until the shell's flows are exercised against real archives.
 - Bundled engine built locally with PyInstaller 6.22.3 (aarch64 Linux) and
   smoke-tested outside the repository: `--version`, `import`, `search`,
   `health` and an IPC `ping`/`health`/`shutdown` session all pass.
+- Engine package sidecar rebuilt with PyInstaller 6.22.3 on macOS ARM64
+  (Python 3.13.7): `--no-copy --smoke` passed, and the frozen binary served
+  `search_advanced` and `relationships` over IPC.
 - Packaging layout verified with `tauri build --debug --no-bundle --config
   src-tauri/tauri.bundle.conf.json`: Tauri copied `hb-engine` next to the
   application, and the app launched under Xvfb spawned that engine and served
