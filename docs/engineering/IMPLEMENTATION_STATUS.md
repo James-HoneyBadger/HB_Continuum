@@ -154,6 +154,22 @@ landed (Overview dashboard, design tokens, timeline pagination).
   retrospective user records stored in the research overlay, never merged
   with preserved evidence.
 
+### Archive reports (2026-11-27, fourth increment)
+
+- New `reporting.py` renders an independently understandable archive report
+  to Markdown, JSON or standalone HTML from inventory, dashboard, health and
+  import-history data. Rendering is pure and HTML escapes every untrusted
+  value.
+- The report contains a summary, date coverage, records by year, email
+  accounts, catalog sources, consistency counts, recent imports and explicit
+  limitations. It states plainly that stored counts are not remote truth and
+  that hash verification is not legal certification.
+- `report_archive` is a background IPC job with progress and cancellation.
+  It refuses destinations inside the archive, missing folders, a mismatched
+  extension and any existing file; generation never overwrites.
+- New Reports workspace: format selection, native save dialog, progress,
+  cancellation and the written path/size. Add the report Tauri command.
+
 ## Pending capabilities
 
 See `BASELINE_AUDIT.md` section 9. In brief: local embeddings/hybrid
@@ -180,6 +196,11 @@ until the shell's flows are exercised against real archives.
 
 ## Files changed
 
+- Reports increment (2026-11-27): `reporting.py` (new), `ipc.py`,
+  `src-tauri/src/lib.rs`, `frontend/src/App.vue`,
+  `frontend/src/components/ReportsView.vue` (new),
+  `tests/test_reporting.py` (new), `tests/test_ipc.py`,
+  `.github/workflows/ci.yml`, `mypy.ini`.
 - Journal increment (2026-11-27): `migrations.py`, `research.py`, `ipc.py`,
   `src-tauri/src/lib.rs`, `frontend/src/App.vue`,
   `frontend/src/components/JournalView.vue` (new), `tests/test_journal.py`
@@ -257,11 +278,11 @@ until the shell's flows are exercised against real archives.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 190 tests, 189 pass and 1 is
+- `python3 -m unittest discover -s tests`: 196 tests, 195 pass and 1 is
   skipped on this machine (the optional `keyring` backend is not
   installed). Includes 8 timestamp/chronology tests, 2 real-process lock
-  tests, 5 import-run tests, 6 journal tests, 6 unified-search tests and
-  45 IPC tests.
+  tests, 5 import-run tests, 6 journal tests, 5 report tests,
+  6 unified-search tests and 46 IPC tests.
 - `mypy` (2.4.1, matching CI): no issues in 19 source files.
 - `cargo test` (src-tauri): 3 tests pass, covering bundled-sidecar
   preference, the development script fallback and resolution from a bare
@@ -287,10 +308,11 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-190 Python tests ran: 189 passed, 0 failed, 1 skipped (Python 3.13.6,
+196 Python tests ran: 195 passed, 0 failed, 1 skipped (Python 3.13.6,
 macOS ARM64); `npm run build` (vue-tsc + vite), `cargo check` and
-`cargo test` pass; background EML import, import history, sources and
-journal IPC surfaces are covered by tests over the real subprocess protocol.
+`cargo test` pass; background EML import, import history, sources, journal
+and archive-report IPC surfaces are covered by tests over the real
+subprocess protocol.
 
 Scheduler verification status:
 
@@ -347,8 +369,9 @@ Scheduler verification status:
 - Archive locking is implemented for POSIX and Windows and tested with real
   processes on macOS; the Windows code path has not yet run on Windows in
   this environment.
-- The desktop shell now has Source Manager, import history and a Journal,
-  but still lacks the report and record-collection workspaces.
+- The desktop shell now has Source Manager, import history, a Journal and
+  archive reports, but still lacks record-collection and relationship
+  workspaces, and source enable/disable/removal.
 - Import history is best-effort for Facebook imports: a completed import
   reports `history_error` rather than failing when the run cannot be logged.
 
