@@ -112,6 +112,10 @@ Each account or catalog source can be verified independently: email checks are s
 
 Sources can be disabled — stopping new automatic imports while every historical record stays searchable — and re-enabled. Removal is preview-first: HB Continuum counts the unique messages, shared duplicates and raw bytes involved and explains what will be kept before anything is deleted. Messages shared with another account, and messages imported from `.eml` files, are never removed by an account removal. Removing a catalog source deletes its catalog records, not the original export files. See [Migration and compatibility](docs/MIGRATION.md) for the schemas and audit log.
 
+## Evidence collections
+
+Group selected records into named collections inside a research workspace. Items are references to preserved records — SHA-256 hashes for email, record ids for catalog entries — with optional notes. Nothing is copied into the research overlay, and deleting a collection never deletes an archived record. A referenced record that disappears stays listed and is marked missing. Collections export as Markdown or JSON evidence manifests with stable identifiers, notes and explicit limitations, and never replace an existing file. Selected search results can be added to a collection directly from the Search workspace.
+
 ## Journal and archive reports
 
 The Journal stores your own retrospective entries in the research overlay, separate from preserved evidence. Every edit adds a revision; saving without changes adds nothing. Removal is soft, so history stays inspectable and the entry can be restored.

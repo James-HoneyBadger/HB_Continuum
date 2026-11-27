@@ -154,6 +154,26 @@ landed (Overview dashboard, design tokens, timeline pagination).
   retrospective user records stored in the research overlay, never merged
   with preserved evidence.
 
+### Evidence collections (2026-11-27)
+
+- Research schema 3 adds `collections` and `collection_items`. A collection is
+  a named, described evidence set in a workspace; items reference preserved
+  records by content hash (email) or record id (catalog), with an optional
+  note. Items are unique per collection and re-adding updates the note.
+- Nothing is copied into the research overlay and deleting a collection never
+  deletes archived records. A missing referenced record stays in the list and
+  is marked missing.
+- `collection_export` writes a Markdown or JSON evidence manifest with stable
+  identifiers, titles, notes and explicit limitations (references, not
+  contents; hashes are not legal certification). Manifests are written outside
+  the archive and never replace an existing file.
+- New Collections workspace: create/delete collections, inspect items with
+  resolved titles, add by identifier, remove items and export a manifest.
+  Search results can be added to a selected collection directly, keeping the
+  identifiers visible.
+- Tests cover membership, duplicate names, unknown records, missing-record
+  reporting, cascade deletion and manifest rendering/writing.
+
 ### Source enable/disable and safe removal (2026-11-27)
 
 - Archive schema 6 adds `source_settings` and an append-only
@@ -254,6 +274,11 @@ until the shell's flows are exercised against real archives.
 
 ## Files changed
 
+- Collections increment (2026-11-27): `migrations.py`, `research.py`,
+  `reporting.py`, `ipc.py`, `src-tauri/src/lib.rs`, `frontend/src/App.vue`,
+  `frontend/src/components/CollectionsView.vue` (new),
+  `frontend/src/components/SearchView.vue`, `tests/test_collections.py`
+  (new), `tests/test_ipc.py`, `docs/MIGRATION.md`.
 - Source-management increment (2026-11-27): `migrations.py`, `dispatch.py`,
   `schedule.py`, `ipc.py`, `src-tauri/src/lib.rs`,
   `frontend/src/components/SourcesView.vue`, `tests/test_sources.py` (new),
@@ -319,14 +344,15 @@ until the shell's flows are exercised against real archives.
 
 - Schema versioning lives in `migrations.py`, shared by all three databases
   and tracked with `PRAGMA user_version`; `archive` is at version 6, `catalog`
-  at version 3 and `research` at version 2. Archive version 2 adds
+  at version 3 and `research` at version 3. Archive version 2 adds
   `attachment_index` and `extraction_versions`; version 3 adds `sort_ts`,
   `date_precision` and the `messages_sort_ts` index (additive, with a
   transactional backfill); version 4 adds `import_runs` and its time index;
   version 5 adds `messages.size`, backfilled from the stored originals;
   version 6 adds `source_settings` and `source_events`. Research version 2
-  adds `journal_entries` and `journal_revisions`. Catalog version 3 repairs
-  the delete/update FTS triggers.
+  adds `journal_entries` and `journal_revisions`; research version 3 adds
+  `collections` and `collection_items`. Catalog version 3 repairs the
+  delete/update FTS triggers.
 - New source-independent catalog database `catalog.sqlite3` with
   `source_files` and `records` tables plus a trigger-maintained FTS5
   `record_search` index, governed by a `PRAGMA user_version`-based migration
@@ -351,11 +377,12 @@ until the shell's flows are exercised against real archives.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 215 tests, 214 pass and 1 is
+- `python3 -m unittest discover -s tests`: 222 tests, 221 pass and 1 is
   skipped on this machine (the optional `keyring` backend is not
   installed). Includes 8 timestamp/chronology tests, 2 real-process lock
-  tests, 5 import-run tests, 6 journal tests, 5 report tests, 11 source
-  management/verification tests, 6 unified-search tests and 49 IPC tests.
+  tests, 5 import-run tests, 6 journal tests, 6 collection tests, 5 report
+  tests, 11 source management/verification tests, 6 unified-search tests and
+  50 IPC tests.
 - `mypy` (2.4.1, matching CI): no issues in 19 source files.
 - `cargo test` (src-tauri): 3 tests pass, covering bundled-sidecar
   preference, the development script fallback and resolution from a bare
@@ -381,11 +408,11 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-215 Python tests ran: 214 passed, 0 failed, 1 skipped (Python 3.13.6,
+222 Python tests ran: 221 passed, 0 failed, 1 skipped (Python 3.13.6,
 macOS ARM64); `npm run build` (vue-tsc + vite), `cargo check` and
 `cargo test` pass; background EML import, import history, sources, source
-removal, source verification, journal and archive-report IPC surfaces are
-covered by tests over the real subprocess protocol.
+removal, source verification, journal, collections and archive-report IPC
+surfaces are covered by tests over the real subprocess protocol.
 
 Scheduler verification status:
 
@@ -451,9 +478,10 @@ Scheduler verification status:
 - Archive locking is implemented for POSIX and Windows and tested with real
   processes on macOS; the Windows code path has not yet run on Windows in
   this environment.
-- The desktop shell now has a Source Manager with enable/disable and
-  preview-first removal, import history, a Journal and archive reports, but
-  still lacks record-collection and relationship workspaces.
+- The desktop shell now has a Source Manager with enable/disable, per-source
+  verification and preview-first removal, import history, Collections, a
+  Journal and archive reports, but still lacks the relationship explorer,
+  research report drafts and a graphical advanced query builder.
 - Disabling a source stops new automatic imports; it does not hide that
   source's historical records from search or the timeline.
 - Import history is best-effort for Facebook imports: a completed import
@@ -475,7 +503,9 @@ Scheduler verification status:
 3. Close PR #4 as superseded and reconcile PR #5 branding with this branch.
 4. Extend unified search with a paged FTS contract so results are not
    capped at 5000, and add record-kind filters to the advanced query UI.
-5. Add an optional "hide disabled sources from default views" preference and
-   a source-level repair workflow for altered or missing originals.
-6. Run the benchmark harness on Windows and Linux and add a 1M-record run
+5. Add collection selection from the timeline and record reader, report
+   drafts built from a collection, and an optional "hide disabled sources
+   from default views" preference.
+6. Implement the relationship/network explorer over documented associations.
+7. Run the benchmark harness on Windows and Linux and add a 1M-record run
    before making large-archive claims.

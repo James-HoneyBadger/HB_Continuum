@@ -155,6 +155,23 @@ or the raw originals, and soft deletion keeps every revision available for
 inspection and restore. The migration is additive; existing workspaces,
 tags, rules, fields and reports are untouched.
 
+## Research version 3: evidence collections
+
+Version 3 adds:
+
+- `collections` — named, described evidence sets inside a workspace. Deleting a
+  workspace cascades to its collections.
+- `collection_items` — references to preserved records (`email` by SHA-256,
+  `catalog` by record id) plus an optional note and the time added. Items are
+  unique per collection; re-adding a record updates its note.
+
+Items are references only. No message body, attachment or original bytes are
+copied into the research overlay, and deleting a collection never deletes an
+archived record. If a referenced record has been removed, the collection
+still lists the item and marks it missing rather than silently dropping it.
+Manifests (Markdown or JSON) contain the identifiers, titles, notes and
+limitations, not the record contents.
+
 ## Inspecting and migrating
 
 Opening the archive at all (`dispatch`, `dispatch gui`, the desktop shell)
