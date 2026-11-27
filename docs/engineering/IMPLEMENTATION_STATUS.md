@@ -107,9 +107,9 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 ## Tests executed
 
 - `python3 -m py_compile` on changed files: pass.
-- `python3 -m unittest discover -s tests`: 107 tests, all pass (29 baseline
+- `python3 -m unittest discover -s tests`: 111 tests, all pass (29 baseline
   + 5 search-worker + 14 Facebook importer + 9 summarization + 4 unified
-  search + 24 IPC + 22 scheduler).
+  search + 24 IPC + 26 scheduler).
 - End-to-end CLI smoke tests of `dispatch facebook preview/import/search/
   list`, `dispatch summarize run --all` (fake loopback Ollama),
   `dispatch search-all`, and `dispatch serve` (subprocess protocol): pass.
@@ -119,12 +119,21 @@ Me, cross-platform scheduling, packaging, documentation overhaul.
 
 ## Test results
 
-107 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
+111 Python tests passed, 0 failed, 0 skipped (Python 3.12, Linux);
 frontend and Rust builds pass; IPC surfaces smoke-tested end-to-end over the
-real subprocess protocol (import, tag, workspace, saved search, field,
-metadata, report preview, schedule profile). Scheduler strategies are tested
-with mocked subprocess calls for all three platforms; real systemd/launchd/
-schtasks installation was not exercised in this environment.
+real subprocess protocol.
+
+Scheduler verification status:
+
+- **Linux systemd: verified for real** on a machine with a running user
+  session — install produced an `active` timer due at the configured time,
+  `systemd-analyze verify` reported no problems, and uninstall removed the
+  unit files and the `timers.target.wants` symlink with no residue.
+- **macOS launchd and Windows Task Scheduler: verified by mocked
+  subprocess tests only.** `scripts/scheduler_smoke.py` performs a real
+  install/status/uninstall on each platform and is wired into CI
+  (`scheduler` job, ubuntu/macos/windows). It exits 0 with a printed reason
+  when a runner cannot host the scheduler, and fails on a real defect.
 
 ## CI status
 
@@ -153,9 +162,9 @@ schtasks installation was not exercised in this environment.
 
 - No encryption at rest; no OAuth; HTML not rendered on `main` (PR #4 adds
   bounded HTML-to-text); no attachment search on `main`; no migrations.
-- Cross-platform scheduling is implemented but only verified against mocked
-  `launchctl`/`systemctl`/`schtasks`; real installation needs a desktop
-  session (and a Windows runner for Task Scheduler).
+- Cross-platform scheduling: systemd path verified for real; launchd and
+  schtasks are covered by mocked unit tests plus `scripts/scheduler_smoke.py`
+  in CI, not yet by a manual run on macOS or Windows.
 - `sync_lock` is POSIX-only, so Windows has no archive-level write lock.
 
 ## Outstanding defects

@@ -131,6 +131,7 @@ class SystemdScheduler:
                    f'ExecStart={_quote(sync_command(root, account))}\n')
         timer = ('[Unit]\n'
                  'Description=HB Continuum synchronization timer\n\n'
+                 '[Timer]\n'
                  f'{self._timer_section(every, at)}\n'
                  'Persistent=true\n\n'
                  '[Install]\n'
@@ -141,8 +142,15 @@ class SystemdScheduler:
             _run(['systemctl', '--user', 'daemon-reload'])
             _run(['systemctl', '--user', 'enable', '--now', self.base(root) + '.timer'])
         except SchedulerError as exc:
+            unit = self.base(root) + '.timer'
+            _run(['systemctl', '--user', 'disable', '--now', unit], check=False)
             self.timer_path(root).unlink(missing_ok=True)
             self.service_path(root).unlink(missing_ok=True)
+            self._wants_link(root).unlink(missing_ok=True)
+            _run(['systemctl', '--user', 'daemon-reload'], check=False)
+            if 'bad unit file' in str(exc):
+                raise SchedulerError(
+                    f'systemd rejected {self.timer_path(root)}: {exc}') from None
             if 'does not exist' in str(exc):
                 raise SchedulerError(
                     f'systemd could not load {self.timer_path(root)}. The user manager only '
@@ -151,6 +159,9 @@ class SystemdScheduler:
                 ) from None
             raise
         return str(self.timer_path(root))
+
+    def _wants_link(self, root):
+        return self.unit_dir() / 'timers.target.wants' / (self.base(root) + '.timer')
 
     def _require_user_session(self):
         result = _run(['systemctl', '--user', 'show-environment'], check=False)
@@ -161,10 +172,11 @@ class SystemdScheduler:
                 'loginctl enable-linger $USER')
 
     def uninstall(self, root, account=None):
-        if self.timer_path(root).exists():
-            _run(['systemctl', '--user', 'disable', '--now', self.base(root) + '.timer'], check=False)
+        unit = self.base(root) + '.timer'
+        _run(['systemctl', '--user', 'disable', '--now', unit], check=False)
         self.timer_path(root).unlink(missing_ok=True)
         self.service_path(root).unlink(missing_ok=True)
+        self._wants_link(root).unlink(missing_ok=True)
         if self.unit_dir().is_dir():
             _run(['systemctl', '--user', 'daemon-reload'], check=False)
 

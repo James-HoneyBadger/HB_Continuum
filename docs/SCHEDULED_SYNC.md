@@ -33,6 +33,17 @@ from the store when a job runs.
 - **Locking** between overlapping runs is POSIX-only (`sync_lock.py`); Windows
   relies on the single task instance rather than an archive lock.
 
+## Verifying a platform
+
+`scripts/scheduler_smoke.py` installs a real entry, checks its status and
+the generated files, then removes it. It exits 0 when verified or when the
+environment cannot host a scheduler (printing why), and 1 on a genuine
+defect. CI runs it on Ubuntu, macOS and Windows.
+
+```sh
+python3 scripts/scheduler_smoke.py
+```
+
 ## First-time setup
 
 1. Finish any import started with an older version of HB Dispatch. This

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (c) 2026 Honey Badger Universe
-import os, sys, tempfile, unittest
+import configparser, os, sys, tempfile, unittest
 from pathlib import Path
 from unittest import mock
 from schedulers import (LaunchdScheduler, SystemdScheduler, SchtasksScheduler,
@@ -80,6 +80,52 @@ class SystemdTests(unittest.TestCase):
         with mock.patch.dict(os.environ,{},clear=True):
             self.assertEqual(SystemdScheduler(Path('/home/x')).unit_dir(),
                              Path('/home/x/.config/systemd/user'))
+
+    def _sections(self, path):
+        parser=configparser.ConfigParser(strict=False,interpolation=None)
+        parser.optionxform=str
+        parser.read_string(path.read_text())
+        return parser
+
+    def test_units_are_structurally_valid(self):
+        with mock.patch('schedulers._run',return_value=OK):
+            self.s.install(FAKE_ROOT,None,'daily',None,'06:30')
+        timer=self._sections(self.s.timer_path(FAKE_ROOT))
+        service=self._sections(self.s.service_path(FAKE_ROOT))
+        self.assertIn('Timer',timer.sections())
+        self.assertEqual(timer['Timer']['OnCalendar'],'*-*-* 06:30:00')
+        self.assertEqual(timer['Timer']['Persistent'],'true')
+        self.assertEqual(timer['Install']['WantedBy'],'timers.target')
+        self.assertIn('Service',service.sections())
+        self.assertEqual(service['Service']['Type'],'oneshot')
+        self.assertIn('tick',service['Service']['ExecStart'])
+
+    def test_units_are_structurally_valid_for_interval(self):
+        with mock.patch('schedulers._run',return_value=OK):
+            self.s.install(FAKE_ROOT,None,'minutes',15)
+        timer=self._sections(self.s.timer_path(FAKE_ROOT))
+        self.assertEqual(timer['Timer']['OnUnitActiveSec'],'15min')
+        self.assertIn('OnBootSec',timer['Timer'])
+
+    def test_install_cleans_up_wants_symlink_on_failure(self):
+        def run(args,check=True):
+            if 'enable' in args:
+                raise SchedulerError('systemctl exited 1: Unit has a bad unit file setting')
+            return OK
+        with mock.patch('schedulers._run',side_effect=run):
+            with self.assertRaises(SchedulerError) as caught:
+                self.s.install(FAKE_ROOT)
+        self.assertIn('rejected',str(caught.exception))
+        self.assertFalse(self.s.timer_path(FAKE_ROOT).exists())
+        self.assertFalse(self.s.service_path(FAKE_ROOT).exists())
+
+    def test_uninstall_removes_stale_wants_symlink(self):
+        wants=self.s._wants_link(FAKE_ROOT)
+        wants.parent.mkdir(parents=True,exist_ok=True)
+        wants.write_text('')
+        with mock.patch('schedulers._run',return_value=OK):
+            self.s.uninstall(FAKE_ROOT)
+        self.assertFalse(wants.exists())
 
     def test_status(self):
         self.assertEqual(self.s.status(FAKE_ROOT),'Not installed')

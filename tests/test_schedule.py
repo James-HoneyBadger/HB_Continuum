@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (c) 2026 Honey Badger Universe
-import tempfile, unittest
+import os, tempfile, unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -51,6 +51,8 @@ class SchedulingTests(unittest.TestCase):
         self.assertEqual(r['other']['status'],'ok')
         self.assertNotIn('secret should not be logged',(self.root/'schedule-status.json').read_text())
     def test_busy_defers_without_consuming_schedule(self):
+        if os.name!='posix':
+            self.skipTest('sync_lock is a no-op off POSIX')
         write_json(self.root/'schedule.json',{'mail':self.p})
         with sync_lock(self.root):
             result=tick(self.root,now=self.now,get_password=lambda p:'fake')

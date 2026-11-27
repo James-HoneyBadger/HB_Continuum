@@ -48,3 +48,5 @@ line only.
   attacker who can read the home directory.
 - Windows lacks the POSIX archive write lock; a single task instance is the
   only overlap protection there.
+- Real installation was verified on Linux systemd; launchd and schtasks
+  rely on `scripts/scheduler_smoke.py` in CI for equivalent evidence.
