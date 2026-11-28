@@ -54,7 +54,9 @@ class Archive:
         CREATE INDEX IF NOT EXISTS messages_message_id ON messages(message_id);
         CREATE INDEX IF NOT EXISTS messages_reply_to ON messages(reply_to);
         CREATE TABLE IF NOT EXISTS origins(account TEXT, folder TEXT, validity TEXT, uid TEXT, hash TEXT NOT NULL REFERENCES messages(hash), PRIMARY KEY(account,folder,validity,uid));
-        CREATE TABLE IF NOT EXISTS sync_failures(account TEXT NOT NULL, folder TEXT NOT NULL, validity TEXT NOT NULL, uid TEXT NOT NULL, error TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 1, last_seen TEXT NOT NULL, PRIMARY KEY(account,folder,validity,uid));''')
+        CREATE TABLE IF NOT EXISTS sync_failures(account TEXT NOT NULL, folder TEXT NOT NULL, validity TEXT NOT NULL, uid TEXT NOT NULL, error TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 1, last_seen TEXT NOT NULL, PRIMARY KEY(account,folder,validity,uid));
+        CREATE TABLE IF NOT EXISTS attachments(message TEXT NOT NULL REFERENCES messages(hash), filename TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL, PRIMARY KEY(message,filename,sha256));
+        CREATE INDEX IF NOT EXISTS attachments_sha256 ON attachments(sha256);''')
     @staticmethod
     def _part_text(part):
         """Extract decoded text from a MIME part; never raises on hostile charsets."""
@@ -71,19 +73,50 @@ class Archive:
             return payload.decode('utf-8', errors='replace')
     @staticmethod
     def _is_body_part(part):
-        """True for leaf parts that carry human-readable message body text."""
-        return (not part.is_multipart()
-                and part.get_content_disposition() != 'attachment'
-                and part.get_content_type() in ('text/plain','text/html'))
+        """True for leaf text parts, attached or not, that can carry readable text."""
+        return not part.is_multipart() and part.get_content_type() in ('text/plain','text/html')
     def _body_of(self, msg):
-        """Searchable body: prefer text/plain, fall back to text from HTML-only mail."""
-        plain, html = [], []
+        """Searchable body: prefer ordinary text/plain, then HTML, then attached text.
+
+        Attached text only contributes when the message has no ordinary body, so
+        forwarded files never pollute subject-level search results.
+        """
+        plain, html, filed = [], [], []
         for part in msg.walk():
             if not self._is_body_part(part): continue
-            text = self._part_text(part)
+            text=self._part_text(part)
             if not text.strip(): continue
-            (plain if part.get_content_type() == 'text/plain' else html).append(text)
-        return '\n'.join(plain) if plain else html_to_text('\n'.join(html))
+            if part.get_filename() is not None or part.get_content_disposition()=='attachment':
+                filed.append(text)
+            elif part.get_content_type()=='text/plain': plain.append(text)
+            else: html.append(text)
+        return '\n'.join(plain) or html_to_text('\n'.join(html)) or '\n'.join(filed)
+    @staticmethod
+    def _attachment_parts(msg):
+        """Yield (filename, content_type, payload) for parts the sender marked as files."""
+        for part in msg.walk():
+            if part.is_multipart(): continue
+            filename=part.get_filename()
+            if filename is None and part.get_content_disposition()!='attachment': continue
+            payload=part.get_payload(decode=True)
+            if not isinstance(payload,bytes): continue
+            yield (str(filename or 'attachment'), part.get_content_type(), payload)
+    def _store_attachment(self, payload):
+        """Store bytes content-addressed and return their SHA-256.
+
+        Identical attachments across messages and accounts occupy one file, and an
+        existing blob is never overwritten; a corrupted blob is reported instead.
+        """
+        digest=hashlib.sha256(payload).hexdigest()
+        target=self.root/'attachments'/digest[:2]/digest
+        if target.is_file():
+            if hashlib.sha256(target.read_bytes()).hexdigest()!=digest: raise ValueError('Attachment integrity mismatch')
+            return digest
+        target.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=target.parent,delete=False) as f:
+            f.write(payload); f.flush(); os.fsync(f.fileno()); tmp=f.name
+        os.replace(tmp,target)
+        return digest
     def ingest(self, raw, origin=None):
         if len(raw) > 64 * 1024 * 1024: raise ValueError('Message exceeds 64 MiB limit')
         digest = hashlib.sha256(raw).hexdigest(); target = self.raw / (digest+'.eml')
@@ -94,10 +127,14 @@ class Archive:
         if hashlib.sha256(target.read_bytes()).hexdigest()!=digest: raise ValueError('Raw integrity mismatch')
         msg=BytesParser(policy=policy.default).parsebytes(raw)
         body=self._body_of(msg)
+        attachments=[(name,ctype,len(payload),self._store_attachment(payload))
+                     for name,ctype,payload in self._attachment_parts(msg)]
         fields=[str(msg.get(k,'')) for k in ('Subject','From','Date','Message-ID','In-Reply-To')]
         with self.db:
             cur=self.db.execute('INSERT OR IGNORE INTO messages VALUES(?,?,?,?,?,?,?)',(digest,*fields,body))
             if cur.rowcount: self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(digest,fields[0],fields[1],body))
+            for filename,content_type,size,sha256 in attachments:
+                self.db.execute('INSERT OR IGNORE INTO attachments VALUES(?,?,?,?,?)',(digest,filename,content_type,size,sha256))
             if origin:
                 self.db.execute('INSERT OR IGNORE INTO origins VALUES(?,?,?,?,?)',(*origin,digest))
                 if self.db.execute('SELECT hash FROM origins WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone()[0]!=digest: raise ValueError('Origin conflict')
@@ -127,15 +164,37 @@ class Archive:
             if hashlib.sha256(raw).hexdigest()!=digest: raise ValueError('Integrity mismatch')
             msg=BytesParser(policy=policy.default).parsebytes(raw)
             body=self._body_of(msg)
+            attachments=[(name,ctype,len(payload),self._store_attachment(payload))
+                         for name,ctype,payload in self._attachment_parts(msg)]
             fields=[str(msg.get(k,'')) for k in ('Subject','From','Date','Message-ID','In-Reply-To')]
             with self.db:
                 self.db.execute('UPDATE messages SET subject=?,sender=?,date=?,message_id=?,reply_to=?,body=? WHERE hash=?',(*fields,body,digest))
                 self.db.execute('DELETE FROM search WHERE hash=?',(digest,))
                 self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(digest,fields[0],fields[1],body))
+                self.db.execute('DELETE FROM attachments WHERE message=?',(digest,))
+                for filename,content_type,size,sha256 in attachments:
+                    self.db.execute('INSERT OR IGNORE INTO attachments VALUES(?,?,?,?,?)',(digest,filename,content_type,size,sha256))
             rebuilt+=1
         return rebuilt
+    def attachments(self, digest):
+        """Attachment metadata for one message, ordered by filename."""
+        return self.db.execute('SELECT filename,content_type,size,sha256 FROM attachments WHERE message=? ORDER BY filename',(digest,)).fetchall()
+    def attachment_bytes(self, sha256):
+        """Return stored attachment bytes after verifying the digest."""
+        if not isinstance(sha256,str) or len(sha256)!=64 or any(c not in '0123456789abcdef' for c in sha256):
+            raise ValueError('Invalid attachment hash')
+        path=self.root/'attachments'/sha256[:2]/sha256
+        if not path.is_file(): raise ValueError('Unknown attachment')
+        data=path.read_bytes()
+        if hashlib.sha256(data).hexdigest()!=sha256: raise ValueError('Attachment integrity mismatch')
+        return data
     def verify(self):
         return [h for (h,) in self.db.execute('SELECT hash FROM messages') if not (p:=self.raw/(h+'.eml')).is_file() or hashlib.sha256(p.read_bytes()).hexdigest()!=h]
+    def verify_attachments(self):
+        """Attachment blobs that are missing or no longer match their stored digest."""
+        return [sha for (sha,) in self.db.execute('SELECT DISTINCT sha256 FROM attachments')
+                if not (p:=self.root/'attachments'/sha[:2]/sha).is_file()
+                or hashlib.sha256(p.read_bytes()).hexdigest()!=sha]
     def export(self, hashes, destination):
         dest=Path(destination)
         hashes=list(dict.fromkeys(hashes))
@@ -205,7 +264,8 @@ class Archive:
         return [self.details(h) | {'sha256':h} for h in sorted(visited)]
     def stats(self):
         return {'messages':self.db.execute('SELECT count(*) FROM messages').fetchone()[0],
-                'origins':self.db.execute('SELECT count(*) FROM origins').fetchone()[0]}
+                'origins':self.db.execute('SELECT count(*) FROM origins').fetchone()[0],
+                'attachments':self.db.execute('SELECT count(*) FROM attachments').fetchone()[0]}
     def sync(self, host, user, password, folder='INBOX'):
         from sync_lock import sync_lock
         with sync_lock(self.root):
@@ -272,7 +332,7 @@ class Archive:
 def main():
     import getpass
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
     a=p.parse_args(); ar=Archive(a.archive)
     if a.cmd=='import':
         for f in a.files: print(ar.ingest(Path(f).read_bytes()))
@@ -280,6 +340,13 @@ def main():
     elif a.cmd=='verify':
         bad=ar.verify(); print(json.dumps(bad)); return int(bool(bad))
     elif a.cmd=='reindex': print(ar.reindex())
+    elif a.cmd=='attachments': print(json.dumps(ar.attachments(a.hash),indent=2))
+    elif a.cmd=='attachment':
+        data=ar.attachment_bytes(a.sha256)
+        with os.fdopen(os.open(Path(a.destination),os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'wb') as output:
+            output.write(data)
+    elif a.cmd=='verify-attachments':
+        bad=ar.verify_attachments(); print(json.dumps(bad)); return int(bool(bad))
     elif a.cmd=='failures': print(json.dumps(ar.failures(a.limit),indent=2))
     elif a.cmd=='export': ar.export(a.hashes,a.destination)
     elif a.cmd=='sync': print(ar.sync(a.host,a.user,getpass.getpass(),a.folder))

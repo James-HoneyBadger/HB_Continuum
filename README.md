@@ -61,6 +61,9 @@ python3 dispatch.py search invoice
 python3 dispatch.py verify
 python3 dispatch.py reindex
 python3 dispatch.py failures
+python3 dispatch.py attachments HASH
+python3 dispatch.py attachment SHA256 OUT_FILE
+python3 dispatch.py verify-attachments
 python3 dispatch.py gui
 python3 dispatch.py sync imap.example.invalid user@example.invalid --folder INBOX
 python3 dispatch.py export evidence HASH
@@ -71,7 +74,7 @@ Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, rea
 
 ## Privacy and limitations
 
-Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is never rendered; HTML-only messages contribute their visible text to search. `reindex` rebuilds message metadata and the search index from the preserved raw files, which repairs archives written by older versions and can be restarted safely if interrupted. Use an encrypted disk and keep all real mail and credentials outside the repository. Back up the entire archive with the app closed. Failed imports may leave unindexed raw files; failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS and Gmail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search indexes message body text, not attachments or rendered HTML markup. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Dispatch as the sole evidence archive.
+Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is never rendered; HTML-only messages contribute their visible text to search. `reindex` rebuilds message metadata and the search index from the preserved raw files, which repairs archives written by older versions and can be restarted safely if interrupted. Use an encrypted disk and keep all real mail and credentials outside the repository. Back up the entire archive with the app closed. Failed imports may leave unindexed raw files; failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS and Gmail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Attachments are extracted from each message and stored once by SHA-256, so identical files shared across messages and accounts consume a single blob; `attachments`, `attachment` and `verify-attachments` list, restore and check them. Search indexes message body text plus the text of text-like attachments, not binary attachments or rendered HTML markup. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Dispatch as the sole evidence archive.
 
 ## Scheduled synchronization (macOS)
 

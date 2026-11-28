@@ -45,7 +45,7 @@ class Tests(unittest.TestCase):
         self.assertFalse(dest.exists())
     def test_workspace_queries(self):
         h=self.a.ingest(RAW,('test','INBOX','1','2'))
-        self.assertEqual(self.a.stats(),{'messages':1,'origins':1})
+        self.assertEqual(self.a.stats(),{'messages':1,'origins':1,'attachments':0})
         self.assertEqual(self.a.recent()[0][0],h)
         self.assertEqual(self.a.details(h)['subject'],'Synthetic invoice')
     def test_existing_export_is_not_modified(self):
@@ -90,6 +90,21 @@ class Tests(unittest.TestCase):
              b'<p>hidden attachment</p>\r\n--B--\r\n')
         body=self.a.details(self.a.ingest(raw))['body']
         self.assertIn('visible note',body); self.assertNotIn('hidden attachment',body)
+    def test_named_text_part_stays_out_of_body(self):
+        raw=(b'Message-ID: <named@example.invalid>\r\nMIME-Version: 1.0\r\n'
+             b'Content-Type: multipart/mixed; boundary="B"\r\n\r\n'
+             b'--B\r\nContent-Type: text/plain\r\n\r\nreal body\r\n'
+             b'--B\r\nContent-Type: text/plain; name="notes.txt"\r\n'
+             b'Content-Disposition: inline; filename="notes.txt"\r\n\r\nattached notes\r\n--B--\r\n')
+        body=self.a.details(self.a.ingest(raw))['body']
+        self.assertIn('real body',body); self.assertNotIn('attached notes',body)
+        self.assertEqual(self.a.attachments(self.a.recent()[0][0])[0][0],'notes.txt')
+    def test_attachment_only_message_still_indexes_text(self):
+        raw=(b'Message-ID: <only@example.invalid>\r\nMIME-Version: 1.0\r\n'
+             b'Content-Type: text/plain; name="dump.txt"\r\n'
+             b'Content-Disposition: attachment; filename="dump.txt"\r\n\r\nsalvaged text\r\n')
+        body=self.a.details(self.a.ingest(raw))['body']
+        self.assertIn('salvaged text',body)
     def test_malformed_html_does_not_raise(self):
         raw=(b'Message-ID: <broken@example.invalid>\r\nContent-Type: text/html\r\n\r\n'
              b'<p>unclosed <b>markup &amp; entities &bogus; <table><tr><td>cell\r\n')
@@ -137,7 +152,7 @@ class Tests(unittest.TestCase):
             self.assertEqual(self.a.sync('host','user','pw'),0)
         self.assertEqual([r[3] for r in self.a.failures()],['1'])
         self.assertEqual(len(self.a.find('second')),1)
-        self.assertEqual(self.a.stats(),{'messages':1,'origins':1})
+        self.assertEqual(self.a.stats(),{'messages':1,'origins':1,'attachments':0})
     def test_successful_sync_clears_recorded_failure(self):
         self.a._record_failure(('host|user','INBOX','9','5'),'RuntimeError: boom')
         self.assertEqual(len(self.a.failures()),1)
@@ -147,6 +162,45 @@ class Tests(unittest.TestCase):
         with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
             self.assertEqual(self.a.sync('host','user','pw'),1)
         self.assertEqual(self.a.failures(),[])
+    def test_attachments_are_archived_and_deduplicated(self):
+        blob=b'\x89PNG\r\n\x1a\n not really a png, but bytes '
+        def message(mid):
+            return (b'Message-ID: <'+mid+b'>\r\nMIME-Version: 1.0\r\n'
+                    b'Content-Type: multipart/mixed; boundary="B"\r\n\r\n'
+                    b'--B\r\nContent-Type: text/plain\r\n\r\nsee attached\r\n'
+                    b'--B\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename="report.bin"\r\n'
+                    b'Content-Transfer-Encoding: base64\r\n\r\n'+__import__('base64').b64encode(blob)+b'\r\n--B--\r\n')
+        first=self.a.ingest(message(b'one@example.invalid'))
+        second=self.a.ingest(message(b'two@example.invalid'))
+        (row,)=self.a.attachments(first)
+        self.assertEqual(row[0],'report.bin'); self.assertEqual(row[1],'application/octet-stream')
+        self.assertEqual(row[2],len(blob)); self.assertEqual(self.a.attachment_bytes(row[3]),blob)
+        self.assertEqual(self.a.attachments(second)[0][3],row[3])
+        stored=list((self.a.root/'attachments').rglob('*'))
+        self.assertEqual(len([p for p in stored if p.is_file()]),1)
+        self.assertEqual(self.a.stats()['attachments'],2)
+        self.assertEqual(self.a.verify_attachments(),[])
+    def test_reindex_recovers_attachments_for_legacy_archive(self):
+        body=b'Subject: Legacy\r\nMessage-ID: <legacy-attach@example.invalid>\r\nMIME-Version: 1.0\r\n'
+        raw=(body+b'Content-Type: multipart/mixed; boundary="B"\r\n\r\n'
+             b'--B\r\nContent-Type: text/plain\r\n\r\ntext\r\n'
+             b'--B\r\nContent-Type: text/csv\r\nContent-Disposition: attachment; filename="rows.csv"\r\n\r\n'
+             b'a,b\r\n1,2\r\n--B--\r\n')
+        h=self.a.ingest(raw)
+        with self.a.db: self.a.db.execute('DELETE FROM attachments WHERE message=?',(h,))
+        self.assertEqual(self.a.attachments(h),[])
+        self.assertEqual(self.a.reindex(),1)
+        (row,)=self.a.attachments(h)
+        self.assertEqual(row[0],'rows.csv'); self.assertEqual(self.a.attachment_bytes(row[3]),b'a,b\r\n1,2')
+    def test_attachment_integrity_is_checked(self):
+        raw=(b'MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="B"\r\n\r\n'
+             b'--B\r\nContent-Type: text/plain\r\n\r\ntext\r\n'
+             b'--B\r\nContent-Type: text/plain\r\nContent-Disposition: attachment; filename="n.txt"\r\n\r\nnote\r\n--B--\r\n')
+        (_,_,_,sha256),=self.a.attachments(self.a.ingest(raw))
+        (self.a.root/'attachments'/sha256[:2]/sha256).write_bytes(b'tampered')
+        self.assertEqual(self.a.verify_attachments(),[sha256])
+        self.assertRaises(ValueError,self.a.attachment_bytes,sha256)
+        self.assertRaises(ValueError,self.a.attachment_bytes,'../escape')
     def test_version_flag(self):
         out=io.StringIO()
         with mock.patch('sys.argv',['dispatch.py','--version']), contextlib.redirect_stdout(out):
