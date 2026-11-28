@@ -25,6 +25,17 @@ supported.
 No formal stable release has been declared. Formal stable publication
 remains the owner's decision.
 
+## Getting the source
+
+The default branch `main` carries the qualified v0.5 implementation, and the
+`v0.5.0-beta` tag identifies the released source:
+
+```sh
+git clone https://github.com/James-HoneyBadger/HB_Continuum.git
+cd HB_Continuum
+python3 dispatch.py --version
+```
+
 ## What it does
 
 - Preserves original EML messages under SHA-256 hashes, with IMAP provenance,
