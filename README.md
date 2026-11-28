@@ -1,84 +1,93 @@
-# HB_Dispatch
+# HB Continuum
 
-**Operational local-first email archive and personal historical research workstation.**
+**Open-source, local-first personal knowledge archive and historical research workstation.**
 
-HB Dispatch is in active real-world use. It has moved beyond a proof of concept: live mailbox retrieval, searchable local preservation and source-backed historical research have been demonstrated with more than 20,000 unique archived messages across two mail providers. Development continues, but the core archival workflow is working software today.
+*Time is linear. Knowledge need not be.*
 
-## Demonstrated in real-world use
+Part of the Honey Badger Universe, HB Continuum began as HB Dispatch, an email preservation engine, and has evolved into a broader workstation for preserving, organizing and exploring your documented history on infrastructure you control.
 
-As of November 26, 2026, a live deployment had indexed 20,185 unique messages, with a second mailbox import still underway. The SQLite message count and full-text index count reconciled at that snapshot. An earlier completed 12,798-message import also passed SQLite integrity checks and reconciled against its original EML file count.
+> **Current milestone: [v0.4.0-beta](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.4.0-beta)** — source-only beta.
+>
+> [Download the release](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.4.0-beta) · [Current development source and full README](https://github.com/James-HoneyBadger/HB_Continuum/tree/develop/continuum-integration) · [Release history](https://github.com/James-HoneyBadger/HB_Continuum/releases)
 
-Practical investigations have included:
+**Source branch note:** The current Continuum implementation is on `develop/continuum-integration` and the `v0.4.0-beta` tag. This `main` branch retains the earlier Dispatch-era code baseline; the capabilities below refer to the v0.4 beta.
 
-- Reconstructing consumer billing disputes, cancellation notices and correspondence timelines.
-- Cross-referencing transaction confirmations against independently obtained financial records.
-- Rebuilding a precious-metals purchase ledger from orders, shipment notices and cancellations.
-- Exploring historical correspondence, recurring topics and account activity across providers.
+## Your history. Your archive. Your choice.
 
-These are actual research outcomes, not hypothetical feature claims. Some investigations used authorized external analysis of the local archive; HB Dispatch itself supplies the searchable evidence foundation, not an automated financial or legal adviser. Private correspondence and underlying records are not published.
+**Independent by design. Interoperable by choice. Intelligent when desired.**
 
-**Status:** the core archive is operational and published as the [v0.3.0 release](https://github.com/James-HoneyBadger/HB_Dispatch/releases/tag/v0.3.0), which adds local scheduled synchronization, a configuration center and a research workbench to the archival core. The release is a milestone tag, not a claim of comprehensive security certification.
+Local-first storage, open formats, user ownership, no telemetry, no advertising, no tracking, no mandatory accounts, subscriptions, cloud services or AI. Original evidence, annotations and generated interpretations remain distinct.
 
-## Your mail. Your archive. Your choice.
+## What v0.4 delivers
 
-**Your email provider should be your communications service, not the permanent custodian of your correspondence.**
+| Capability | Current beta functionality |
+| --- | --- |
+| Email | Read-only IMAP, original EML preservation, SHA-256 verification, deduplication and provenance |
+| Social history | Facebook JSON export ingestion, including posts, comments, messages, events, media metadata and reactions |
+| Discovery | SQLite FTS5, unified search, nested Boolean queries, saved searches and filters |
+| Historical exploration | Paged timelines, participant relationships and source management |
+| Research | Workspaces, tags, evidence collections, report drafts, revision-tracked journal and archive reports |
+| Maintenance | Scheduled synchronization, integrity checks, index repair, validated backups and restoration |
+| Local intelligence | Optional Ollama message and conversation summaries |
+| Desktop | Tauri 2 / Vue 3 interface with Python engine and legacy Tkinter fallback |
 
-HB Dispatch is built around personal digital sovereignty: keep your own searchable, locally controlled copy of your email history, independent of any hosting provider, subscription tier or cloud archive. Changing providers should not mean leaving years of correspondence behind.
+A deployment on November 26, 2026 preserved 31,441 unique messages across Gmail and IONOS, with reconciled storage and index counts and successful SQLite quick integrity checks. iCloud Mail ingestion subsequently began successfully. These observations do not establish complete mailbox coverage. Private source records are not published.
 
-The working archival workflow is simple: retrieve messages, preserve their original EML data, index them locally, verify their integrity, and maintain independent backups. Once archival and recovery have been verified, you can manage server storage separately from your long-term retention needs.
+## Getting started
 
-- Your correspondence, stored on hardware you control.
-- Your search index, without a mandatory cloud service.
-- Your retention decisions, rather than a provider's storage quota.
-- Your backups, independent of the mailbox host.
-
-HB Dispatch is free and open-source software, licensed under the [GNU General Public License version 3 (GPL-3.0-only)](LICENSE). No telemetry, advertising, mandatory online account or subscription. It complements existing mail clients rather than requiring you to replace them.
-
-**Important:** HB Dispatch uses read-only IMAP retrieval and does not delete server mail. Keep independent backups and test restoration before removing any server copies. Comprehensive mailbox coverage and restoration testing remain essential; a successful import alone does not establish completeness.
-
-## Learn by doing
-
-**[Read the complete practical tutorial](docs/TUTORIAL.md).** Start with a fictional email, learn how the archive works, connect multiple providers, reconstruct historical correspondence, and build an independent backup routine. The guide distinguishes working capabilities from planned enhancements.
-
-## A practical use case
-
-**[From scattered inboxes to a personal historical intelligence archive](docs/USE_CASE_PERSONAL_HISTORY.md).** Follow a fictional user who combines years of correspondence across multiple providers, reconstructs forgotten events, prepares source-backed reports and explores an optional personal knowledge assistant. The scenario separates current archival capabilities from external analysis and future integrations.
-
-## Quick start
-
-Python 3.12+ with SQLite FTS5 and optional Tkinter.
+Use the published beta source, rather than assuming this branch contains the latest implementation:
 
 ```sh
+git clone --branch v0.4.0-beta https://github.com/James-HoneyBadger/HB_Continuum.git
+cd HB_Continuum
 python3 dispatch.py --version
-python3 dispatch.py import sample.eml
-python3 dispatch.py search invoice
-python3 dispatch.py verify
-python3 dispatch.py gui
-python3 dispatch.py sync imap.example.invalid user@example.invalid --folder INBOX
-python3 dispatch.py export evidence HASH
+python3 dispatch.py --help
 python3 -m unittest discover -s tests -v
 ```
 
-Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, read-only mailbox selection and BODY.PEEK. Passwords are prompted for, never stored by the application. Provider-specific authentication may be required. Gmail OAuth and a native MCP integration remain future work. Manual synchronization prompts for passwords; scheduled synchronization is macOS-only and reads credentials from the login Keychain.
+Requires Python 3.12+ with SQLite FTS5. Desktop development additionally requires Node.js 22+, Rust and Tauri platform prerequisites.
 
-## Privacy and limitations
+```sh
+cd frontend
+npm install
+npm run tauri -- dev
+```
 
-Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Back up the entire archive with the app closed. Failed imports may leave unindexed raw files; failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS and Gmail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search currently indexes plain-text message content rather than all HTML or attachments. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Dispatch as the sole evidence archive.
+The beta is distributed as source, without signed application binaries. Start with fictional data in a separate test archive and follow the tutorial before connecting a real mailbox.
 
-## Scheduled synchronization (macOS)
+## Documentation
 
-Maintain multiple mailboxes automatically with the local synchronization center, configurable interval or daily schedules, macOS Keychain credentials and a per-user LaunchAgent. See [Scheduled synchronization](docs/SCHEDULED_SYNC.md). Finish any older manual import before enabling the service.
+- [Full current README and CLI reference](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/README.md)
+- [Practical tutorial](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/TUTORIAL.md)
+- [Historical research use case](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/USE_CASE_PERSONAL_HISTORY.md)
+- [Private intelligence workstation and optional integrations](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/PRIVATE_INTELLIGENCE_WORKSTATION.md)
+- [Facebook import](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/FACEBOOK_IMPORT.md)
+- [Archive hardening and recovery](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/ARCHIVE_HARDENING.md)
+- [Local AI summarization](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/AI_SUMMARIZATION.md)
+- [Packaging](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.4.0-beta/docs/PACKAGING.md)
+- [Implementation and qualification status](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/engineering/IMPLEMENTATION_STATUS.md)
+- [Performance benchmarks](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/BENCHMARKS.md)
 
-## Configuration center
+## Beta qualification and limitations
 
-Customize the workstation per archive with validated, portable settings for appearance, research, file locations, integrity checks and synchronization. Open **Configuration center** in the desktop application. See [Configuration reference](docs/CONFIGURATION.md).
+The recorded v0.4 beta qualification includes 280 Python tests (278 passed, two skipped), successful static analysis, frontend build, Rust checks and tests, engine-sidecar smoke tests and a Tauri debug build. See the qualification record for scope. This is not a comprehensive security audit or a guarantee of complete interactive desktop validation.
 
-## Research workbench
+Unified search currently pages over at most 5,000 fused candidates. Application-level encryption at rest and OAuth are not implemented. PDF, Office and image attachment content extraction remains limited. Facebook media bytes are not copied. Local AI currently summarizes messages and conversations rather than answering arbitrary questions across the entire archive.
 
-Create workspaces, saved queries, classification rules, tags, custom metadata and reusable CSV reports without changing original correspondence. See [Research workbench](docs/RESEARCH.md).
+Use encrypted storage, independent backups and tested restoration. Read-only IMAP does not delete server mail. Archive hashes detect changes, not authenticity or legal chain of custody. Do not use Continuum as your only evidence archive.
+
+## The road ahead: historical intelligence
+
+The proposed v0.5 **Intelligence Update** focuses on scalable retrieval, evidence-grounded conversational research through local Ollama, inspectable source references, additional document ingestion and optional Honey Badger interchange.
+
+The longer-term **Second Me** vision is a historically grounded interface to your documented experiences, interests and projects. Its purpose is retrieval and reflection, not impersonation, invention or claims of consciousness.
+
+These are planned capabilities, not features of the current beta.
+
+**The intelligence is replaceable. The memories are yours.**
 
 ## License and community
 
 Copyright (c) 2026 Honey Badger Universe.
 
-Current and future distributions of this source tree are licensed under GPL-3.0-only. Commercial use is permitted under the license, including its source-distribution and copyleft requirements. The project itself is a community-oriented FOSS undertaking, without paid support or service commitments. Prior distributions released under MIT retain their original license rights. See [LICENSE](LICENSE) for the complete terms.
+HB Continuum is a community-oriented FOSS project licensed under [GPL-3.0-only](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/LICENSE). Commercial use is permitted subject to the license, including applicable source-distribution and copyleft obligations. Earlier MIT-licensed distributions retain their original license rights. There is no paid support or service commitment.
