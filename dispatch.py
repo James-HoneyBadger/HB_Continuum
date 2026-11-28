@@ -1,12 +1,47 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (c) 2026 Honey Badger Universe
 """Local read-only email archive. No network access except explicit sync."""
-import shutil, argparse, hashlib, imaplib, sqlite3, ssl, json, os, tempfile
+import shutil, argparse, hashlib, imaplib, sqlite3, ssl, json, os, tempfile, time
 from pathlib import Path
 from email import policy
 from email.parser import BytesParser
+from html.parser import HTMLParser
 
 __version__ = '0.3.0'
+
+SYNC_MAX_ATTEMPTS = 3
+
+_HTML_BLOCK_TAGS = frozenset({'br','p','div','tr','li','hr','h1','h2','h3','h4','h5','h6','blockquote','pre'})
+_HTML_SKIP_TAGS = frozenset({'script','style','head','title'})
+
+class _HTMLText(HTMLParser):
+    """Collect visible text from HTML markup, dropping scripts, styles and tags."""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self._skip = 0; self._chunks = []
+    def handle_starttag(self, tag, attrs):
+        if tag in _HTML_SKIP_TAGS: self._skip += 1
+        elif tag in _HTML_BLOCK_TAGS: self._chunks.append('\n')
+    def handle_startendtag(self, tag, attrs):
+        if tag in _HTML_BLOCK_TAGS: self._chunks.append('\n')
+    def handle_endtag(self, tag):
+        if tag in _HTML_SKIP_TAGS: self._skip = max(0, self._skip - 1)
+        elif tag in _HTML_BLOCK_TAGS: self._chunks.append('\n')
+    def handle_data(self, data):
+        if not self._skip: self._chunks.append(data)
+    def text(self):
+        return ''.join(self._chunks)
+
+def html_to_text(markup):
+    """Best-effort plain text from HTML; falls back to the raw markup if unparseable."""
+    if not markup: return ''
+    parser = _HTMLText()
+    try:
+        parser.feed(markup); parser.close()
+    except Exception:
+        return markup
+    lines = (' '.join(line.split()) for line in parser.text().splitlines())
+    return '\n'.join(line for line in lines if line)
 
 class Archive:
     def __init__(self, root):
@@ -18,16 +53,37 @@ class Archive:
         CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(hash UNINDEXED, subject, sender, body);
         CREATE INDEX IF NOT EXISTS messages_message_id ON messages(message_id);
         CREATE INDEX IF NOT EXISTS messages_reply_to ON messages(reply_to);
-        CREATE TABLE IF NOT EXISTS origins(account TEXT, folder TEXT, validity TEXT, uid TEXT, hash TEXT NOT NULL REFERENCES messages(hash), PRIMARY KEY(account,folder,validity,uid));''')
+        CREATE TABLE IF NOT EXISTS origins(account TEXT, folder TEXT, validity TEXT, uid TEXT, hash TEXT NOT NULL REFERENCES messages(hash), PRIMARY KEY(account,folder,validity,uid));
+        CREATE TABLE IF NOT EXISTS sync_failures(account TEXT NOT NULL, folder TEXT NOT NULL, validity TEXT NOT NULL, uid TEXT NOT NULL, error TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 1, last_seen TEXT NOT NULL, PRIMARY KEY(account,folder,validity,uid));''')
     @staticmethod
     def _part_text(part):
+        """Extract decoded text from a MIME part; never raises on hostile charsets."""
+        payload = part.get_payload(decode=True)
+        if payload is None:
+            raw = part.get_payload()
+            return raw if isinstance(raw, str) else ''
+        if not isinstance(payload, bytes):
+            return str(payload)
+        charset = part.get_content_charset() or 'utf-8'
         try:
-            content=part.get_content()
-        except (LookupError,UnicodeError,ValueError,TypeError):
-            try: payload=part.get_payload(decode=True) or b''
-            except Exception: return ''
-            return payload.decode('utf-8','replace') if isinstance(payload,bytes) else str(payload)
-        return content.decode('utf-8','replace') if isinstance(content,bytes) else content
+            return payload.decode(charset, errors='replace')
+        except LookupError:
+            return payload.decode('utf-8', errors='replace')
+    @staticmethod
+    def _is_body_part(part):
+        """True for leaf parts that carry human-readable message body text."""
+        return (not part.is_multipart()
+                and part.get_content_disposition() != 'attachment'
+                and part.get_content_type() in ('text/plain','text/html'))
+    def _body_of(self, msg):
+        """Searchable body: prefer text/plain, fall back to text from HTML-only mail."""
+        plain, html = [], []
+        for part in msg.walk():
+            if not self._is_body_part(part): continue
+            text = self._part_text(part)
+            if not text.strip(): continue
+            (plain if part.get_content_type() == 'text/plain' else html).append(text)
+        return '\n'.join(plain) if plain else html_to_text('\n'.join(html))
     def ingest(self, raw, origin=None):
         if len(raw) > 64 * 1024 * 1024: raise ValueError('Message exceeds 64 MiB limit')
         digest = hashlib.sha256(raw).hexdigest(); target = self.raw / (digest+'.eml')
@@ -37,7 +93,7 @@ class Archive:
             os.replace(tmp,target)
         if hashlib.sha256(target.read_bytes()).hexdigest()!=digest: raise ValueError('Raw integrity mismatch')
         msg=BytesParser(policy=policy.default).parsebytes(raw)
-        body='\n'.join(self._part_text(p) for p in msg.walk() if p.get_content_type()=='text/plain' and p.get_content_disposition()!='attachment')
+        body=self._body_of(msg)
         fields=[str(msg.get(k,'')) for k in ('Subject','From','Date','Message-ID','In-Reply-To')]
         with self.db:
             cur=self.db.execute('INSERT OR IGNORE INTO messages VALUES(?,?,?,?,?,?,?)',(digest,*fields,body))
@@ -56,6 +112,28 @@ class Archive:
                 return self.db.execute('SELECT hash,subject,sender FROM search WHERE search MATCH ? LIMIT ?', (phrase,limit)).fetchall()
             except sqlite3.OperationalError:
                 return []
+    def reindex(self):
+        """Rebuild message metadata and the search index from the stored raw files.
+
+        Safe and idempotent: raw mail is only read, never rewritten, and an
+        interrupted run can simply be restarted. Repairs archives written by older
+        versions (for example HTML-only mail that previously stored an empty body).
+        """
+        rebuilt=0
+        for (digest,) in self.db.execute('SELECT hash FROM messages').fetchall():
+            path=self.raw/(digest+'.eml')
+            if not path.is_file(): continue
+            raw=path.read_bytes()
+            if hashlib.sha256(raw).hexdigest()!=digest: raise ValueError('Integrity mismatch')
+            msg=BytesParser(policy=policy.default).parsebytes(raw)
+            body=self._body_of(msg)
+            fields=[str(msg.get(k,'')) for k in ('Subject','From','Date','Message-ID','In-Reply-To')]
+            with self.db:
+                self.db.execute('UPDATE messages SET subject=?,sender=?,date=?,message_id=?,reply_to=?,body=? WHERE hash=?',(*fields,body,digest))
+                self.db.execute('DELETE FROM search WHERE hash=?',(digest,))
+                self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(digest,fields[0],fields[1],body))
+            rebuilt+=1
+        return rebuilt
     def verify(self):
         return [h for (h,) in self.db.execute('SELECT hash FROM messages') if not (p:=self.raw/(h+'.eml')).is_file() or hashlib.sha256(p.read_bytes()).hexdigest()!=h]
     def export(self, hashes, destination):
@@ -154,24 +232,55 @@ class Archive:
             for uid in data[0].split():
                 origin=(host+'|'+user,folder,validity,uid.decode())
                 if self.db.execute('SELECT 1 FROM origins WHERE account=? AND folder IN (?,?) AND validity=? AND uid=?',(origin[0],folder,quoted,validity,uid.decode())).fetchone(): continue
-                status,parts=m.uid('fetch',uid,'(BODY.PEEK[])')
-                if status!='OK': raise RuntimeError('Fetch failed')
-                payload=[p[1] for p in parts if isinstance(p,tuple)]
-                if len(payload)!=1: raise RuntimeError('Unexpected fetch response')
-                self.ingest(payload[0],origin); count+=1
+                attempts=self._failure_attempts(origin)
+                if attempts>=SYNC_MAX_ATTEMPTS: continue
+                try:
+                    payload=[p[1] for p in self._fetch(m,uid) if isinstance(p,tuple)]
+                    if len(payload)!=1: raise RuntimeError('Unexpected fetch response')
+                    self.ingest(payload[0],origin); count+=1
+                except Exception as error:
+                    self._record_failure(origin,f'{type(error).__name__}: {error}')
+                    raise
+                if attempts:
+                    with self.db: self.db.execute('DELETE FROM sync_failures WHERE account=? AND folder=? AND validity=? AND uid=?',origin)
                 if prefs['batch_limit'] and count>=prefs['batch_limit']: break
             return count
+    def _fetch(self, connection, uid, attempts=SYNC_MAX_ATTEMPTS):
+        """Fetch one UID with BODY.PEEK, retrying transient connection aborts."""
+        failure=None
+        for attempt in range(attempts):
+            try:
+                status,parts=connection.uid('fetch',uid,'(BODY.PEEK[])')
+                if status!='OK': raise RuntimeError('Fetch failed')
+                return parts
+            except imaplib.IMAP4.abort as error:
+                failure=error
+                if attempt+1<attempts: time.sleep(2**attempt)
+        raise RuntimeError(f'Fetch failed after {attempts} attempts: {failure}')
+    def _failure_attempts(self, origin):
+        row=self.db.execute('SELECT attempts FROM sync_failures WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone()
+        return row[0] if row else 0
+    def _record_failure(self, origin, error):
+        with self.db:
+            self.db.execute('''INSERT INTO sync_failures(account,folder,validity,uid,error,attempts,last_seen)
+                VALUES(?,?,?,?,?,1,datetime('now'))
+                ON CONFLICT(account,folder,validity,uid) DO UPDATE SET attempts=attempts+1, error=excluded.error, last_seen=excluded.last_seen''',(*origin,error))
+    def failures(self, limit=500):
+        """Messages that could not be archived, with attempt counts, most recent first."""
+        return self.db.execute('SELECT account,folder,validity,uid,attempts,error,last_seen FROM sync_failures ORDER BY last_seen DESC LIMIT ?',(max(1,min(int(limit),5000)),)).fetchall()
 
 def main():
     import getpass
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
     a=p.parse_args(); ar=Archive(a.archive)
     if a.cmd=='import':
         for f in a.files: print(ar.ingest(Path(f).read_bytes()))
     elif a.cmd=='search': print(json.dumps(ar.find(a.query),indent=2))
     elif a.cmd=='verify':
         bad=ar.verify(); print(json.dumps(bad)); return int(bool(bad))
+    elif a.cmd=='reindex': print(ar.reindex())
+    elif a.cmd=='failures': print(json.dumps(ar.failures(a.limit),indent=2))
     elif a.cmd=='export': ar.export(a.hashes,a.destination)
     elif a.cmd=='sync': print(ar.sync(a.host,a.user,getpass.getpass(),a.folder))
     elif a.cmd=='gui':

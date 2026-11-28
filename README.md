@@ -59,17 +59,19 @@ python3 dispatch.py --version
 python3 dispatch.py import sample.eml
 python3 dispatch.py search invoice
 python3 dispatch.py verify
+python3 dispatch.py reindex
+python3 dispatch.py failures
 python3 dispatch.py gui
 python3 dispatch.py sync imap.example.invalid user@example.invalid --folder INBOX
 python3 dispatch.py export evidence HASH
 python3 -m unittest discover -s tests -v
 ```
 
-Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, read-only mailbox selection and BODY.PEEK. Passwords are prompted for, never stored by the application. Provider-specific authentication may be required. Gmail OAuth and a native MCP integration remain future work. Manual synchronization prompts for passwords; scheduled synchronization is macOS-only and reads credentials from the login Keychain.
+Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, read-only mailbox selection and BODY.PEEK. Passwords are prompted for, never stored by the application. Provider-specific authentication may be required. Synchronization is resumable: each archived message is recorded against its mailbox UID, so an interrupted run continues where it stopped. Transient connection resets are retried, and a message that repeatedly fails to ingest is recorded in the local failure ledger (`dispatch.py failures`) and skipped after three attempts so one unusual message cannot block the whole mailbox. Skipped messages stay on the server; nothing is deleted or marked read. Gmail OAuth and a native MCP integration remain future work. Manual synchronization prompts for passwords; scheduled synchronization is macOS-only and reads credentials from the login Keychain.
 
 ## Privacy and limitations
 
-Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Back up the entire archive with the app closed. Failed imports may leave unindexed raw files; failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS and Gmail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search currently indexes plain-text message content rather than all HTML or attachments. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Dispatch as the sole evidence archive.
+Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is never rendered; HTML-only messages contribute their visible text to search. `reindex` rebuilds message metadata and the search index from the preserved raw files, which repairs archives written by older versions and can be restarted safely if interrupted. Use an encrypted disk and keep all real mail and credentials outside the repository. Back up the entire archive with the app closed. Failed imports may leave unindexed raw files; failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS and Gmail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search indexes message body text, not attachments or rendered HTML markup. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Dispatch as the sole evidence archive.
 
 ## Scheduled synchronization (macOS)
 
