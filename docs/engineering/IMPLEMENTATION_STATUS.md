@@ -1,7 +1,8 @@
 # Implementation status — HB Continuum
 
 Maintained per the master engineering directive (section 41). Updated
-2026-11-28 on `develop/intelligence-update`.
+2026-11-28. The v0.5 implementation was merged into `main` the same day; the
+work described here was qualified on `develop/intelligence-update`.
 
 ## Current phase
 

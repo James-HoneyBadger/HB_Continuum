@@ -309,3 +309,15 @@ their own.
    with representative rows, applies the migration, and asserts the data
    survives and the version advances.
 4. Update this document and `docs/engineering/IMPLEMENTATION_STATUS.md`.
+
+## Engine version compatibility
+
+HB Continuum contains its own email ingestion engine; a separate Dispatch
+installation is not required and no AI or cloud service is needed. Never point
+two engine versions at the same writable database, and do not share one archive
+between versions whose schema compatibility has not been verified.
+
+To move records between installations, export or copy the original EML files
+and import them into a separate archive. Importing EML does not carry mailbox
+provenance or research overlays, so keep a verified backup and confirm record
+counts before relying on the result.
