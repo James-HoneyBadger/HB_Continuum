@@ -901,7 +901,10 @@ class Archive:
         result={'folders':{},'imported':0,'failed':0}
         for folder in targets:
             try:
-                count=self.sync(host,user,password,folder)
+                # sync() strips one outer quote pair as legacy input syntax, so
+                # pass the raw name wrapped once; a name that genuinely contains
+                # quotes then survives intact.
+                count=self.sync(host,user,password,'"'+folder+'"')
             except Exception as exc:
                 result['folders'][folder]={'error':f'{type(exc).__name__}: {exc}'}
                 result['failed']+=1
@@ -1230,7 +1233,9 @@ def main(argv=None):
     elif a.cmd=='sync':
         password=getpass.getpass()
         if a.all_folders:
-            print(json.dumps(ar.sync_mailboxes(a.host,a.user,password),indent=2))
+            report=ar.sync_mailboxes(a.host,a.user,password)
+            print(json.dumps(report,indent=2))
+            return 0 if not report['failed'] else 1
         else:
             print(ar.sync(a.host,a.user,password,a.folder))
     elif a.cmd=='serve':
