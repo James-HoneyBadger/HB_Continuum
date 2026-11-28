@@ -972,6 +972,21 @@ fn schedule_run(state: State<AppState>, name: Option<String>) -> Result<Value, S
 }
 
 #[tauri::command]
+fn encryption_status(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "encryption_status", json!({}))
+}
+
+#[tauri::command]
+fn encryption_unlock(state: State<AppState>, password: String) -> Result<Value, String> {
+    call(&state, "encryption_unlock", json!({ "password": password }))
+}
+
+#[tauri::command]
+fn encryption_lock(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "encryption_lock", json!({}))
+}
+
+#[tauri::command]
 fn set_archive(state: State<AppState>, path: String) -> Result<(), String> {
     let mut guard = state.engine.lock().expect("engine lock");
     if let Some(mut engine) = guard.take() {
@@ -1039,6 +1054,7 @@ pub fn run() {
             research_report_save, research_report_preview, research_report_export,
             export_evidence, schedule_status, schedule_profile_save,
             schedule_profile_enabled, schedule_run,
+            encryption_status, encryption_unlock, encryption_lock,
             set_archive, shutdown
         ])
         .run(tauri::generate_context!())

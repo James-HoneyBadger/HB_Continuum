@@ -23,6 +23,11 @@ interface Stats {
   catalog: { files: number; records: number };
 }
 
+interface EncryptionStatus {
+  encrypted: boolean;
+  unlocked: boolean;
+}
+
 const tabs = [
   "Overview",
   "Intelligence",
@@ -47,6 +52,9 @@ const archive = ref("~/.hb-dispatch");
 const stats = ref<Stats | null>(null);
 const error = ref("");
 const verifyResult = ref<{ checked: number; bad: string[] } | null>(null);
+const encryption = ref<EncryptionStatus>({ encrypted: false, unlocked: false });
+const password = ref("");
+const unlocking = ref(false);
 
 async function refreshStats() {
   try {
@@ -56,12 +64,56 @@ async function refreshStats() {
   }
 }
 
+async function refreshEncryption() {
+  try {
+    encryption.value = (await invoke("encryption_status")) as EncryptionStatus;
+    if (encryption.value.encrypted && !encryption.value.unlocked) {
+      stats.value = null;
+    }
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
 async function applyArchive() {
   error.value = "";
   verifyResult.value = null;
+  stats.value = null;
+  password.value = "";
   try {
     await invoke("set_archive", { path: archive.value });
+    await refreshEncryption();
+    if (!encryption.value.encrypted || encryption.value.unlocked) {
+      await refreshStats();
+    }
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function unlockArchive() {
+  if (!password.value) return;
+  unlocking.value = true;
+  error.value = "";
+  try {
+    encryption.value = (await invoke("encryption_unlock", {
+      password: password.value,
+    })) as EncryptionStatus;
+    password.value = "";
     await refreshStats();
+  } catch (e) {
+    error.value = String(e);
+  } finally {
+    unlocking.value = false;
+  }
+}
+
+async function lockArchive() {
+  error.value = "";
+  password.value = "";
+  stats.value = null;
+  try {
+    encryption.value = (await invoke("encryption_lock")) as EncryptionStatus;
   } catch (e) {
     error.value = String(e);
   }
@@ -81,7 +133,12 @@ function reportError(message: string) {
   error.value = message;
 }
 
-onMounted(refreshStats);
+onMounted(async () => {
+  await refreshEncryption();
+  if (!encryption.value.encrypted || encryption.value.unlocked) {
+    await refreshStats();
+  }
+});
 </script>
 
 <template>
@@ -97,11 +154,35 @@ onMounted(refreshStats);
           <input v-model="archive" placeholder="~/.hb-dispatch" spellcheck="false" />
         </label>
         <button @click="applyArchive">Open</button>
-        <button @click="runVerify">Verify integrity</button>
+        <button :disabled="encryption.encrypted && !encryption.unlocked" @click="runVerify">Verify integrity</button>
+        <button v-if="encryption.encrypted && encryption.unlocked" @click="lockArchive">
+          Lock
+        </button>
       </div>
     </header>
 
-    <div class="body">
+    <section v-if="encryption.encrypted && !encryption.unlocked" class="unlock-panel">
+      <h2>Encrypted archive locked</h2>
+      <p class="meta">
+        Enter the archive password. It is used only in memory to unlock this session and is
+        never saved to preferences, logs or command-line arguments.
+      </p>
+      <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <div class="row">
+        <input
+          v-model="password"
+          type="password"
+          autocomplete="current-password"
+          placeholder="Archive password"
+          @keyup.enter="unlockArchive"
+        />
+        <button :disabled="unlocking || !password" @click="unlockArchive">
+          {{ unlocking ? "Unlocking…" : "Unlock" }}
+        </button>
+      </div>
+    </section>
+
+    <div v-else class="body">
       <nav class="nav" aria-label="Workspaces">
         <button
           v-for="name in tabs"
@@ -220,6 +301,29 @@ button:disabled {
   cursor: default;
   opacity: 0.6;
 }
+.unlock-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 24px;
+  gap: 12px;
+}
+.unlock-panel h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.unlock-panel .row {
+  display: flex;
+  gap: 8px;
+}
+.unlock-panel input {
+  flex: 1;
+  padding: 9px;
+  font-size: 14px;
+}
 .body {
   flex: 1;
   display: flex;
@@ -284,7 +388,30 @@ button:disabled {
   color: var(--hb-error-text);
 }
 @media (max-width: 720px) {
-  .body {
+  .unlock-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 24px;
+  gap: 12px;
+}
+.unlock-panel h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.unlock-panel .row {
+  display: flex;
+  gap: 8px;
+}
+.unlock-panel input {
+  flex: 1;
+  padding: 9px;
+  font-size: 14px;
+}
+.body {
     flex-direction: column;
   }
   .nav {

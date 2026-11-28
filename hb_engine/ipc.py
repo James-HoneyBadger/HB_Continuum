@@ -219,6 +219,32 @@ def _health(root):
     finally:
         conn.close()
 
+def _encryption_status(root):
+    from .encryption import status
+    return status(root)
+
+
+def _encryption_unlock(root, params):
+    from .db import EncryptionUnavailable
+    from .encryption import EncryptionError, unlock
+    password = params.get('password')
+    if not isinstance(password, str) or not password:
+        raise IPCError('INVALID_PARAMS', 'password must be a non-empty string')
+    try:
+        return unlock(root, password)
+    except EncryptionUnavailable:
+        raise IPCError('ENCRYPTION_UNAVAILABLE',
+                       'this engine build does not include sqlcipher3') from None
+    except EncryptionError:
+        raise IPCError('UNLOCK_FAILED',
+                       'incorrect password or unreadable encrypted archive') from None
+
+
+def _encryption_lock(root):
+    from .encryption import lock
+    return lock(root)
+
+
 def _timeline_sources(value):
     if value is None:
         return ['email']
@@ -1669,6 +1695,15 @@ class IPCServer:
         try:
             if method == 'ping':
                 return _result(request_id, {'pong': True, 'protocol_version': PROTOCOL_VERSION})
+            if method == 'encryption_status':
+                return _result(request_id, _encryption_status(self.root))
+            if method == 'encryption_unlock':
+                return _result(request_id, _encryption_unlock(self.root, params))
+            if method == 'encryption_lock':
+                if any(not job['done'] for job in self._jobs.values()):
+                    raise IPCError('ARCHIVE_BUSY',
+                                   'cancel active jobs before locking the archive')
+                return _result(request_id, _encryption_lock(self.root))
             if method == 'stats':
                 return _result(request_id, {'archive': _archive_stats(self.root),
                                             'catalog': self._catalog_stats()})

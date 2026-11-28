@@ -16,6 +16,7 @@ from contextlib import closing
 from pathlib import Path
 
 from . import db as db_service
+from .encryption import is_encrypted_archive
 from .migrations import DATABASES as _DATABASES
 from .sync_lock import sync_lock
 
@@ -144,6 +145,8 @@ def publish_stage(stage, dest):
 def backup(root, destination):
     root = Path(root).expanduser().resolve()
     dest = Path(destination).expanduser().resolve()
+    if is_encrypted_archive(root):
+        raise ValueError('Encrypted archive backup is not implemented in this milestone')
     if dest.is_relative_to(root) or root.is_relative_to(dest):
         raise ValueError('Backup must be outside archive')
     if dest.exists():
@@ -183,6 +186,8 @@ def backup(root, destination):
 def restore(snapshot, destination):
     src = Path(snapshot).expanduser().resolve()
     dest = Path(destination).expanduser().resolve()
+    if is_encrypted_archive(src):
+        raise ValueError('Encrypted archive restore is not implemented in this milestone')
     if dest.is_relative_to(src) or src.is_relative_to(dest):
         raise ValueError('Restore must use independent destination')
     if dest.exists():

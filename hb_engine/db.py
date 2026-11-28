@@ -9,9 +9,13 @@ fallback from a requested encrypted connection to a plaintext one.
 """
 import importlib
 import sqlite3
+import threading
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 KEY_BYTES = 32
+_SESSION_KEYS: dict[str, bytearray] = {}
+_SESSION_LOCK = threading.RLock()
 
 
 class EncryptionUnavailable(RuntimeError):
@@ -62,6 +66,8 @@ def connect(path, *, key=None, timeout=30, uri=False, readonly=False):
     the key is wrong; those errors propagate.
     """
     if key is None:
+        key = _session_key_for(path)
+    if key is None:
         conn = sqlite3.connect(str(path), timeout=timeout, uri=uri)
         if readonly:
             conn.execute('PRAGMA query_only=ON')
@@ -73,6 +79,11 @@ def connect(path, *, key=None, timeout=30, uri=False, readonly=False):
         # A raw key avoids SQL quoting of a user passphrase. The hex value is
         # safe to interpolate and never includes the key as text.
         conn.execute(f'PRAGMA key = "x\'{value.hex()}\'"')
+        # Keep temporary pages and deletes out of ordinary filesystem files.
+        # SQLCipher encrypts database pages, including the rollback journal.
+        conn.execute('PRAGMA cipher_memory_security=ON')
+        conn.execute('PRAGMA temp_store=MEMORY')
+        conn.execute('PRAGMA secure_delete=ON')
         if readonly:
             conn.execute('PRAGMA query_only=ON')
         # Force key verification before handing the connection to a caller.
@@ -81,6 +92,55 @@ def connect(path, *, key=None, timeout=30, uri=False, readonly=False):
         conn.close()
         raise
     return conn
+
+
+def _resolved_path(path):
+    text = str(path)
+    if text.startswith('file:'):
+        text = unquote(urlsplit(text).path)
+    try:
+        return Path(text).expanduser().resolve()
+    except OSError:
+        return Path(text).expanduser().absolute()
+
+
+def bind_session_key(root, key):
+    """Bind an in-memory key to the three databases directly under root.
+
+    The key is copied into a bytearray so an explicit lock can overwrite it.
+    Callers must obtain it from the encrypted-archive unlock flow; this
+    function never persists it.
+    """
+    value = _key_bytes(key)
+    root_key = str(_resolved_path(root))
+    with _SESSION_LOCK:
+        previous = _SESSION_KEYS.get(root_key)
+        if previous is not None:
+            for index in range(len(previous)):
+                previous[index] = 0
+        _SESSION_KEYS[root_key] = bytearray(value)
+
+
+def clear_session_key(root):
+    """Forget and overwrite the in-memory key for an archive root."""
+    root_key = str(_resolved_path(root))
+    with _SESSION_LOCK:
+        value = _SESSION_KEYS.pop(root_key, None)
+        if value is not None:
+            for index in range(len(value)):
+                value[index] = 0
+
+
+def session_unlocked(root):
+    with _SESSION_LOCK:
+        return str(_resolved_path(root)) in _SESSION_KEYS
+
+
+def _session_key_for(path):
+    parent = str(_resolved_path(path).parent)
+    with _SESSION_LOCK:
+        value = _SESSION_KEYS.get(parent)
+        return bytes(value) if value is not None else None
 
 
 def is_encrypted_file(path):

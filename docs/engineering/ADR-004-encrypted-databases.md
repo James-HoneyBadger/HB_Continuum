@@ -1,6 +1,7 @@
 # ADR-004: Encrypted SQLite feasibility foundation
 
-- **Status:** Proposed, feasibility only. Existing archives remain plaintext.
+- **Status:** Accepted for encrypted **new-archive** creation. Existing
+  archives remain plaintext; no migration is implemented.
 - **Date:** 2026-11-28
 - **Scope:** Connection centralization and a synthetic SQLCipher prototype. No
   archive migration, key-storage product flow or production encryption claim.
@@ -129,3 +130,25 @@ works, and ARM64 macOS packaging succeeds. The next milestone should add a
 platform key provider, keyed constructors and a deliberately reversible
 encryption/decryption migration with backup and recovery tests before any
 production encryption claim.
+
+
+## Update: encrypted creation milestone
+
+`hb_engine/encryption.py` now creates a new archive in a staging directory and
+publishes it atomically only after `archive.sqlite3`, `research.sqlite3`,
+`catalog.sqlite3` and the public `.hb-encryption.json` KDF descriptor exist.
+Passwords are prompted for, never placed in command-line arguments, and derived
+to a 32-byte key with scrypt (`N=16384`, `r=8`, `p=1`, 16-byte salt). The key is
+bound to the archive root only in process memory; explicit locking overwrites
+the in-memory copy and prevents new connections.
+
+SQLCipher encrypts the three databases and their rollback journals. Encrypted
+connections use memory-backed temporary storage, secure deletion and SQLCipher
+memory security. Raw EML files, external documents, preferences, schedules,
+exports and reports remain plaintext. Encrypted backups are deliberately
+refused until keyed backup/restore is designed and tested.
+
+The desktop application includes an unlock panel and an explicit **Lock**
+action; the IPC protocol exposes `encryption_status`, `encryption_unlock` and
+`encryption_lock`. User-facing details and limitations are in
+[Encryption](../ENCRYPTION.md).

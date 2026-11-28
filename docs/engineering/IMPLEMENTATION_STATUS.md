@@ -1033,7 +1033,7 @@ interchange (Phase V).
   owner, subject to those documented limitations. This is not a security
   certification or a claim of comprehensive platform support.
 
-## Encryption foundation feasibility (2026-11-28)
+## Encryption foundation and encrypted archive creation (2026-11-28)
 
 - Production database connections now route through `hb_engine/db.py`.
   Without a key the service delegates to standard-library SQLite, preserving
@@ -1049,15 +1049,37 @@ interchange (Phase V).
   present passed the existing engine smoke test.
 - Correct credentials opened the prototype; a wrong key, a missing key and
   plaintext SQLite all failed. No plaintext fallback occurred.
-- Verification: 332 tests on Python 3.12.0 and 3.13.7. Without the optional
-  binding, 328 passed and 4 skipped; with `sqlcipher3` installed in a temporary
-  Python 3.13 environment, 330 passed and 2 skipped. `mypy==2.4.1` was clean on
-  26 files. The packaged engine smoke test passed with and without the binding
+- `dispatch.py --archive PATH init-encrypted` creates three new encrypted
+  databases atomically. A 12+ character password is prompted twice and derived
+  with scrypt to a 32-byte key; only public salt/KDF parameters are stored in
+  `.hb-encryption.json` (mode 0600). Passwords and keys are not stored in
+  preferences, logs, Git, command-line arguments or ordinary files.
+- Unlock is process-local and memory-only. CLI commands prompt; the desktop has
+  a password panel and explicit **Lock** action; IPC exposes
+  `encryption_status`, `encryption_unlock` and `encryption_lock`. Locking clears
+  the key and is refused while background jobs are active.
+- Synthetic tests exercised email indexing/search, catalog records, document
+  import/search, research workspace creation and migrations while unlocked.
+  Rollback journals did not contain plaintext, temporary storage is memory-only,
+  SQLCipher memory security is enabled, and database copies failed under
+  ordinary SQLite or a wrong key.
+- Raw EML files, external documents, preferences, schedules, exports and reports
+  remain plaintext. Encrypted-archive backup/restore is explicitly refused
+  rather than creating a plaintext copy.
+- The packaged ARM64 engine was built with `sqlcipher3`, created an encrypted
+  archive through `init-encrypted`, reopened it with the correct password, and
+  rejected a wrong password. `encryption-status` reported `available: true`.
+- Verification: 337 tests on Python 3.12.0 and 3.13.7. Without the optional
+  binding, 328 passed and 9 skipped; with `sqlcipher3` installed in a temporary
+  Python 3.13 environment, 335 passed and 2 skipped. `mypy==2.4.1` was clean on
+  27 files. The packaged engine smoke test passed with and without the binding
   installed.
-- Not implemented: archive encryption or migration, key generation/storage,
-  OS keychain integration, key rotation, recovery, keyed backup/restore and
-  migration workflows, a shared exception abstraction for SQLCipher's distinct
-  DB-API exceptions, or any production encryption claim. Existing archives
-  remain plaintext.
-- Decision: SQLCipher is technically viable for a later encryption milestone.
-  See [ADR-004](ADR-004-encrypted-databases.md).
+- Not implemented: encryption or migration of existing archives, OS keychain
+  or credential storage, key rotation, password recovery, keyed backup/restore
+  and migration workflows, a shared exception abstraction for SQLCipher's
+  distinct DB-API exceptions, or any production encryption claim. Existing
+  archives remain plaintext.
+- Decision: SQLCipher is accepted for new encrypted archives. Migration of
+  existing archives remains a separate future milestone. See
+  [ADR-004](ADR-004-encrypted-databases.md) and
+  [Encryption](../ENCRYPTION.md).
