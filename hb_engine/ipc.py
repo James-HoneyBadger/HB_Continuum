@@ -11,7 +11,6 @@ import hashlib, json, sqlite3, sys, threading, uuid
 from pathlib import Path
 
 PROTOCOL_VERSION = 1
-SEARCH_CAP = 5000
 
 def _error(request_id, code, message):
     return {'protocol_version': PROTOCOL_VERSION, 'request_id': request_id,
@@ -1040,8 +1039,8 @@ class IPCServer:
         finally:
             catalog.close()
 
-    def _search(self, params):
-        from .unified import CATALOG_KINDS, search_unified, search_unified_count
+    def _search_spec(self, params):
+        from .unified import CATALOG_KINDS
         query = params.get('query')
         if not isinstance(query, str) or not query.strip():
             raise IPCError('INVALID_PARAMS', 'search requires a non-empty query string')
@@ -1051,8 +1050,15 @@ class IPCServer:
         sources = tuple(sources) or ('email', 'facebook')
         if not all(s in ('email', 'facebook') for s in sources):
             raise IPCError('INVALID_PARAMS', 'sources must be email and/or facebook')
-        page = max(1, int(params.get('page', 1)))
-        page_size = max(1, min(int(params.get('page_size', 20)), 1000))
+        page = params.get('page', 1)
+        page_size = params.get('page_size', 20)
+        if not isinstance(page, int) or isinstance(page, bool) or page < 1:
+            raise IPCError('INVALID_PARAMS', 'page must be a positive integer')
+        if not isinstance(page_size, int) or isinstance(page_size, bool) \
+                or not 1 <= page_size <= 1000:
+            raise IPCError('INVALID_PARAMS', 'page_size must be an integer between 1 and 1000')
+        if (page - 1) * page_size > 10_000_000:
+            raise IPCError('INVALID_PARAMS', 'page offset must not exceed 10000000 records')
         after = params.get('after')
         before = params.get('before')
         for name, value in (('after', after), ('before', before)):
@@ -1065,20 +1071,45 @@ class IPCServer:
             if any(kind not in allowed for kind in kinds):
                 raise IPCError('INVALID_PARAMS', 'kinds contains an unsupported record kind')
         tags = _string_list(params.get('tags'), 'tags', 20, 100)
+        return {'query': query, 'sources': sources, 'page': page,
+                'page_size': page_size, 'after': after, 'before': before,
+                'senders': senders, 'kinds': kinds, 'tags': tags}
+
+    def _search_page(self, spec, cancel=None):
+        from .unified import search_unified_page, search_unified_count
+        offset = (spec['page'] - 1) * spec['page_size']
         exclude_disabled = _hide_disabled_sources(self.root)
-        results = search_unified(self.root, query, limit=SEARCH_CAP, sources=sources,
-                                 after=after, before=before, senders=senders,
-                                 kinds=kinds, tags=tags, exclude_disabled=exclude_disabled)
-        start = (page - 1) * page_size
-        exact = search_unified_count(self.root, query, sources=sources, after=after,
-                                     before=before, senders=senders, kinds=kinds,
-                                     tags=tags, exclude_disabled=exclude_disabled)
-        total = len(results) if exact is None else exact
-        capped = len(results) >= SEARCH_CAP and (exact is None or exact > len(results))
-        return {'items': results[start:start + page_size], 'page': page,
-                'page_size': page_size,
-                'has_more': exact is not None and total > start + page_size,
-                'total': total, 'total_is_exact': exact is not None, 'capped': capped}
+        result = search_unified_page(
+            self.root, spec['query'], offset=offset, limit=spec['page_size'],
+            sources=spec['sources'], after=spec['after'], before=spec['before'],
+            senders=spec['senders'], kinds=spec['kinds'], tags=spec['tags'],
+            exclude_disabled=exclude_disabled, cancel=cancel)
+        items = result['items']
+        if result['cancelled']:
+            return {'items': items, 'page': spec['page'], 'page_size': spec['page_size'],
+                    'has_more': True, 'total': offset + len(items),
+                    'total_is_exact': False, 'capped': False, 'cancelled': True}
+        exact = search_unified_count(
+            self.root, spec['query'], sources=spec['sources'], after=spec['after'],
+            before=spec['before'], senders=spec['senders'], kinds=spec['kinds'],
+            tags=spec['tags'], exclude_disabled=exclude_disabled)
+        total = exact if exact is not None else offset + len(items)
+        has_more = result['has_more'] if exact is None else exact > offset + len(items)
+        return {'items': items, 'page': spec['page'], 'page_size': spec['page_size'],
+                'has_more': has_more, 'total': total,
+                'total_is_exact': exact is not None, 'capped': False,
+                'cancelled': False}
+
+    def _search(self, params):
+        return self._search_page(self._search_spec(params))
+
+    def _start_search(self, params):
+        spec = self._search_spec(params)
+
+        def work(job_id, cancel_event):
+            return self._search_page(spec, cancel_event)
+
+        return self._start_job(work)
 
     def _advanced_search(self, params):
         from .advanced_search import search_advanced
@@ -1399,6 +1430,8 @@ class IPCServer:
                                             'catalog': self._catalog_stats()})
             if method == 'search':
                 return _result(request_id, self._search(params))
+            if method == 'search_job':
+                return _result(request_id, self._start_search(params))
             if method == 'search_advanced':
                 return _result(request_id, self._advanced_search(params))
             if method == 'advanced_queries_list':

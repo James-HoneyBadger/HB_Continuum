@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (c) 2026 Honey Badger Universe
-import io, json, os, sqlite3, subprocess, sys, tempfile, time, unittest
+import hashlib, io, json, os, sqlite3, subprocess, sys, tempfile, time, unittest
 from contextlib import closing
 from pathlib import Path
 from unittest import mock
@@ -93,6 +93,55 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(result['total'],2)
         page2=self.server.handle(request('search',query='bullion',page=2,page_size=1))
         self.assertFalse(page2['result']['has_more'])
+
+    def test_search_job_returns_a_page(self):
+        self.a.ingest(b'From: b@example.invalid\r\nSubject: Another bullion\r\n\r\nMore bullion here')
+        started=self.server.handle(request('search_job',query='bullion',page=1,page_size=1))
+        terminal=self.finish_job(started['result']['job_id'])
+        self.assertEqual(terminal['event'],'job_complete')
+        result=terminal['result']
+        self.assertEqual(len(result['items']),1)
+        self.assertTrue(result['has_more'])
+        self.assertTrue(result['total_is_exact'])
+        self.assertEqual(result['total'],2)
+        self.assertFalse(result['cancelled'])
+        self.assertEqual(self.server.handle(request(
+            'search_job',query='bullion',kinds=['bogus']))['error']['code'],
+            'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request(
+            'search_job',query='bullion',page_size=0))['error']['code'],
+            'INVALID_PARAMS')
+
+    def test_search_job_pages_beyond_the_former_ceiling(self):
+        messages=[]
+        index=[]
+        for i in range(5001):
+            digest=hashlib.sha256(f'overflow-{i}'.encode()).hexdigest()
+            subject=f'Overflow {i}'
+            body=f'overflow {i}'
+            messages.append((digest,subject,'bulk@example.invalid',None,None,None,body,
+                             1700000000+i,'second',len(body)))
+            index.append((digest,subject,'bulk@example.invalid',body))
+        with self.a.db:
+            self.a.db.executemany(
+                'INSERT INTO messages(hash,subject,sender,date,message_id,reply_to,'
+                'body,sort_ts,date_precision,size) VALUES(?,?,?,?,?,?,?,?,?,?)',messages)
+            self.a.db.executemany(
+                'INSERT INTO search(hash,subject,sender,body) VALUES(?,?,?,?)',index)
+        started=self.server.handle(request('search_job',query='overflow',page=6,page_size=1000))
+        terminal=self.finish_job(started['result']['job_id'])
+        self.assertEqual(terminal['event'],'job_complete')
+        result=terminal['result']
+        self.assertEqual(result['total'],5001)
+        self.assertEqual(len(result['items']),1)
+        self.assertFalse(result['has_more'])
+        self.assertFalse(result['cancelled'])
+        previous=self.server.handle(request('search_job',query='overflow',page=5,page_size=1000))
+        earlier=self.finish_job(previous['result']['job_id'])['result']
+        self.assertEqual(len(earlier['items']),1000)
+        self.assertTrue(earlier['has_more'])
+        self.assertFalse({item['id'] for item in earlier['items']} &
+                         {item['id'] for item in result['items']})
 
     def test_unknown_method(self):
         resp=self.server.handle(request('nope'))

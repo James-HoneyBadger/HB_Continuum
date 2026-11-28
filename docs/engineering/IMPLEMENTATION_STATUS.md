@@ -167,12 +167,11 @@ landed (Overview dashboard, design tokens, timeline pagination).
   SQL for both sources; tags are resolved in the research overlay and applied
   to email results after ranking.
 - Totals are exact counts from each source unless a tag filter is used.
-  Responses now report `total`, `total_is_exact` and `capped`, and `has_more`
-  only when it is actually known. The 5000-fused-candidate listing cap is
-  exposed instead of being reported as a total.
+  Responses report `total`, `total_is_exact` and `has_more` only when it is
+  actually known. The 5000-fused-candidate listing cap introduced here was
+  removed by the v0.5 paged search contract; see the v0.5 section below.
 - The Search workspace gains source checkboxes, exact sender/actor, record
-  kind and tag inputs, and states "at least" totals and the listing cap
-  explicitly.
+  kind and tag inputs, and states "at least" totals explicitly.
 - Malformed FTS expressions are now validated before running: the engine
   reports a specific rejection instead of silently returning no matches, and
   the Search workspace shows the reason plus syntax help (phrases, prefixes,
@@ -703,9 +702,11 @@ Scheduler verification status:
   refresh (699 ms at 100k). Archive schema 5 records original sizes at
   import, reducing that dashboard to 34 ms while keeping a filesystem
   fallback for older or damaged archives.
-- Unified search still materializes at most `SEARCH_CAP` (5000) fused
-  results per query before paginating; that cap, not archive size, bounds
-  memory. Raising it needs a paged FTS contract.
+- Unified search streams each source index and merges lazily, so memory is
+  bounded by the page size plus one buffered batch per source rather than a
+  fixed candidate ceiling. Deep pages rescan from the start (offset
+  pagination), so their cost is linear in the offset; a stateful cursor is a
+  future optimization, not a current claim.
 - 1,000,000-record runs have not been performed and are not claimed.
 
 ## Known limitations
@@ -720,8 +721,8 @@ Scheduler verification status:
 - The desktop shell now has a Source Manager with enable/disable, per-source
   verification and preview-first removal, import history, Collections with
   report drafts, a Journal, archive reports, the relationship explorer and
-  nested boolean query groups. Paged unified search beyond the current
-  candidate cap remains pending.
+  nested boolean query groups. Unified search streams beyond the former
+  candidate ceiling and supports cancellation in the desktop.
 - Disabling a source stops new automatic imports; it does not hide that
   source's historical records from search or the timeline.
 - Import history is best-effort for Facebook imports: a completed import
@@ -734,10 +735,10 @@ Scheduler verification status:
 
 ## Next recommended tasks
 
-1. Extend unified search with a paged FTS contract so results are not
-   capped at 5000.
-2. Run the benchmark harness on Windows and Linux and add a 1M-record run
+1. Run the benchmark harness on Windows and Linux and add a 1M-record run
    before making large-archive claims.
+2. Build the evidence-grounded historical intelligence engine and its
+   desktop workspace on the v0.5 development branch.
 
 ## Release qualification: v0.4.0-alpha (2026-11-27)
 
@@ -811,3 +812,43 @@ Hosted CI re-ran the full 12-job matrix after the version bump. The
 `v0.4.0-beta` tag and GitHub beta release supersede the alpha as the current
 milestone; the alpha remains flagged as a prerelease. The beta release is
 source-only and includes no signed binaries.
+
+## v0.5 Intelligence Update — Phase I: scalable unified search (2026-11-28)
+
+Development branch: `develop/intelligence-update`, created from the verified
+v0.4 beta development tip. The released tags are untouched.
+
+- Unified search now streams each source index in rank order and merges the
+  streams lazily. There is no fixed 5,000-candidate ceiling: a page is built
+  by advancing only far enough to fill it, and the previous page size no
+  longer bounds later results.
+- Filters are applied before a record receives its rank. Within each source,
+  ordering is deterministic by FTS5 relevance then record identifier; the
+  merge then orders by reciprocal-rank score, parsed date, source and id.
+  Parsed-date checks remain as a guard over the SQL filters.
+- Exact totals still come from source count queries. A tag filter makes the
+  total inexact, and the response reports that explicitly. The `capped`
+  response field is retained for protocol compatibility and is always false.
+- `search_job` runs the paged search as a cancellable background job through
+  the existing job protocol. The engine also accepts an event-like `cancel`
+  object on `search_unified_page`; a cancelled request returns its partial
+  page flagged `cancelled` rather than presenting it as complete.
+- The Search workspace now uses the job protocol, shows a Cancel button while
+  searching, and no longer displays the removed candidate-cap warning. The
+  Tauri `search` bridge now forwards sender, kind, tag and date filters that
+  were previously dropped before reaching the engine; `search_job` is exposed
+  with the same complete parameter set.
+- Regression coverage creates a synthetic archive of 5,050 matching emails
+  plus one catalog record and verifies: retrieval at offset 5,000, complete
+  and duplicate-free collection across pages, deterministic page boundaries,
+  sender and date filters before pagination, cancellation, malformed-query
+  handling, and the IPC search job.
+- Verified on Python 3.12.0 and 3.13.7: 291 tests, 289 passed, 2 skipped,
+  zero failures on both; `mypy==2.4.1` clean on 23 files; frontend type-check
+  and production build pass; `cargo check` and `cargo test` pass.
+
+Remaining limitations for this phase: offset pagination rescans from the
+start, so deep pages cost time proportional to the offset (memory stays
+bounded); tag filters still make totals inexact; advanced boolean search
+retains its separate safety bound and paging contract. The next milestone is
+the evidence-grounded historical intelligence engine (Phases II and III).

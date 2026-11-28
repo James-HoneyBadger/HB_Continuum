@@ -10,7 +10,7 @@ HB Continuum is in active real-world use. It has moved beyond a proof of concept
 
 Continuum has grown from an email preservation utility into a private historical research workstation. The v0.4 beta supports email and exported Facebook records, unified and advanced Boolean search, historical timelines, evidence collections, a revision-tracked journal, relationship exploration, reports, and verified archival recovery. Local Ollama message and conversation summarization is optional.
 
-**Next milestone — v0.5, the Intelligence Update (planned):** scalable search beyond the current candidate ceiling, evidence-grounded conversational research with inspectable source references, additional document ingestion, and optional Honey Badger application interchange. These are development objectives, not released capabilities.
+**Next milestone — v0.5, the Intelligence Update (in development):** scalable paged search beyond the former candidate ceiling is implemented on the intelligence development branch. Evidence-grounded conversational research with inspectable source references, additional document ingestion, and optional Honey Badger application interchange remain development objectives, not released capabilities.
 
 ## Independent and interoperable
 
@@ -186,9 +186,11 @@ python3 dispatch.py summarize run --all --type thread
 **Unified search** — search archived email and imported records together;
 snippets are excerpts of the stored text, never generated. The desktop search
 adds source, exact sender/actor, record-kind, tag and date-range filters.
-Totals are exact counts unless a tag filter is applied. In the v0.4 beta,
-unified search pages over at most 5,000 fused candidates per query; the
-interface reports truncation rather than presenting this cap as the total. Malformed query
+Totals are exact counts unless a tag filter is applied. Each source index is
+streamed in rank order and merged lazily, so paging continues beyond the
+former 5,000-candidate ceiling without loading the archive into memory. The
+desktop runs searches as cancellable background jobs and reports incomplete
+counts honestly. Malformed query
 expressions are rejected with an explanation and syntax help instead of
 silently returning no matches. The Advanced workspace builds nested boolean
 groups over text, sender/actor, record kind, source, date and tag rules. Each
@@ -208,7 +210,8 @@ python3 dispatch.py search-all "bullion" --sources facebook
 Python engine over the versioned IPC protocol. Workspaces include an Overview
 dashboard (unique records, mailbox origins, undated counts, coverage, storage,
 records by year); a paged timeline with oldest/newest ordering, sender filter
-and date range; unified search with paging and date range; a nested boolean
+and date range; unified search with deep paging, date range and cancellation;
+a nested boolean
 query builder; Sources; a
 background Import Center with preview, progress, cancellation and history;
 Research; Collections, including adding the open message from the Timeline or

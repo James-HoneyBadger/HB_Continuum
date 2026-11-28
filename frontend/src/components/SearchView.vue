@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useEngineJob } from "../composables/useEngineJob";
 
 const props = defineProps<{ onError: (message: string) => void; onChanged: () => void }>();
 
@@ -18,7 +19,8 @@ interface ResultItem {
 const query = ref("");
 const results = ref<ResultItem[]>([]);
 const total = ref(0);
-const busy = ref(false);
+const searchJob = useEngineJob();
+const busy = searchJob.busy;
 const page = ref(1);
 const pageSize = 50;
 const hasMore = ref(false);
@@ -30,7 +32,6 @@ const sendersText = ref("");
 const kind = ref("");
 const tagsText = ref("");
 const totalIsExact = ref(true);
-const capped = ref(false);
 const validationError = ref("");
 const humanQuery = computed(() => {
   const parts: string[] = [];
@@ -155,15 +156,14 @@ async function runSearch(target = 1) {
     props.onError(String(e));
     return;
   }
-  busy.value = true;
+  const after = fromDate.value
+    ? Math.floor(new Date(`${fromDate.value}T00:00:00Z`).getTime() / 1000)
+    : undefined;
+  const before = toDate.value
+    ? Math.floor(new Date(`${toDate.value}T00:00:00Z`).getTime() / 1000) + 86400
+    : undefined;
   try {
-    const after = fromDate.value
-      ? Math.floor(new Date(`${fromDate.value}T00:00:00Z`).getTime() / 1000)
-      : undefined;
-    const before = toDate.value
-      ? Math.floor(new Date(`${toDate.value}T00:00:00Z`).getTime() / 1000) + 86400
-      : undefined;
-    const response = (await invoke("search", {
+    const outcome = await searchJob.start("search_job", {
       query: query.value,
       sources,
       page: target,
@@ -173,18 +173,26 @@ async function runSearch(target = 1) {
       senders: splitList(sendersText.value),
       kinds: kind.value ? [kind.value] : undefined,
       tags: splitList(tagsText.value),
-    })) as {
+    });
+    if (outcome.event === "job_error") {
+      props.onError(String(outcome.message || "Search failed"));
+      return;
+    }
+    const response = outcome.result as {
       items: ResultItem[];
       total: number;
       has_more: boolean;
       total_is_exact: boolean;
-      capped: boolean;
+      cancelled: boolean;
     };
+    if (response.cancelled) {
+      notice.value = "Search cancelled.";
+      return;
+    }
     results.value = response.items;
     total.value = response.total;
     hasMore.value = response.has_more;
     totalIsExact.value = response.total_is_exact;
-    capped.value = response.capped;
     page.value = target;
     selected.value = [];
     detail.value = null;
@@ -192,8 +200,6 @@ async function runSearch(target = 1) {
     threadView.value = null;
   } catch (e) {
     props.onError(String(e));
-  } finally {
-    busy.value = false;
   }
 }
 
@@ -304,6 +310,7 @@ async function exportSelected() {
         <input v-model="toDate" type="date" />
       </label>
       <button type="submit" :disabled="busy">{{ busy ? "Searching…" : "Search" }}</button>
+      <button v-if="busy" type="button" @click="searchJob.cancel()">Cancel</button>
     </form>
 
     <div class="row filters">
@@ -347,7 +354,6 @@ async function exportSelected() {
     <p v-if="total !== null && query" class="count">
       {{ total }} results<span v-if="!totalIsExact"> (at least)</span> · page {{ page }} ·
       {{ selected.length }} selected
-      <span v-if="capped"> · listing limited to the first 5000 matches; refine the query</span>
     </p>
     <div v-if="query && (page > 1 || hasMore)" class="row">
       <button :disabled="busy || page <= 1" @click="runSearch(page - 1)">Previous</button>

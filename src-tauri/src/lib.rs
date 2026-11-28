@@ -198,23 +198,70 @@ fn stats(state: State<AppState>) -> Result<Value, String> {
     call(&state, "stats", json!({}))
 }
 
+#[allow(clippy::too_many_arguments)]
+fn search_params(
+    query: String,
+    sources: Option<Vec<String>>,
+    page: Option<u32>,
+    page_size: Option<u32>,
+    after: Option<i64>,
+    before: Option<i64>,
+    senders: Option<Vec<String>>,
+    kinds: Option<Vec<String>>,
+    tags: Option<Vec<String>>,
+) -> Value {
+    json!({
+        "query": query,
+        "sources": sources.unwrap_or_else(|| vec!["email".to_string(), "facebook".to_string()]),
+        "page": page.unwrap_or(1),
+        "page_size": page_size.unwrap_or(20),
+        "after": after,
+        "before": before,
+        "senders": senders,
+        "kinds": kinds,
+        "tags": tags,
+    })
+}
+
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 fn search(
     state: State<AppState>,
     query: String,
     sources: Option<Vec<String>>,
     page: Option<u32>,
     page_size: Option<u32>,
+    after: Option<i64>,
+    before: Option<i64>,
+    senders: Option<Vec<String>>,
+    kinds: Option<Vec<String>>,
+    tags: Option<Vec<String>>,
 ) -> Result<Value, String> {
     call(
         &state,
         "search",
-        json!({
-            "query": query,
-            "sources": sources.unwrap_or_else(|| vec!["email".to_string(), "facebook".to_string()]),
-            "page": page.unwrap_or(1),
-            "page_size": page_size.unwrap_or(20),
-        }),
+        search_params(query, sources, page, page_size, after, before, senders, kinds, tags),
+    )
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+fn search_job(
+    state: State<AppState>,
+    query: String,
+    sources: Option<Vec<String>>,
+    page: Option<u32>,
+    page_size: Option<u32>,
+    after: Option<i64>,
+    before: Option<i64>,
+    senders: Option<Vec<String>>,
+    kinds: Option<Vec<String>>,
+    tags: Option<Vec<String>>,
+) -> Result<Value, String> {
+    call(
+        &state,
+        "search_job",
+        search_params(query, sources, page, page_size, after, before, senders, kinds, tags),
     )
 }
 
@@ -895,7 +942,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            ping, stats, search, search_advanced, search_validate,
+            ping, stats, search, search_job, search_advanced, search_validate,
             advanced_queries_list, advanced_query_get, advanced_query_save, advanced_query_delete,
             message, thread, timeline, dashboard,
             correspondents, relationships,

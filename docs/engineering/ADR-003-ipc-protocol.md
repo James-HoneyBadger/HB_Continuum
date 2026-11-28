@@ -20,7 +20,7 @@ spawned as `python3 dispatch.py --archive <root> serve`.
   either `result` or `error: {code, message}`.
 - Long-running jobs emit `event` objects (`progress`, `job_complete`,
   `job_error`) tagged with a `job_id`.
-- Methods are an explicit allowlist: `ping`, `stats`, `search`,
+- Methods are an explicit allowlist: `ping`, `stats`, `search`, `search_job`,
   `search_advanced`, `search_validate`, `message`, `thread`, `timeline`,
   `correspondents`, `relationships`, `record`, `verify`, `health`,
   `migrate_status`, `reindex`,
@@ -48,6 +48,14 @@ spawned as `python3 dispatch.py --archive <root> serve`.
 - `timeline` returns messages ordered by their declared Date header with
   unparseable dates last, optionally filtered by sender; `correspondents`
   counts messages per sender. Both are read-only and cap `limit` at 5000.
+- `search` and `search_job` return one page of fused email and catalog
+  results. Each source index is streamed in rank order and merged lazily, so
+  pages continue beyond the former 5000-candidate ceiling without
+  materializing the archive. Filters apply before ranking, ordering is
+  deterministic, and `total_is_exact` distinguishes exact counts from the
+  lower bound returned when a tag filter makes the total unknowable.
+  `search_job` is the cancellable background form used by the desktop; the
+  `capped` response field is retained for compatibility and is always false.
 - `search_advanced` accepts a validated tree of nested boolean groups and
   rules, evaluates each rule as a set over the selected sources, and returns
   an exact total with one page. Malformed trees or FTS expressions are

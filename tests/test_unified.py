@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (c) 2026 Honey Badger Universe
-import json, tempfile, unittest
+import hashlib, json, tempfile, threading, unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from dispatch import Archive
 from facebook import import_files
-from unified import search_unified, search_unified_count
+from unified import search_unified, search_unified_count, search_unified_page
 
 class UnifiedSearchTests(unittest.TestCase):
     def setUp(self):
@@ -135,6 +136,110 @@ class UnifiedSearchTests(unittest.TestCase):
         results=search_unified(self.root, 'bullion', sources=('email',))
         self.assertEqual(len(results),2)
         self.assertIn('bullion bullion bullion', results[0]['snippet'].lower())
+
+class UnifiedPaginationTests(unittest.TestCase):
+    """Pages must reach beyond the former 5,000-candidate ceiling."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp=tempfile.TemporaryDirectory()
+        cls.root=Path(cls.tmp.name)
+        archive=Archive(cls.root)
+        cls.records=5050
+        messages=[]
+        index=[]
+        try:
+            for i in range(cls.records):
+                digest=hashlib.sha256(f'bulk-{i}'.encode()).hexdigest()
+                subject=f'Bulk needle {i}'
+                sender='a@example.invalid' if i%2==0 else 'b@example.invalid'
+                body=f'needle token {i}'
+                stamp=1700000000+i
+                date=datetime.fromtimestamp(stamp,timezone.utc).isoformat()
+                messages.append((digest,subject,sender,date,None,None,body,
+                                 stamp,'second',len(body)))
+                index.append((digest,subject,sender,body))
+            with archive.db:
+                archive.db.executemany(
+                    'INSERT INTO messages(hash,subject,sender,date,message_id,reply_to,'
+                    'body,sort_ts,date_precision,size) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                    messages)
+                archive.db.executemany(
+                    'INSERT INTO search(hash,subject,sender,body) VALUES(?,?,?,?)',
+                    index)
+        finally:
+            archive.db.close()
+        posts=cls.root/'posts.json'
+        posts.write_text(json.dumps({'your_posts':[
+            {'timestamp':1700000000,'data':[{'post':'needle in catalog'}]}]}))
+        import_files([str(posts)],cls.root)
+        cls.total=cls.records+1
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def collect(self,page_size=1000,**kwargs):
+        items=[]
+        offset=0
+        while True:
+            result=search_unified_page(self.root,'needle',offset=offset,
+                                       limit=page_size,**kwargs)
+            items.extend(result['items'])
+            if not result['has_more']:
+                return items
+            offset+=len(result['items'])
+            if not result['items']:
+                self.fail('has_more with an empty page')
+
+    def test_retrieves_records_beyond_the_old_ceiling(self):
+        self.assertEqual(search_unified_count(self.root,'needle'),self.total)
+        tail=search_unified_page(self.root,'needle',offset=5000,limit=100)
+        self.assertEqual(len(tail['items']),self.total-5000)
+        self.assertFalse(tail['has_more'])
+        items=self.collect(page_size=1000)
+        self.assertEqual(len(items),self.total)
+        self.assertEqual(len({(item['source'],item['id']) for item in items}),self.total)
+        self.assertEqual({item['source'] for item in items},{'email','facebook'})
+
+    def test_pages_are_deterministic_and_do_not_overlap(self):
+        first=search_unified_page(self.root,'needle',offset=1200,limit=50)
+        again=search_unified_page(self.root,'needle',offset=1200,limit=50)
+        self.assertEqual([item['id'] for item in first['items']],
+                         [item['id'] for item in again['items']])
+        following=search_unified_page(self.root,'needle',offset=1250,limit=50)
+        self.assertFalse({item['id'] for item in first['items']} &
+                         {item['id'] for item in following['items']})
+
+    def test_filters_apply_before_pagination(self):
+        items=self.collect(page_size=500,senders=['a@example.invalid'])
+        self.assertEqual(len(items),self.records//2)
+        self.assertTrue(all(item['actor']=='a@example.invalid' for item in items))
+        dated=search_unified_page(self.root,'needle',offset=0,limit=10,
+                                  after=1700001000,before=1700001020)
+        self.assertEqual(len(dated['items']),10)
+        self.assertTrue(dated['has_more'])
+
+    def test_cancellation_returns_a_partial_page(self):
+        event=threading.Event(); event.set()
+        result=search_unified_page(self.root,'needle',limit=10,cancel=event)
+        self.assertTrue(result['cancelled'])
+        self.assertEqual(result['items'],[])
+        class CancelAfter:
+            def __init__(self,remaining): self.remaining=remaining
+            def is_set(self):
+                self.remaining-=1
+                return self.remaining<0
+        partial=search_unified_page(self.root,'needle',limit=1000,
+                                    cancel=CancelAfter(600))
+        self.assertTrue(partial['cancelled'])
+        self.assertLess(len(partial['items']),1000)
+
+    def test_malformed_query_returns_an_empty_page(self):
+        result=search_unified_page(self.root,'a:b',limit=10)
+        self.assertEqual(result['items'],[])
+        self.assertFalse(result['cancelled'])
+
 
 if __name__=='__main__':
     unittest.main()
