@@ -4,13 +4,14 @@ HB Continuum exposes archive-specific preferences through a graphical configurat
 center. No source code editing is required. Open the desktop application
 with `python3 dispatch.py --archive ~/HB_Mail_Archive gui`, then choose
 **Configuration center**. Save changes and restart the workstation to apply
-appearance and research settings. Synchronization reads current preferences
-at the beginning of each folder run.
+appearance settings. Source-visibility changes apply to the next search or
+timeline load. Synchronization reads current preferences at the beginning of
+each folder run.
 
 | Area | Options |
 |---|---|
 | Appearance | System/light/dark theme, reader font family and size, wrapping, horizontal or vertical message panes, initial window dimensions, subject and sender column widths, message IDs and SHA-256 visibility in the individual message reader |
-| Research | Search, recent, timeline and correspondent result limits (10–5000), FTS or exact phrase search, startup recent view or saved query |
+| Research | Search, recent, timeline and correspondent result limits (10–5000), FTS or exact phrase search, startup recent view or saved query, and hiding disabled sources from unified search, the timeline and correspondent counts |
 | Files | Default EML import and evidence export directories |
 | Integrity | Optional hash verification at startup |
 | Synchronization | Network timeout (10–300 seconds), per-folder batch cap (0 means unlimited) |
@@ -23,6 +24,11 @@ Export/import transfers only preferences, not emails, account profiles or
 passwords. Exported preferences can still reveal local paths or search terms;
 review before sharing. Import previews settings in the editor; click Save
 to apply. Restore defaults likewise requires Save.
+
+Hiding disabled sources affects default views only: unified search, the
+timeline and correspondent counts. The Sources inventory, archive-wide
+dashboard and explicit advanced queries still show the historical records,
+and nothing is deleted or re-enabled automatically.
 
 Hash verification on startup may take considerable time for large archives.
 A nonzero batch cap deliberately limits each sync; subsequent runs resume

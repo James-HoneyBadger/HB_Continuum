@@ -717,6 +717,26 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(self.server.handle(request('timeline',sender=5))['error']['code'],'INVALID_PARAMS')
         self.assertEqual(self.server.handle(request('correspondents',limit=0))['error']['code'],'INVALID_PARAMS')
 
+    def test_hide_disabled_sources_preference_filters_default_views(self):
+        from preferences import save as save_prefs
+        account='hidden@example.invalid'
+        with self.a.db:
+            self.a.db.execute('INSERT INTO origins VALUES(?,?,?,?,?)',
+                              (account,'INBOX','1','1',self.h))
+        self.server.handle(request('source_set_enabled',source='email',
+                                   source_key=account,enabled=False))
+        save_prefs(self.root,{'hide_disabled_sources':True})
+        self.assertEqual(self.server.handle(request('timeline'))['result'],[])
+        self.assertEqual(self.server.handle(request('correspondents'))['result'],[])
+        hidden=self.server.handle(request('search',query='Bullion'))['result']
+        self.assertEqual(hidden['items'],[])
+        self.assertEqual(hidden['total'],0)
+        save_prefs(self.root,{'hide_disabled_sources':False})
+        self.assertEqual(len(self.server.handle(request('timeline'))['result']),1)
+        visible=self.server.handle(request('search',query='Bullion'))['result']
+        self.assertEqual(visible['total'],1)
+        self.assertEqual(len(visible['items']),1)
+
     def test_relationships_over_ipc(self):
         self.a.ingest(b'From: b@example.invalid\r\nSubject: Re: Silver invoice\r\n'
                       b'Message-ID: <reply@example.invalid>\r\n'

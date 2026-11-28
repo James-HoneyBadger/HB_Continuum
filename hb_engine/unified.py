@@ -65,7 +65,7 @@ def _tagged_hashes(root, tags):
     finally:
         conn.close()
 
-def _email_where(senders, after, before):
+def _email_where(senders, after, before, disabled_accounts=None):
     clauses = []
     params = []
     if senders:
@@ -78,13 +78,40 @@ def _email_where(senders, after, before):
     if before is not None:
         clauses.append('m.sort_ts<?')
         params.append(int(before))
+    if disabled_accounts:
+        values = sorted(disabled_accounts)
+        placeholders = ','.join('?' for _ in values)
+        clauses.append(
+            '(NOT EXISTS (SELECT 1 FROM origins o WHERE o.hash=m.hash) OR EXISTS '
+            '(SELECT 1 FROM origins o WHERE o.hash=m.hash AND o.account NOT IN ('
+            + placeholders + ')))')
+        params.extend(values)
     return (' AND ' + ' AND '.join(clauses)) if clauses else '', params
 
-def _email_search(root, query, limit, senders=None, after=None, before=None):
+def _disabled_sources(root):
+    """Accounts and catalog source types explicitly disabled for new ingestion."""
+    path = Path(root) / 'archive.sqlite3'
+    if not path.is_file():
+        return set(), set()
+    conn = sqlite3.connect(str(path), timeout=30)
+    conn.execute('PRAGMA query_only=ON')
+    try:
+        rows = conn.execute(
+            "SELECT source, source_key FROM source_settings WHERE disabled_at IS NOT NULL"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    finally:
+        conn.close()
+    return ({key for source, key in rows if source == 'email'},
+            {key for source, key in rows if source == 'catalog'})
+
+def _email_search(root, query, limit, senders=None, after=None, before=None,
+                  disabled_accounts=None):
     """Email matches, ranked by the FTS5 bm25 score (best first)."""
     conn = sqlite3.connect(str(Path(root) / 'archive.sqlite3'), timeout=30)
     try:
-        extra, params = _email_where(senders, after, before)
+        extra, params = _email_where(senders, after, before, disabled_accounts)
         sql = ("SELECT search.hash, m.subject, m.sender, m.date, "
                "snippet(search, -1, '', '', '...', 24) "
                "FROM search JOIN messages m ON m.hash = search.hash "
@@ -99,10 +126,11 @@ def _email_search(root, query, limit, senders=None, after=None, before=None):
     finally:
         conn.close()
 
-def _email_count(root, query, senders=None, after=None, before=None):
+def _email_count(root, query, senders=None, after=None, before=None,
+                 disabled_accounts=None):
     conn = sqlite3.connect(str(Path(root) / 'archive.sqlite3'), timeout=30)
     try:
-        extra, params = _email_where(senders, after, before)
+        extra, params = _email_where(senders, after, before, disabled_accounts)
         sql = ('SELECT count(*) FROM search JOIN messages m ON m.hash = search.hash '
                f'WHERE search MATCH ?{extra}')
         try:
@@ -154,20 +182,29 @@ def _matches(item, senders, kinds, tagged):
     return True
 
 def search_unified(root, query, limit=100, sources=('email', 'facebook'),
-                   after=None, before=None, senders=None, kinds=None, tags=None):
-    """Fused, filtered search. `tags` matches any listed tag (email only)."""
+                   after=None, before=None, senders=None, kinds=None, tags=None,
+                   exclude_disabled=False):
+    """Fused, filtered search. `tags` matches any listed tag (email only).
+
+    With `exclude_disabled`, records belonging only to disabled email accounts
+    or disabled catalog source types are omitted. Messages shared with an
+    enabled account, and messages imported from `.eml` files, remain visible.
+    """
     limit = max(1, min(int(limit), 5000))
     senders = _normalize(senders)
     kinds = _normalize(kinds)
     tags = _normalize(tags)
+    disabled_accounts, disabled_catalog = (
+        _disabled_sources(root) if exclude_disabled else (set(), set()))
     tagged = _tagged_hashes(root, tags) if tags else None
     fetch = limit if (after is None and before is None and not tags) else min(5000, limit * 4)
     ranked = []
     if 'email' in sources and (not kinds or 'message' in kinds):
         if tagged is None or tagged:
-            ranked.append(_email_search(root, query, fetch, senders, after, before))
+            ranked.append(_email_search(root, query, fetch, senders, after, before,
+                                        disabled_accounts))
     catalog_kinds = [kind for kind in kinds if kind in CATALOG_KINDS] if kinds else None
-    if 'facebook' in sources and tags is None:
+    if 'facebook' in sources and tags is None and 'facebook' not in disabled_catalog:
         if not kinds or catalog_kinds:
             ranked.append(_facebook_search(root, query, fetch, senders, catalog_kinds,
                                            after, before))
@@ -188,21 +225,25 @@ def search_unified(root, query, limit=100, sources=('email', 'facebook'),
     return results[:limit]
 
 def search_unified_count(root, query, sources=('email', 'facebook'),
-                         after=None, before=None, senders=None, kinds=None, tags=None):
+                         after=None, before=None, senders=None, kinds=None, tags=None,
+                         exclude_disabled=False):
     """Exact total across sources, or None when a tag filter makes it inexact."""
     senders = _normalize(senders)
     kinds = _normalize(kinds)
     tags = _normalize(tags)
     if tags:
         return None
+    disabled_accounts, disabled_catalog = (
+        _disabled_sources(root) if exclude_disabled else (set(), set()))
     total = 0
     if 'email' in sources and (not kinds or 'message' in kinds):
-        count = _email_count(root, query, senders, after, before)
+        count = _email_count(root, query, senders, after, before, disabled_accounts)
         if count is None:
             return None
         total += count
     catalog_kinds = [kind for kind in kinds if kind in CATALOG_KINDS] if kinds else None
-    if 'facebook' in sources and (not kinds or catalog_kinds):
+    if 'facebook' in sources and 'facebook' not in disabled_catalog \
+            and (not kinds or catalog_kinds):
         count = _facebook_count(root, query, senders, catalog_kinds, after, before)
         if count is None:
             return None

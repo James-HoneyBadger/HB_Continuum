@@ -44,6 +44,14 @@ def _ro_connect(path):
     conn.execute('PRAGMA query_only=ON')
     return conn
 
+def _hide_disabled_sources(root):
+    """Read the display preference; an unreadable file leaves defaults in force."""
+    from .preferences import load as load_prefs
+    try:
+        return bool(load_prefs(root).get('hide_disabled_sources'))
+    except (OSError, ValueError):
+        return False
+
 def _attachments(conn, digest):
     """Indexed attachment metadata; legacy archives without the table yield none."""
     try:
@@ -228,7 +236,8 @@ def _timeline(root, sender=None, limit=100, offset=0, order='asc', after=None, b
             raise IPCError('INVALID_PARAMS', f'{name} must be a UTC epoch integer')
     conn = _ro_connect(path)
     try:
-        rows = timeline_rows(conn, sender, limit, offset, order, after, before)
+        rows = timeline_rows(conn, sender, limit, offset, order, after, before,
+                             exclude_disabled=_hide_disabled_sources(base))
     finally:
         conn.close()
     return [{'hash': h, 'subject': s or '', 'sender': f or '', 'date': d or ''}
@@ -503,7 +512,7 @@ def _correspondents(root, limit=100):
         raise IPCError('INVALID_PARAMS', 'limit must be an integer between 1 and 5000')
     conn = _ro_connect(path)
     try:
-        rows = correspondent_counts(conn, limit)
+        rows = correspondent_counts(conn, limit, exclude_disabled=_hide_disabled_sources(base))
     finally:
         conn.close()
     return [{'sender': sender or '', 'count': count} for sender, count in rows]
@@ -1056,13 +1065,14 @@ class IPCServer:
             if any(kind not in allowed for kind in kinds):
                 raise IPCError('INVALID_PARAMS', 'kinds contains an unsupported record kind')
         tags = _string_list(params.get('tags'), 'tags', 20, 100)
+        exclude_disabled = _hide_disabled_sources(self.root)
         results = search_unified(self.root, query, limit=SEARCH_CAP, sources=sources,
                                  after=after, before=before, senders=senders,
-                                 kinds=kinds, tags=tags)
+                                 kinds=kinds, tags=tags, exclude_disabled=exclude_disabled)
         start = (page - 1) * page_size
         exact = search_unified_count(self.root, query, sources=sources, after=after,
                                      before=before, senders=senders, kinds=kinds,
-                                     tags=tags)
+                                     tags=tags, exclude_disabled=exclude_disabled)
         total = len(results) if exact is None else exact
         capped = len(results) >= SEARCH_CAP and (exact is None or exact > len(results))
         return {'items': results[start:start + page_size], 'page': page,

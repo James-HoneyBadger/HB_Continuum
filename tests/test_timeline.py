@@ -3,7 +3,7 @@
 """Normalized chronology: timestamp parsing, migration backfill and ordering."""
 import sqlite3, tempfile, unittest
 from pathlib import Path
-from dispatch import Archive, timeline_rows
+from dispatch import Archive, timeline_rows, correspondent_counts
 from migrations import MIGRATIONS, apply, current_version
 from timestamps import parse_timestamp
 
@@ -64,6 +64,21 @@ class TimelineOrderingTests(unittest.TestCase):
         second=self.add('Tue, 02 Jan 2024 00:00:00 +0000','two',sender='b@example.invalid')
         self.assertEqual([h for h,_,_,_ in self.a.timeline(sender='a@example.invalid')],[first])
         self.assertEqual([h for h,_,_,_ in self.a.timeline(after=1704153600)],[second])
+
+    def test_disabled_accounts_are_hidden_on_request(self):
+        disabled=self.add('Mon, 01 Jan 2024 00:00:00 +0000','one',sender='a@example.invalid')
+        enabled=self.add('Tue, 02 Jan 2024 00:00:00 +0000','two',sender='b@example.invalid')
+        self.a.db.executemany('INSERT INTO origins VALUES(?,?,?,?,?)',[
+            ('a@example.invalid','INBOX','1','1',disabled),
+            ('b@example.invalid','INBOX','1','1',enabled)])
+        self.a.db.commit()
+        self.a.source_set_enabled('email','a@example.invalid',False)
+        self.assertEqual([h for h,_,_,_ in timeline_rows(self.a.db, exclude_disabled=True)],
+                         [enabled])
+        self.assertEqual(timeline_rows(self.a.db)[0][0],disabled)
+        self.assertEqual(correspondent_counts(self.a.db, exclude_disabled=True),
+                         [('b@example.invalid',1)])
+        self.assertEqual(self.a.timeline(exclude_disabled=True)[0][0],enabled)
 
     def test_legacy_schema_is_ordered_in_memory(self):
         db=sqlite3.connect(self.root/'legacy.sqlite3')

@@ -25,7 +25,7 @@ async function save() {
       values: Record<string, any>;
     };
     values.value = response.values;
-    notice.value = "Preferences saved. Restart the workstation to apply appearance changes.";
+    notice.value = "Preferences saved. Source visibility in search and the timeline applies immediately; appearance changes may need a restart.";
     props.onChanged();
   } catch (e) {
     props.onError(String(e));

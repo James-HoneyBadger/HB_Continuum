@@ -12,13 +12,15 @@ class PreferenceTests(unittest.TestCase):
     def tearDown(self):self.tmp.cleanup()
     def test_defaults(self):self.assertEqual(load(self.root),DEFAULTS)
     def test_roundtrip(self):
-        save(self.root,{'theme':'Dark','search_limit':350,'show_hash':False})
+        save(self.root,{'theme':'Dark','search_limit':350,'show_hash':False,
+                        'hide_disabled_sources':True})
         p=load(self.root);self.assertEqual(p['theme'],'Dark');self.assertEqual(p['search_limit'],350);self.assertFalse(p['show_hash'])
+        self.assertTrue(p['hide_disabled_sources'])
         dest=self.root/'portable.json';export(dest,p)
         import json
         self.assertEqual(decode(json.loads(dest.read_text())),p)
     def test_reject_invalid(self):
-        for p in ({'font_size':100},{'search_limit':True},{'theme':'unknown'},{'password':'secret'},{'startup_view':'Saved query'}):
+        for p in ({'font_size':100},{'search_limit':True},{'theme':'unknown'},{'password':'secret'},{'startup_view':'Saved query'},{'hide_disabled_sources':'yes'}):
             with self.assertRaises(ValueError):validate(p)
         with self.assertRaises(ValueError):decode({'version':2,'preferences':{}})
     def test_sync_preferences(self):

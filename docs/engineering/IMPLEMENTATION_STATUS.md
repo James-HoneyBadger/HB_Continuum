@@ -381,6 +381,21 @@ landed (Overview dashboard, design tokens, timeline pagination).
 - Fixed a leaked archive connection when migration was refused by the
   archive lock (surfaced by ResourceWarning under the test suite).
 
+### Disabled-source visibility preference (2026-11-28)
+
+- Research preference `hide_disabled_sources` (default off) hides records
+  whose only known email accounts, or whose catalog source type, is disabled
+  from unified search, the timeline and correspondent counts. Messages shared
+  with an enabled account, `.eml`-only messages, the Sources inventory, the
+  dashboard and explicit advanced queries remain unchanged; nothing is
+  deleted or re-enabled.
+- The IPC server reads the preference per request, so changing it applies to
+  the next search or timeline load. The Preferences workspace renders and
+  validates it through the existing schema.
+- Tests cover email and catalog search and counts, shared-account and
+  no-account messages, timeline and correspondent filtering, preference
+  validation and the IPC toggle.
+
 ### Benchmarks and stored original sizes (2026-11-27)
 
 - Added `scripts/benchmark.py`, a deterministic synthetic benchmark harness
@@ -721,10 +736,7 @@ Scheduler verification status:
 
 1. Extend unified search with a paged FTS contract so results are not
    capped at 5000.
-2. Add an optional "hide disabled sources from default views" preference.
-   Collection selection is now available from the timeline, the search result
-   list and the open record reader.
-3. Run the benchmark harness on Windows and Linux and add a 1M-record run
+2. Run the benchmark harness on Windows and Linux and add a 1M-record run
    before making large-archive claims.
 
 ## Release qualification: v0.4.0-alpha (2026-11-27)

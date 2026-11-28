@@ -4,7 +4,7 @@ import json, tempfile, unittest
 from pathlib import Path
 from dispatch import Archive
 from facebook import import_files
-from unified import search_unified
+from unified import search_unified, search_unified_count
 
 class UnifiedSearchTests(unittest.TestCase):
     def setUp(self):
@@ -73,6 +73,35 @@ class UnifiedSearchTests(unittest.TestCase):
         messages_only=search_unified(self.root,'bullion',kinds=['message'])
         self.assertEqual({r['source'] for r in messages_only},{'email'})
         self.assertEqual(search_unified(self.root,'bullion',kinds=['reaction']),[])
+
+    def test_disabled_sources_can_be_excluded_from_search(self):
+        digest=self.a.db.execute('SELECT hash FROM messages').fetchone()[0]
+        self.a.db.execute('INSERT INTO origins VALUES(?,?,?,?,?)',
+                          ('hidden@example.invalid','INBOX','1','1',digest))
+        self.a.db.commit()
+        self.a.source_set_enabled('email','hidden@example.invalid',False)
+        self.a.source_set_enabled('catalog','facebook',False)
+        self.assertEqual({r['source'] for r in search_unified(self.root,'bullion')},
+                         {'email','facebook'})
+        self.assertEqual(search_unified(self.root,'bullion',exclude_disabled=True),[])
+        self.assertEqual(search_unified_count(self.root,'bullion',exclude_disabled=True),0)
+
+    def test_message_shared_with_enabled_account_is_not_hidden(self):
+        digest=self.a.db.execute('SELECT hash FROM messages').fetchone()[0]
+        self.a.db.executemany('INSERT INTO origins VALUES(?,?,?,?,?)',[
+            ('hidden@example.invalid','INBOX','1','1',digest),
+            ('visible@example.invalid','INBOX','1','1',digest)])
+        self.a.db.commit()
+        self.a.source_set_enabled('email','hidden@example.invalid',False)
+        results=search_unified(self.root,'bullion',sources=('email',),exclude_disabled=True)
+        self.assertEqual(len(results),1)
+        self.assertEqual(search_unified_count(self.root,'bullion',sources=('email',),
+                                             exclude_disabled=True),1)
+
+    def test_message_without_an_account_remains_visible(self):
+        self.a.source_set_enabled('email','hidden@example.invalid',False)
+        results=search_unified(self.root,'bullion',sources=('email',),exclude_disabled=True)
+        self.assertEqual(len(results),1)
 
     def test_tag_filter_reads_the_research_overlay(self):
         from research import Research

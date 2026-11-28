@@ -22,6 +22,7 @@ FIELDS={
     'timeline_limit':('Research','Timeline result limit',100,(10,5000)),
     'correspondent_limit':('Research','Correspondent result limit',100,(10,5000)),
     'search_mode':('Research','Default search mode','FTS',('FTS','Exact phrase')),
+    'hide_disabled_sources':('Research','Hide disabled sources from search and timeline',False,None),
     'startup_view':('Research','Startup view','Recent',('Recent','Saved query')),
     'startup_query':('Research','Startup saved query','',None),
     'export_directory':('Files','Default evidence export directory','',None),

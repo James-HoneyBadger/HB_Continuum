@@ -47,25 +47,46 @@ def _legacy_timeline(conn, sender, limit, offset, order, after, before):
     ordered=[row for _,row in known]+[row for _,row in unknown]
     return ordered[offset:offset+limit]
 
-def timeline_rows(conn, sender=None, limit=100, offset=0, order='asc', after=None, before=None):
+def _visible_message_filter(conn, exclude_disabled):
+    """SQL condition keeping messages not tied solely to disabled accounts."""
+    if not exclude_disabled:
+        return None, []
+    try:
+        accounts=[key for key, in conn.execute(
+            "SELECT source_key FROM source_settings WHERE source='email' "
+            'AND disabled_at IS NOT NULL')]
+    except sqlite3.OperationalError:
+        return None, []
+    if not accounts:
+        return None, []
+    placeholders=','.join('?' for _ in accounts)
+    condition=('(NOT EXISTS (SELECT 1 FROM origins o WHERE o.hash=m.hash) OR EXISTS '
+               '(SELECT 1 FROM origins o WHERE o.hash=m.hash AND o.account NOT IN ('
+               + placeholders + ')))')
+    return condition, accounts
+
+def timeline_rows(conn, sender=None, limit=100, offset=0, order='asc', after=None, before=None,
+                  exclude_disabled=False):
     """Chronological view of declared message dates; unknown dates sort last.
 
     Ordering happens in SQL against the indexed `sort_ts` column so large
     archives are paginated without loading every row. Archives still on
-    schema 2 fall back to an in-memory sort.
+    schema 2 fall back to an in-memory sort. With `exclude_disabled`, messages
+    whose only known accounts are disabled are omitted; messages with no
+    account, or shared with an enabled account, remain visible.
     """
     limit=max(1,min(int(limit),5000))
     offset=max(0,int(offset or 0))
     direction='DESC' if str(order).lower()=='desc' else 'ASC'
-    sender_filter=' AND sender=?' if sender is not None else ''
-    sender_params=(sender,) if sender is not None else ()
-    dated=['sort_ts IS NOT NULL']
+    visibility, visibility_params=_visible_message_filter(conn, exclude_disabled)
+    dated=['m.sort_ts IS NOT NULL']
     dated_params=[]
-    if sender is not None: dated.append('sender=?'); dated_params.append(sender)
-    if after is not None: dated.append('sort_ts>=?'); dated_params.append(int(after))
-    if before is not None: dated.append('sort_ts<?'); dated_params.append(int(before))
-    dated_sql=('SELECT hash,subject,sender,date FROM messages WHERE '+(' AND '.join(dated))+
-               ' ORDER BY sort_ts '+direction+', hash ASC LIMIT ? OFFSET ?')
+    if sender is not None: dated.append('m.sender=?'); dated_params.append(sender)
+    if after is not None: dated.append('m.sort_ts>=?'); dated_params.append(int(after))
+    if before is not None: dated.append('m.sort_ts<?'); dated_params.append(int(before))
+    if visibility: dated.append(visibility); dated_params.extend(visibility_params)
+    dated_sql=('SELECT m.hash,m.subject,m.sender,m.date FROM messages m WHERE '+
+               (' AND '.join(dated))+' ORDER BY m.sort_ts '+direction+', m.hash ASC LIMIT ? OFFSET ?')
     try:
         rows=conn.execute(dated_sql,(*dated_params,limit,offset)).fetchall()
         # Unknown dates always trail the dated records, and a date-range
@@ -74,13 +95,19 @@ def timeline_rows(conn, sender=None, limit=100, offset=0, order='asc', after=Non
             unknown_offset=0
             if not rows:
                 known_total=conn.execute(
-                    'SELECT count(*) FROM messages WHERE '+(' AND '.join(dated)),
+                    'SELECT count(*) FROM messages m WHERE '+(' AND '.join(dated)),
                     dated_params).fetchone()[0]
                 unknown_offset=max(0,offset-known_total)
+            unknown=['m.sort_ts IS NULL']
+            unknown_params=[]
+            if sender is not None:
+                unknown.append('m.sender=?'); unknown_params.append(sender)
+            if visibility:
+                unknown.append(visibility); unknown_params.extend(visibility_params)
             rows.extend(conn.execute(
-                'SELECT hash,subject,sender,date FROM messages WHERE sort_ts IS NULL'+sender_filter+
-                ' ORDER BY hash ASC LIMIT ? OFFSET ?',
-                (*sender_params,limit-len(rows),unknown_offset)).fetchall())
+                'SELECT m.hash,m.subject,m.sender,m.date FROM messages m WHERE '+
+                (' AND '.join(unknown))+' ORDER BY m.hash ASC LIMIT ? OFFSET ?',
+                (*unknown_params,limit-len(rows),unknown_offset)).fetchall())
         return rows
     except sqlite3.OperationalError:
         return _legacy_timeline(conn,sender,limit,offset,order,after,before)
@@ -250,10 +277,13 @@ def relationship_graph(conn, root, limit_nodes=30, max_edges=200, after=None, be
     }
 
 
-def correspondent_counts(conn, limit=100):
+def correspondent_counts(conn, limit=100, exclude_disabled=False):
+    visibility, params=_visible_message_filter(conn, exclude_disabled)
+    where=(' WHERE '+visibility) if visibility else ''
     return conn.execute(
-        "SELECT sender, count(*) FROM messages GROUP BY sender ORDER BY count(*) DESC, sender LIMIT ?",
-        (max(1,min(int(limit),5000)),)).fetchall()
+        "SELECT m.sender, count(*) FROM messages m"+where+
+        " GROUP BY m.sender ORDER BY count(*) DESC, m.sender LIMIT ?",
+        (*params, max(1,min(int(limit),5000)))).fetchall()
 
 def diagnose(conn, raw):
     """Consistency report shared by the CLI and the desktop protocol."""
@@ -780,11 +810,12 @@ class Archive:
         return dict(zip(('subject','sender','date','message_id','reply_to','body'),row))
     def recent(self, limit=100):
         return self.db.execute('SELECT hash,subject,sender FROM messages ORDER BY rowid DESC LIMIT ?', (max(1,min(int(limit),5000)),)).fetchall()
-    def timeline(self, sender=None, limit=100, offset=0, order='asc', after=None, before=None):
+    def timeline(self, sender=None, limit=100, offset=0, order='asc', after=None, before=None,
+                 exclude_disabled=False):
         """Chronological view of declared message dates; unparseable dates sort last."""
-        return timeline_rows(self.db,sender,limit,offset,order,after,before)
-    def correspondents(self, limit=100):
-        return correspondent_counts(self.db,limit)
+        return timeline_rows(self.db,sender,limit,offset,order,after,before,exclude_disabled)
+    def correspondents(self, limit=100, exclude_disabled=False):
+        return correspondent_counts(self.db,limit,exclude_disabled)
     def relationship_graph(self, limit_nodes=30, max_edges=200, after=None, before=None):
         return relationship_graph(self.db, self.root, limit_nodes, max_edges, after, before)
 
