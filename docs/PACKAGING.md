@@ -94,7 +94,9 @@ still produces a fully functional shell engine.
 - The core Python engine and archive workflows use the standard library.
   `sqlcipher3`, `pypdf`, `python-docx`, `keyring` and `cryptography` are
   optional and lazy-loaded; a build environment without them produces a
-  plaintext-only engine without PDF/DOCX extraction or OS credential stores.
+  plaintext-only engine without PDF/DOCX extraction or the optional
+  keyring/encrypted-file credential paths. macOS launchd scheduling can use
+  the system `security` tool without the `keyring` package.
 - `sqlcipher3` 0.6.5 / SQLCipher 4.20.0 community was used for encrypted
   qualification. Optional Python packages are not currently pinned by a
   repository requirements file; pin them in the release build environment and
