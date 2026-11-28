@@ -499,6 +499,25 @@ class Tests(unittest.TestCase):
         undated=[self.a.ingest(b'Subject: first\r\nMessage-ID: <u1@example.invalid>\r\n\r\nx\r\n'),
                  self.a.ingest(b'Subject: second\r\nMessage-ID: <u2@example.invalid>\r\n\r\nx\r\n')]
         self.assertEqual([r[0] for r in self.a.timeline()],sorted(undated))
+    def attachment_message(self, mid, filename, content_type):
+        import base64 as b64
+        return (b'Message-ID: <'+mid+b'>\r\nSubject: Filed\r\nMIME-Version: 1.0\r\n'
+                b'Content-Type: multipart/mixed; boundary="B"\r\n\r\n'
+                b'--B\r\nContent-Type: text/plain\r\n\r\nnote body\r\n'
+                b'--B\r\nContent-Type: '+content_type+b'\r\nContent-Disposition: attachment; filename="'+filename+b'"\r\n'
+                b'Content-Transfer-Encoding: base64\r\n\r\n'+b64.b64encode(b'payload')+b'\r\n--B--\r\n')
+    def test_search_filters_by_attachment_name_and_type(self):
+        pdf=self.a.ingest(self.attachment_message(b'pdf@example.invalid',b'Invoice-2024.pdf',b'application/pdf'))
+        image=self.a.ingest(self.attachment_message(b'img@example.invalid',b'photo.jpg',b'image/jpeg'))
+        text=self.a.ingest(b'Subject: Filed\r\n\r\nno attachment here\r\n')
+        self.assertEqual([r[0] for r in self.a.find('',attachment='invoice')],[pdf])
+        self.assertEqual([r[0] for r in self.a.find('',attachment='IMAGE/')],[image])
+        self.assertEqual([r[0] for r in self.a.find('',attachment='.pdf')],[pdf])
+        self.assertEqual(self.a.find('',attachment='unattached'),[])
+        self.assertEqual([r[0] for r in self.a.find('note',attachment='pdf')],[pdf])
+        self.assertEqual(self.a.find('nothing',attachment='pdf'),[])
+        self.assertEqual(self.a.find('',attachment='%'),[])
+        self.assertNotIn(text,[r[0] for r in self.a.find('',attachment='photo')])
     def test_version_flag(self):
         out=io.StringIO()
         with mock.patch('sys.argv',['dispatch.py','--version']), contextlib.redirect_stdout(out):

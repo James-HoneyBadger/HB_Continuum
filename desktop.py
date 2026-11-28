@@ -33,12 +33,15 @@ def launch(archive):
     after_filter=ttk.Entry(filters,width=11); after_filter.pack(side='left',padx=(3,10))
     ttk.Label(filters,text='To').pack(side='left')
     before_filter=ttk.Entry(filters,width=11); before_filter.pack(side='left',padx=(3,10))
+    ttk.Label(filters,text='Attachment').pack(side='left')
+    attachment_filter=ttk.Entry(filters,width=16); attachment_filter.pack(side='left',padx=(3,10))
     ttk.Label(filters,text='Dates are ISO, for example 2024-01-31').pack(side='left')
     def filter_values():
         return (sender_filter.get().strip() or None,
                 after_filter.get().strip() or None,
                 before_filter.get().strip() or None,
-                recipient_filter.get().strip() or None)
+                recipient_filter.get().strip() or None,
+                attachment_filter.get().strip() or None)
     status=tk.StringVar()
     pane=ttk.Panedwindow(root,orient=prefs['layout'])
     pane.pack(fill='both',expand=True,padx=10,pady=5)
@@ -72,9 +75,9 @@ def launch(archive):
         try:
             term=query.get().strip()
             if term and prefs['search_mode']=='Exact phrase': term='"'+term.replace('"','""')+'"'
-            sender,after,before,recipient=filter_values()
-            hits=(archive.find(term,prefs['search_limit'],sender,after,before,recipient) if term or sender or after or before or recipient
-                  else archive.recent(prefs['recent_limit']))
+            sender,after,before,recipient,attachment=filter_values()
+            hits=(archive.find(term,prefs['search_limit'],sender,after,before,recipient,attachment)
+                  if any((term,sender,after,before,recipient,attachment)) else archive.recent(prefs['recent_limit']))
             rows.delete(*rows.get_children())
             display('')
             for h,s,f in hits: rows.insert('', 'end',iid=h,values=(s,f))

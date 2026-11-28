@@ -322,14 +322,15 @@ class Archive:
             except ValueError:
                 skipped+=1
         return imported,skipped
-    def find(self, query, limit=100, sender=None, after=None, before=None, recipient=None):
-        """Full-text search with optional sender, recipient and date-range filters.
+    def find(self, query, limit=100, sender=None, after=None, before=None, recipient=None, attachment=None):
+        """Full-text search with optional sender, recipient, date and attachment filters.
 
         An empty query lists messages that match the filters, newest first. Sender
         and recipient matches are case-insensitive substrings of the stored headers,
         where recipient covers To, Cc and Bcc. Dates accept ISO dates, ISO datetimes
         or epoch seconds; a date-only bound covers the whole day. Messages with
-        unparseable dates are excluded by date filters.
+        unparseable dates are excluded by date filters. Attachment matches a
+        substring of an attachment filename or content type.
         """
         limit=max(1,min(int(limit),5000))
         filters=''; params=[]
@@ -338,6 +339,10 @@ class Archive:
         if recipient:
             filters+=" AND (m.recipient LIKE ? ESCAPE '\\' OR m.cc LIKE ? ESCAPE '\\' OR m.bcc LIKE ? ESCAPE '\\')"
             params.extend([_like(recipient)]*3)
+        if attachment:
+            filters+=(" AND EXISTS (SELECT 1 FROM attachments a WHERE a.message=m.hash"
+                      " AND (a.filename LIKE ? ESCAPE '\\' OR a.content_type LIKE ? ESCAPE '\\'))")
+            params.extend([_like(attachment)]*2)
         if after is not None:
             filters+=' AND m.sent_ts IS NOT NULL AND m.sent_ts>=?'; params.append(_timestamp(after))
         if before is not None:
@@ -630,7 +635,7 @@ class Archive:
 def main():
     import getpass
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--recipient'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('log'); q.add_argument('--limit',default=100); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('export-mbox'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',action='append'); q=sub.add_parser('folders'); q.add_argument('host'); q.add_argument('user'); sub.add_parser('gui')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--recipient'); q.add_argument('--attachment'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('log'); q.add_argument('--limit',default=100); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('export-mbox'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',action='append'); q=sub.add_parser('folders'); q.add_argument('host'); q.add_argument('user'); sub.add_parser('gui')
     a=p.parse_args(); ar=Archive(a.archive)
     try: return _run_command(ar,a)
     finally: ar.db.close()
@@ -647,7 +652,8 @@ def _run_command(ar, a):
                 imported,skipped=ar.import_mbox(path)
                 print(json.dumps({'file':str(path),'imported':imported,'skipped':skipped}))
             else: print(ar.ingest(path.read_bytes()))
-    elif a.cmd=='search': print(json.dumps(ar.find(a.query,a.limit,a.sender,a.after,a.before,a.recipient),indent=2))
+    elif a.cmd=='search': print(json.dumps(ar.find(a.query,limit=a.limit,sender=a.sender,after=a.after,
+                                                  before=a.before,recipient=a.recipient,attachment=a.attachment),indent=2))
     elif a.cmd=='verify':
         bad=ar.verify(); print(json.dumps(bad)); return int(bool(bad))
     elif a.cmd=='reindex': print(ar.reindex())
