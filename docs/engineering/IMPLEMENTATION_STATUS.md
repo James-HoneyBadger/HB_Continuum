@@ -37,7 +37,8 @@ landed (Overview dashboard, design tokens, timeline pagination).
   search`/`facebook list` surfaces. Read-only catalog consistency checks
   (`facebook verify`, included in `health`) detect FTS drift, duplicate
   index rows, dangling source-file references and unreadable attachment
-  metadata; `facebook reindex` rebuilds the record index.
+  metadata; `facebook reindex` rebuilds the record index. Catalog databases
+  are now part of verified backups and restored archives.
 - Opt-in local AI summarization (`summarize.py`): loopback-only Ollama
   backend, strict `ai.enabled`/`ai.backend` gate, message and thread
   summaries with prompt versioning, input-digest staleness detection,

@@ -60,6 +60,49 @@ class HardeningTests(unittest.TestCase):
         self.assertEqual(self.a.health()['index_duplicate_rows'],0)
         self.assertEqual(self.a.health()['index_missing'],[])
 
+    def test_backup_includes_the_catalog_and_source(self):
+        import json
+        from facebook import import_files
+        from catalog import Catalog
+        export=self.root/'posts.json'
+        export.write_text(json.dumps({'your_posts':[
+            {'timestamp':1700000000,'data':[{'post':'Bullion receipt'}]}]}))
+        import_files([str(export)],self.a.root)
+        snapshot=self.root/'snapshot'; restored=self.root/'restored'
+        self.assertTrue(backup(self.a.root,snapshot)['verified'])
+        self.assertTrue((snapshot/'catalog.sqlite3').is_file())
+        manifest=json.loads((snapshot/'backup-manifest.json').read_text())
+        self.assertIn('catalog.sqlite3',manifest['files'])
+        self.assertTrue(restore(snapshot,restored)['verified'])
+        catalog=Catalog(restored)
+        try:
+            self.assertEqual(catalog.stats()['records'],1)
+            self.assertEqual(len(catalog.search_records('bullion')),1)
+        finally:
+            catalog.close()
+
+    def test_snapshot_rejects_catalog_index_drift(self):
+        import json, sqlite3
+        from facebook import import_files
+        from backup import digest
+        export=self.root/'posts.json'
+        export.write_text(json.dumps({'your_posts':[
+            {'timestamp':1700000000,'data':[{'post':'Bullion receipt'}]}]}))
+        import_files([str(export)],self.a.root)
+        snapshot=self.root/'snapshot'
+        self.assertTrue(backup(self.a.root,snapshot)['verified'])
+        conn=sqlite3.connect(snapshot/'catalog.sqlite3')
+        try:
+            conn.execute('DELETE FROM record_search')
+            conn.commit()
+        finally:
+            conn.close()
+        manifest_path=snapshot/'backup-manifest.json'
+        manifest=json.loads(manifest_path.read_text())
+        manifest['files']['catalog.sqlite3']=digest(snapshot/'catalog.sqlite3')
+        manifest_path.write_text(json.dumps(manifest))
+        with self.assertRaises(ValueError): validate_snapshot(snapshot)
+
     def test_backup_and_restore_round_trip(self):
         h=self.a.ingest(b'Subject: preserved\r\n\r\nhello')
         snapshot=self.root/'snapshot'; restored=self.root/'restored'
@@ -87,6 +130,7 @@ class HardeningTests(unittest.TestCase):
         snapshot=self.root/'snapshot'; restored=self.root/'restored'
         backup(self.a.root,snapshot); restore(snapshot,restored)
         self.assertFalse(json.loads((restored/'schedule.json').read_text())['sample']['enabled'])
+        self.assertTrue(validate_snapshot(restored)['verified'])
 
     def test_snapshot_normalizes_wal_and_rejects_unexpected_directory(self):
         self.a.db.execute('PRAGMA journal_mode=WAL')

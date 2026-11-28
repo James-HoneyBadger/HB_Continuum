@@ -15,9 +15,12 @@ import tempfile
 from contextlib import closing
 from pathlib import Path
 
+from .migrations import DATABASES as _DATABASES
 from .sync_lock import sync_lock
 
-DATABASES = ('archive.sqlite3', 'research.sqlite3')
+# Derive the backup set from the migration registry so a new database cannot
+# be silently omitted from preservation.
+DATABASES = tuple(name for _, name in _DATABASES)
 CONFIG = ('preferences.json', 'schedule.json', 'schedule-status.json')
 MANIFEST = 'backup-manifest.json'
 
@@ -105,6 +108,14 @@ def validate_snapshot(root):
                 for h in hashes:
                     if expected.get('raw/' + h + '.eml') != h:
                         raise ValueError('Original message missing or altered: ' + h)
+            elif name == 'catalog.sqlite3':
+                tables = {t for t, in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'")}
+                if {'records', 'record_search'} <= tables:
+                    records = {rowid for rowid, in db.execute('SELECT rowid FROM records')}
+                    indexed = [rowid for rowid, in db.execute('SELECT rowid FROM record_search')]
+                    if records != set(indexed) or len(set(indexed)) != len(indexed):
+                        raise ValueError('Catalog search index mismatch')
     return {'files': len(expected), 'verified': True}
 
 def publish_stage(stage, dest):
@@ -180,6 +191,12 @@ def restore(snapshot, destination):
             for profile in profiles.values():
                 profile['enabled'] = False
             path.write_text(json.dumps(profiles, indent=2))
+        # Disabling scheduling changes the schedule file, so refresh the
+        # manifest and validate the restored snapshot before publishing it.
         (stage / MANIFEST).unlink()
+        files = {p.relative_to(stage).as_posix(): digest(p)
+                 for p in stage.rglob('*') if p.is_file()}
+        (stage / MANIFEST).write_text(json.dumps({'version': 1, 'files': files}, indent=2))
+        result = validate_snapshot(stage)
         publish_stage(stage, dest)
         return result

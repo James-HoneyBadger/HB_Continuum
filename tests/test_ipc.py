@@ -632,6 +632,7 @@ class IPCServerTests(unittest.TestCase):
         self.assertFalse(report['research']['present'])
 
     def test_backup_verify_and_restore_jobs(self):
+        from backup import validate_snapshot
         with tempfile.TemporaryDirectory() as tmp:
             base=Path(tmp); snapshot=base/'snapshot'; restored=base/'restored'
             started=self.server.handle(request('backup',destination=str(snapshot)))
@@ -645,7 +646,8 @@ class IPCServerTests(unittest.TestCase):
             terminal=self.finish_job(started['result']['job_id'])
             self.assertEqual(terminal['event'],'job_complete')
             self.assertTrue((restored/'archive.sqlite3').is_file())
-            self.assertFalse((restored/'backup-manifest.json').exists())
+            self.assertTrue((restored/'backup-manifest.json').is_file())
+            self.assertTrue(validate_snapshot(restored)['verified'])
 
     def test_verify_backup_job_reports_tampering(self):
         from backup import backup

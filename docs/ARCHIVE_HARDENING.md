@@ -65,8 +65,8 @@ to fixed limits. PDF, Office and image payloads are not converted.
 
 `backup` creates a new directory containing:
 
-- `archive.sqlite3` and `research.sqlite3`, copied through SQLite's backup
-  API with the journal normalised to a single file;
+- `archive.sqlite3`, `research.sqlite3` and `catalog.sqlite3`, copied through
+  SQLite's backup API with the journal normalised to a single file;
 - `preferences.json`, `schedule.json` and `schedule-status.json` when present;
 - every indexed `raw/<sha256>.eml` original;
 - `backup-manifest.json` listing every file with its SHA-256.
@@ -74,8 +74,8 @@ to fixed limits. PDF, Office and image payloads are not converted.
 The snapshot is built in a temporary staging directory, validated, and then
 moved into place. Existing destinations are refused; symlinks and unexpected
 files or directories fail validation. Validation re-checks hashes, SQLite
-integrity, foreign keys, search-index coverage and the presence of every
-original.
+integrity, foreign keys, email and catalog search-index coverage, and the
+presence of every original.
 
 `restore` validates the snapshot and copies it to a new destination; it never
 overwrites an existing archive, and it disables restored scheduling profiles
