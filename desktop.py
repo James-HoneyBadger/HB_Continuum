@@ -94,7 +94,10 @@ def launch(archive):
             header='\n'.join(f"{k}: {data[k]}" for k in keys if data[k])
             files=archive.attachments(h)
             listing=('\n\nAttachments:\n'+'\n'.join(f"  {name}  ({ctype}, {size} bytes)\n  SHA-256: {sha}" for name,ctype,size,sha in files)) if files else ''
-            display(header+('\nSHA-256: '+h if prefs['show_hash'] else '')+listing+'\n\n'+data['body'])
+            places=archive.provenance(h)
+            provenance=('\n\nProvenance:\n'+'\n'.join(
+                f"  {p['account']} / {p['folder']}  UID {p['uid']}  acquired {p['first_seen'] or 'unknown'}" for p in places)) if places else ''
+            display(header+('\nSHA-256: '+h if prefs['show_hash'] else '')+listing+provenance+'\n\n'+data['body'])
         except Exception as e: messagebox.showerror('Message',str(e))
     def show_thread():
         selected=rows.selection()

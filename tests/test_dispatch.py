@@ -30,7 +30,8 @@ class Tests(unittest.TestCase):
         with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
             self.assertRaises(RuntimeError,self.a.sync,'host','user','pw')
     def test_foreign_keys_enforced(self):
-        self.assertRaises(sqlite3.IntegrityError,self.a.db.execute,'INSERT INTO origins VALUES(?,?,?,?,?)',('a','f','1','2','0'*64))
+        self.assertRaises(sqlite3.IntegrityError,self.a.db.execute,
+                          'INSERT INTO origins(account,folder,validity,uid,hash) VALUES(?,?,?,?,?)',('a','f','1','2','0'*64))
     def test_failed_export_cleanup(self):
         h=self.a.ingest(RAW)
         dest=Path(self.tmp.name)/'failed-export'
@@ -518,6 +519,46 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.a.find('nothing',attachment='pdf'),[])
         self.assertEqual(self.a.find('',attachment='%'),[])
         self.assertNotIn(text,[r[0] for r in self.a.find('',attachment='photo')])
+    def test_provenance_records_acquisition_time_and_duplicates(self):
+        h=self.a.ingest(RAW,('imap.one|user','INBOX','1','7'))
+        self.a.ingest(RAW,('imap.two|user','Archive','5','9'))
+        self.a.ingest(RAW+b'other\r\n',('imap.one|user','INBOX','1','8'))
+        places=self.a.provenance(h)
+        self.assertEqual([(p['account'],p['folder'],p['uid']) for p in places],
+                         [('imap.one|user','INBOX','7'),('imap.two|user','Archive','9')])
+        self.assertTrue(all(p['first_seen'] for p in places))
+        (row,)=self.a.duplicates()
+        self.assertEqual((row[0],row[1]), (h,2))
+        self.assertIn('imap.one|user / INBOX',row[2]); self.assertIn('imap.two|user / Archive',row[2])
+        self.assertRaises(ValueError,self.a.provenance,'0'*64)
+    def test_export_manifest_includes_acquisition_time(self):
+        h=self.a.ingest(RAW,('imap.one|user','INBOX','1','7'))
+        dest=Path(self.tmp.name)/'pkg'
+        self.a.export([h],dest)
+        entry=json.loads((dest/'manifest.json').read_text())[0]
+        self.assertEqual(entry['origins'][0],['imap.one|user','INBOX','1','7'])
+        self.assertTrue(entry['acquired'])
+    def test_legacy_origins_table_gains_acquisition_column(self):
+        root=Path(self.tmp.name)/'legacy-origins'; (root/'raw').mkdir(parents=True)
+        raw=b'Subject: Old\r\nMessage-ID: <old@example.invalid>\r\n\r\nold body\r\n'
+        digest=__import__('hashlib').sha256(raw).hexdigest()
+        (root/'raw'/(digest+'.eml')).write_bytes(raw)
+        legacy=sqlite3.connect(root/'archive.sqlite3')
+        legacy.executescript("""CREATE TABLE messages(hash TEXT PRIMARY KEY, subject TEXT, sender TEXT, date TEXT,
+            message_id TEXT, reply_to TEXT, body TEXT);
+            CREATE VIRTUAL TABLE search USING fts5(hash UNINDEXED, subject, sender, body);
+            CREATE TABLE origins(account TEXT, folder TEXT, validity TEXT, uid TEXT, hash TEXT NOT NULL REFERENCES messages(hash), PRIMARY KEY(account,folder,validity,uid));""")
+        legacy.execute('INSERT INTO messages VALUES(?,?,?,?,?,?,?)',(digest,'Old','','','<old@example.invalid>','','old body'))
+        legacy.execute('INSERT INTO origins VALUES(?,?,?,?,?)',('imap.old|user','INBOX','3','41',digest))
+        legacy.commit(); legacy.close()
+        archive=Archive(root)
+        try:
+            places=archive.provenance(digest)
+            self.assertEqual(len(places),1)
+            self.assertEqual((places[0]['folder'],places[0]['uid']),('INBOX','41'))
+            self.assertIsNone(places[0]['first_seen'])
+            self.assertEqual(archive.duplicates(),[])
+        finally: archive.db.close()
     def test_version_flag(self):
         out=io.StringIO()
         with mock.patch('sys.argv',['dispatch.py','--version']), contextlib.redirect_stdout(out):

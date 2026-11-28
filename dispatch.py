@@ -147,7 +147,7 @@ class Archive:
         CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(hash UNINDEXED, subject, sender, body);
         CREATE INDEX IF NOT EXISTS messages_message_id ON messages(message_id);
         CREATE INDEX IF NOT EXISTS messages_reply_to ON messages(reply_to);
-        CREATE TABLE IF NOT EXISTS origins(account TEXT, folder TEXT, validity TEXT, uid TEXT, hash TEXT NOT NULL REFERENCES messages(hash), PRIMARY KEY(account,folder,validity,uid));
+        CREATE TABLE IF NOT EXISTS origins(account TEXT, folder TEXT, validity TEXT, uid TEXT, hash TEXT NOT NULL REFERENCES messages(hash), first_seen TEXT, PRIMARY KEY(account,folder,validity,uid));
         CREATE TABLE IF NOT EXISTS sync_failures(account TEXT NOT NULL, folder TEXT NOT NULL, validity TEXT NOT NULL, uid TEXT NOT NULL, error TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 1, last_seen TEXT NOT NULL, PRIMARY KEY(account,folder,validity,uid));
         CREATE TABLE IF NOT EXISTS attachments(message TEXT NOT NULL REFERENCES messages(hash), filename TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL, PRIMARY KEY(message,filename,sha256));
         CREATE INDEX IF NOT EXISTS attachments_sha256 ON attachments(sha256);
@@ -158,6 +158,8 @@ class Archive:
         with self.db:
             for column in sorted(added):
                 self.db.execute(f"ALTER TABLE messages ADD COLUMN {column} {'INTEGER' if column=='sent_ts' else 'TEXT'}")
+            if 'first_seen' not in {row[1] for row in self.db.execute('PRAGMA table_info(origins)')}:
+                self.db.execute('ALTER TABLE origins ADD COLUMN first_seen TEXT')
         self.db.execute('CREATE INDEX IF NOT EXISTS messages_sent_ts ON messages(sent_ts)')
         self.db.execute('CREATE INDEX IF NOT EXISTS messages_sender ON messages(sender)')
         self.db.execute('CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)')
@@ -289,7 +291,8 @@ class Archive:
             for filename,content_type,size,sha256 in attachments:
                 self.db.execute('INSERT OR IGNORE INTO attachments VALUES(?,?,?,?,?)',(digest,filename,content_type,size,sha256))
             if origin:
-                self.db.execute('INSERT OR IGNORE INTO origins VALUES(?,?,?,?,?)',(*origin,digest))
+                self.db.execute('INSERT OR IGNORE INTO origins(account,folder,validity,uid,hash,first_seen)'
+                                " VALUES(?,?,?,?,?,datetime('now'))",(*origin,digest))
                 if self.db.execute('SELECT hash FROM origins WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone()[0]!=digest: raise ValueError('Origin conflict')
         return digest
     def import_mbox(self, path):
@@ -435,7 +438,8 @@ class Archive:
                 with os.fdopen(os.open(dest/(h+'.eml'),os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'wb') as output:
                     output.write(raw)
                 origins=self.db.execute('SELECT account,folder,validity,uid FROM origins WHERE hash=? ORDER BY account,folder,validity,uid',(h,)).fetchall()
-                manifest.append({'sha256':h,'file':h+'.eml','origins':origins})
+                acquired=self.db.execute('SELECT min(first_seen) FROM origins WHERE hash=?',(h,)).fetchone()[0]
+                manifest.append({'sha256':h,'file':h+'.eml','origins':origins,'acquired':acquired})
             with os.fdopen(os.open(dest/'manifest.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'w',encoding='utf-8') as output:
                 json.dump(manifest,output,indent=2)
         except Exception:
@@ -505,6 +509,19 @@ class Archive:
                 visited.add(h)
                 frontier.update(v for v in (mid,parent) if v and v not in identifiers)
         return [self.details(h) | {'sha256':h} for h in sorted(visited)]
+    def provenance(self, digest):
+        """Where this message came from, with the time each copy was acquired."""
+        self._require_message(digest)
+        return [dict(zip(('account','folder','validity','uid','first_seen'),row)) for row in
+                self.db.execute('SELECT account,folder,validity,uid,first_seen FROM origins'
+                                ' WHERE hash=? ORDER BY account,folder,validity,uid',(digest,))]
+    def duplicates(self, limit=500):
+        """Messages archived from more than one account or folder, most copied first."""
+        return self.db.execute(
+            "SELECT hash, count(*) AS places, group_concat(place,'; ')"
+            " FROM (SELECT hash, account||' / '||folder AS place FROM origins GROUP BY hash, account, folder)"
+            " GROUP BY hash HAVING count(*)>1 ORDER BY count(*) DESC, hash LIMIT ?",
+            (max(1,min(int(limit),5000)),)).fetchall()
     def stats(self):
         return {'messages':self.db.execute('SELECT count(*) FROM messages').fetchone()[0],
                 'origins':self.db.execute('SELECT count(*) FROM origins').fetchone()[0],
@@ -635,7 +652,7 @@ class Archive:
 def main():
     import getpass
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--recipient'); q.add_argument('--attachment'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('log'); q.add_argument('--limit',default=100); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('export-mbox'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',action='append'); q=sub.add_parser('folders'); q.add_argument('host'); q.add_argument('user'); sub.add_parser('gui')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--recipient'); q.add_argument('--attachment'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('duplicates'); q.add_argument('--limit',default=500); q=sub.add_parser('provenance'); q.add_argument('hash'); q=sub.add_parser('log'); q.add_argument('--limit',default=100); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('export-mbox'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',action='append'); q=sub.add_parser('folders'); q.add_argument('host'); q.add_argument('user'); sub.add_parser('gui')
     a=p.parse_args(); ar=Archive(a.archive)
     try: return _run_command(ar,a)
     finally: ar.db.close()
@@ -665,6 +682,8 @@ def _run_command(ar, a):
     elif a.cmd=='verify-attachments':
         bad=ar.verify_attachments(); print(json.dumps(bad)); return int(bool(bad))
     elif a.cmd=='failures': print(json.dumps(ar.failures(a.limit),indent=2))
+    elif a.cmd=='duplicates': print(json.dumps(ar.duplicates(a.limit),indent=2))
+    elif a.cmd=='provenance': print(json.dumps(ar.provenance(a.hash),indent=2))
     elif a.cmd=='log': print(json.dumps(ar.sync_log(a.limit),indent=2))
     elif a.cmd=='export': ar.export(a.hashes,a.destination)
     elif a.cmd=='export-mbox': print(ar.export_mbox(a.hashes,a.destination))
