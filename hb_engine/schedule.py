@@ -45,9 +45,13 @@ def profile(name,host,user,folders,minutes=None,daily=None,enabled=True):
 
 def service(p): return 'HB Dispatch IMAP '+p['host'].lower()
 
-def credential(p, root=None):
-    from .schedulers import get_credential_store
-    return get_credential_store(root).get(service(p), p['user'], root)
+def credential(p, root=None, allow_insecure_fallback=False):
+    from .schedulers import fallback_credential_file_present, get_credential_store
+    # An existing fallback file means the user already opted in when storing it;
+    # unattended runs must still be able to read it back.
+    allow = allow_insecure_fallback or fallback_credential_file_present(root)
+    return get_credential_store(root, allow_insecure_fallback=allow).get(
+        service(p), p['user'], root)
 
 def due(p,state,now):
     if not p['enabled']: return False
@@ -138,6 +142,8 @@ def uninstall(root):
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--archive',default='~/.hb-dispatch')
+    p.add_argument('--allow-insecure-credential-fallback',action='store_true',
+                   help='accept the encrypted-file credential store when no OS credential store is available')
     sub=p.add_subparsers(dest='cmd',required=True)
     q=sub.add_parser('add');q.add_argument('name');q.add_argument('host');q.add_argument('user');q.add_argument('--folder',action='append',required=True)
     g=q.add_mutually_exclusive_group(required=True);g.add_argument('--minutes',type=int);g.add_argument('--daily')
@@ -174,7 +180,8 @@ def main(argv=None):
     elif a.cmd=='credential':
         from .schedulers import get_credential_store
         if a.name not in profiles: raise SystemExit('Unknown profile: '+a.name)
-        item=profiles[a.name];store=get_credential_store(root)
+        item=profiles[a.name]
+        store=get_credential_store(root,allow_insecure_fallback=a.allow_insecure_credential_fallback)
         if a.ccmd=='set':
             import getpass
             store.set(service(item),item['user'],getpass.getpass('Mail password: '),root)
