@@ -63,3 +63,16 @@ that can be reviewed on the results.
 - The macOS bundle is unsigned and not notarized; Gatekeeper will warn.
 - `LSMinimumSystemVersion` is generated, not independently verified.
 - No installer, no auto-update and no crash reporting exist.
+
+## Known dependency advisory
+
+Dependabot reports `GHSA-wrw7-89jp-8q8g` (unsoundness in `glib` iterator
+implementations) against `glib` 0.18.5 in `src-tauri/Cargo.lock`. The patched
+release is 0.20.0, which requires the GTK-rs 0.20 chain and therefore a Tauri
+dependency upgrade, not a version pin.
+
+`glib` enters the lock file through Tauri's GTK dependencies, which are compiled
+only for Linux desktop builds. The qualified macOS Apple Silicon build does not
+compile it, and no Linux desktop artifact is shipped or claimed. The advisory is
+recorded here as a known limitation; resolving it belongs to a deliberate Tauri
+upgrade, not to this refinement milestone.
