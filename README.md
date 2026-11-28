@@ -10,7 +10,7 @@ HB Continuum is in active real-world use. It has moved beyond a proof of concept
 
 Continuum has grown from an email preservation utility into a private historical research workstation. The v0.4 beta supports email and exported Facebook records, unified and advanced Boolean search, historical timelines, evidence collections, a revision-tracked journal, relationship exploration, reports, and verified archival recovery. Local Ollama message and conversation summarization is optional.
 
-**Next milestone — v0.5, the Intelligence Update (in development):** scalable paged search and evidence-grounded research with validated, inspectable source references are implemented on the intelligence development branch. Additional document ingestion, semantic retrieval and optional Honey Badger application interchange remain development objectives, not released capabilities.
+**Next milestone — v0.5, the Intelligence Update (in development):** scalable paged search, evidence-grounded research with validated source references, and local document ingestion are implemented on the intelligence development branch. Semantic retrieval, photograph ingestion and optional Honey Badger application interchange remain development objectives, not released capabilities.
 
 ## Independent and interoperable
 
@@ -24,7 +24,7 @@ Each application works independently; optional integrations remain under user co
 
 Part of the Honey Badger Universe, HB Continuum is designed around a broader vision than email archiving: preserve and explore historical information across otherwise disconnected sources, on infrastructure you control.
 
-The email ingestion engine retains the name **Dispatch**. Email and user-obtained Facebook JSON exports are implemented sources today: the source-independent catalog stores Facebook posts, comments, messages, events, media and reactions with provenance, revision history and searchable attachment metadata, and unified search spans email and catalog records. Future adapters may add external documents, photographs, imported journals, software development histories and other structured or unstructured records.
+The email ingestion engine retains the name **Dispatch**. Email, user-obtained Facebook JSON exports and local documents are implemented sources today: the source-independent catalog stores Facebook posts, comments, messages, events, media and reactions, plus text, Markdown, CSV, JSON, PDF and DOCX documents, with provenance, revision history and searchable metadata. Unified search spans email and catalog records. Future adapters may add photographs, imported journals, software development histories and other structured or unstructured records.
 
 The architecture preserves original source material and provenance, with source-specific ingestion and a unified searchable index. Cross-source timelines, evidence collections and research workflows are implemented; broader genealogy, organizational archives and additional source adapters remain development goals.
 
@@ -102,6 +102,8 @@ Source-independent imports and unified search use the same CLI:
 python3 dispatch.py facebook preview ~/facebook-export
 python3 dispatch.py facebook import ~/facebook-export
 python3 dispatch.py facebook search "receipt"
+python3 dispatch.py documents preview ~/documents
+python3 dispatch.py documents import ~/documents
 python3 dispatch.py search-all "receipt"
 ```
 
@@ -117,7 +119,7 @@ The archive uses three SQLite databases: `archive.sqlite3` for email, origins, t
 
 ## Privacy and limitations
 
-Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Verify backup and restore with `dispatch backup`, `dispatch verify-backup` and `dispatch restore`, and diagnose local consistency with `dispatch health` (see [Archive hardening](docs/ARCHIVE_HARDENING.md)). Failed imports may leave unindexed raw files; `dispatch recover-orphans` and `dispatch reindex` repair them from the preserved originals. Failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS, Gmail and iCloud Mail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search indexes plain-text bodies, HTML reduced to offline text, and attachment names, types and bounded text; PDF, Office and image contents are not converted. Facebook exports are read in place and never modified; the catalog preserves original record JSON, revision identity and attachment metadata, not attachment bytes. Optional local AI summaries and research answers are derived text: historical evidence is treated as untrusted data, and model output cannot modify the archive. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Continuum as the sole evidence archive.
+Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Verify backup and restore with `dispatch backup`, `dispatch verify-backup` and `dispatch restore`, and diagnose local consistency with `dispatch health` (see [Archive hardening](docs/ARCHIVE_HARDENING.md)). Failed imports may leave unindexed raw files; `dispatch recover-orphans` and `dispatch reindex` repair them from the preserved originals. Failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS, Gmail and iCloud Mail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search indexes plain-text bodies, HTML reduced to offline text, and attachment names, types and bounded text. Optional document extraction adds searchable PDF and DOCX text; scanned images are not OCRed, and PDF/Office attachment contents inside email are not converted. Facebook exports are read in place and never modified; the catalog preserves original record JSON, revision identity and attachment metadata, not attachment bytes. Optional local AI summaries and research answers are derived text: historical evidence is treated as untrusted data, and model output cannot modify the archive. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Continuum as the sole evidence archive.
 
 ## Scheduled synchronization
 
@@ -133,7 +135,7 @@ Create workspaces, saved queries, classification rules, tags, custom metadata an
 
 ## Import center, history and source manager
 
-Desktop imports run as cancellable background jobs with real progress. Every EML, IMAP and Facebook import appends a run to the archive's import history, recording what was examined, what was new, what already existed and what failed. A killed process is reported as interrupted rather than rewritten as success.
+Desktop imports run as cancellable background jobs with real progress. Every EML, IMAP, Facebook and document import appends a run to the archive's import history, recording what was examined, what was new, what already existed and what failed. A killed process is reported as interrupted rather than rewritten as success.
 
 The Sources workspace derives coverage from stored provenance: unique messages and mailbox occurrences per account, folders read, normalized date coverage, last import status, catalog sources and storage footprint. It states explicitly that importing folders never proves an account is complete. Importing `.eml` files preserves messages without inventing an account.
 
@@ -178,6 +180,13 @@ python3 dispatch.py facebook preview ~/facebook-export
 python3 dispatch.py facebook import ~/facebook-export
 python3 dispatch.py facebook search "receipt"
 python3 dispatch.py facebook list --kind event
+```
+
+**Document import** — import local text, Markdown, CSV, JSON, PDF and DOCX files into the source-independent catalog. Originals are hashed and referenced by path, never copied, uploaded or modified. Text and page metadata are searchable; duplicate files are skipped, changed files keep revisions, extraction failures are explicit, and import history is recorded. PDF and DOCX text extraction use optional local packages; scanned PDFs without a text layer are reported rather than OCRed. See [Documents](docs/DOCUMENTS.md).
+
+```sh
+python3 dispatch.py documents preview ~/documents
+python3 dispatch.py documents import ~/documents
 ```
 
 **Local AI summaries** — generate message and conversation summaries with a locally running Ollama instance. Disabled by default; requires `ai.enabled` and `ai.backend=ollama` in preferences. Summaries are derived text, never evidence. See [AI summarization](docs/AI_SUMMARIZATION.md).

@@ -21,7 +21,9 @@ from .catalog import Catalog
 
 SNIPPET_LEN = 200
 RRF_K = 60
-CATALOG_KINDS = ('post', 'comment', 'message', 'event', 'media', 'reaction')
+CATALOG_KINDS = ('post', 'comment', 'message', 'event', 'media', 'reaction',
+                 'document')
+CATALOG_SOURCES = ('facebook', 'document')
 
 def _timestamp(value):
     if not value:
@@ -122,10 +124,11 @@ def _email_count(root, query, senders=None, after=None, before=None,
     finally:
         conn.close()
 
-def _facebook_count(root, query, senders=None, kinds=None, after=None, before=None):
+def _catalog_count(root, source_type, query, senders=None, kinds=None,
+                   after=None, before=None):
     catalog = Catalog(root)
     try:
-        return catalog.count_ranked(query, 'facebook', actor=senders,
+        return catalog.count_ranked(query, source_type, actor=senders,
                                     kinds=kinds, after=after, before=before)
     finally:
         catalog.close()
@@ -240,14 +243,15 @@ def _email_stream(root, query, senders, kinds, tagged, after, before,
         return _matches(item, senders, kinds, tagged)
     return _RankedStream(conn, sql, (query, *params), mapper, accept, cancel)
 
-def _catalog_stream(root, query, senders, kinds, after, before, cancel):
+def _catalog_stream(root, query, senders, kinds, after, before, sources, cancel):
     path = Path(root) / 'catalog.sqlite3'
-    if not path.is_file():
+    if not path.is_file() or not sources:
         return None
     conn = sqlite3.connect(str(path), timeout=30)
     conn.execute('PRAGMA query_only=ON')
-    clauses = ['r.source_type=?', 'record_search MATCH ?']
-    params = ['facebook', query]
+    source_clause = ','.join('?' for _ in sources)
+    clauses = [f'r.source_type IN ({source_clause})', 'record_search MATCH ?']
+    params = [*sources, query]
     if senders:
         clause, values = _in_clause('r.actor', senders)
         clauses.append(clause)
@@ -262,17 +266,17 @@ def _catalog_stream(root, query, senders, kinds, after, before, cancel):
     if before is not None:
         clauses.append('r.occurred_at<?')
         params.append(datetime.fromtimestamp(before, timezone.utc).isoformat())
-    sql = ('SELECT r.record_id, r.source_key, r.record_kind, r.actor, r.occurred_at, '
-           "r.body, snippet(record_search, -1, '', '', '...', 32) "
+    sql = ('SELECT r.record_id, r.source_type, r.source_key, r.record_kind, r.actor, '
+           "r.occurred_at, r.body, snippet(record_search, -1, '', '', '...', 32) "
            'FROM records r JOIN record_search ON record_search.rowid = r.rowid '
            'WHERE ' + ' AND '.join(clauses) +
            ' ORDER BY bm25(record_search), r.record_id')
     def mapper(row):
-        return ({'source': 'facebook', 'id': row[0], 'kind': row[2],
-                 'title': row[1] or '', 'actor': row[3] or '',
-                 'date': row[4] or '',
-                 'snippet': (row[6] or row[5] or '')[:SNIPPET_LEN]},
-                _timestamp(row[4]))
+        return ({'source': row[1], 'id': row[0], 'kind': row[3],
+                 'title': row[2] or '', 'actor': row[4] or '',
+                 'date': row[5] or '',
+                 'snippet': (row[7] or row[6] or '')[:SNIPPET_LEN]},
+                _timestamp(row[5]))
     def accept(item, stamp):
         if after is not None or before is not None:
             if stamp is None:
@@ -284,7 +288,8 @@ def _catalog_stream(root, query, senders, kinds, after, before, cancel):
         return _matches(item, senders, kinds, None)
     return _RankedStream(conn, sql, tuple(params), mapper, accept, cancel)
 
-def search_unified_page(root, query, offset=0, limit=100, sources=('email', 'facebook'),
+def search_unified_page(root, query, offset=0, limit=100,
+                        sources=('email', 'facebook', 'document'),
                         after=None, before=None, senders=None, kinds=None, tags=None,
                         exclude_disabled=False, cancel=None):
     """Return one page of fused results ranked over the complete match sets.
@@ -309,18 +314,19 @@ def search_unified_page(root, query, offset=0, limit=100, sources=('email', 'fac
         _disabled_sources(root) if exclude_disabled else (set(), set()))
     tagged = _tagged_hashes(root, tags) if tags else None
     catalog_kinds = [kind for kind in kinds if kind in CATALOG_KINDS] if kinds else None
+    catalog_sources = [source for source in sources if source in CATALOG_SOURCES
+                       and source not in disabled_catalog]
     streams = []
     if 'email' in sources:
         stream = _email_stream(root, query, senders, kinds, tagged, after, before,
                                disabled_accounts, cancel)
         if stream is not None:
             streams.append(stream)
-    if 'facebook' in sources and tags is None and 'facebook' not in disabled_catalog:
-        if not kinds or catalog_kinds:
-            stream = _catalog_stream(root, query, senders, catalog_kinds, after, before,
-                                     cancel)
-            if stream is not None:
-                streams.append(stream)
+    if catalog_sources and tags is None and (not kinds or catalog_kinds):
+        stream = _catalog_stream(root, query, senders, catalog_kinds, after, before,
+                                 catalog_sources, cancel)
+        if stream is not None:
+            streams.append(stream)
     heap = []
     page = []
     scanned = 0
@@ -358,7 +364,7 @@ def search_unified_page(root, query, offset=0, limit=100, sources=('email', 'fac
         for stream in streams:
             stream.close()
 
-def search_unified(root, query, limit=100, sources=('email', 'facebook'),
+def search_unified(root, query, limit=100, sources=('email', 'facebook', 'document'),
                    after=None, before=None, senders=None, kinds=None, tags=None,
                    exclude_disabled=False):
     """Fused, filtered search. `tags` matches any listed tag (email only).
@@ -374,7 +380,7 @@ def search_unified(root, query, limit=100, sources=('email', 'facebook'),
         before=before, senders=senders, kinds=kinds, tags=tags,
         exclude_disabled=exclude_disabled)['items']
 
-def search_unified_count(root, query, sources=('email', 'facebook'),
+def search_unified_count(root, query, sources=('email', 'facebook', 'document'),
                          after=None, before=None, senders=None, kinds=None, tags=None,
                          exclude_disabled=False):
     """Exact total across sources, or None when a tag filter makes it inexact."""
@@ -392,12 +398,15 @@ def search_unified_count(root, query, sources=('email', 'facebook'),
             return None
         total += count
     catalog_kinds = [kind for kind in kinds if kind in CATALOG_KINDS] if kinds else None
-    if 'facebook' in sources and 'facebook' not in disabled_catalog \
-            and (not kinds or catalog_kinds):
-        count = _facebook_count(root, query, senders, catalog_kinds, after, before)
-        if count is None:
-            return None
-        total += count
+    catalog_sources = [source for source in sources if source in CATALOG_SOURCES
+                       and source not in disabled_catalog]
+    if catalog_sources and (not kinds or catalog_kinds):
+        for source in catalog_sources:
+            count = _catalog_count(root, source, query, senders, catalog_kinds,
+                                   after, before)
+            if count is None:
+                return None
+            total += count
     return total
 
 def validate_query(root, query):

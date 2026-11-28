@@ -26,7 +26,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OPTIONAL_MODULES = ('keyring', 'cryptography', 'tkinter')
+OPTIONAL_MODULES = ('keyring', 'cryptography', 'tkinter', 'pypdf', 'docx')
 VERSION_PATTERN = re.compile(r'''^__version__ = ['"]([^'"]+)['"]''', re.MULTILINE)
 
 
@@ -76,7 +76,11 @@ def pyinstaller_command():
 
 def _ipc_smoke(command, archive):
     """Exercise packaged engine modules over the real IPC protocol."""
+    document = Path(archive).parent / 'smoke-document.txt'
+    document.write_text('smokeword document evidence', encoding='utf-8')
     requests = [
+        {'protocol_version': 1, 'request_id': 'document',
+         'method': 'document_preview', 'params': {'paths': [str(document)]}},
         {'protocol_version': 1, 'request_id': 'advanced', 'method': 'search_advanced',
          'params': {'query': {'type': 'rule', 'kind': 'text', 'value': 'smokeword'},
                     'limit': 10}},
@@ -102,7 +106,7 @@ def _ipc_smoke(command, archive):
             raise SystemExit('engine IPC produced a non-JSON line: ' + line) from None
         if response.get('request_id'):
             responses[response['request_id']] = response
-    for request_id in ('advanced', 'graph', 'intelligence'):
+    for request_id in ('document', 'advanced', 'graph', 'intelligence'):
         response = responses.get(request_id)
         if response is None:
             raise SystemExit(f'engine IPC returned no {request_id} response')
@@ -114,6 +118,8 @@ def _ipc_smoke(command, archive):
         raise SystemExit('relationships did not link the two message senders')
     if not responses['intelligence']['result']['evidence']:
         raise SystemExit('intelligence retrieval returned no evidence')
+    if not responses['document']['result']['supported_files']:
+        raise SystemExit('document preview did not recognize the text fixture')
     return responses
 
 

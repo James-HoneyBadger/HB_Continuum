@@ -24,7 +24,9 @@ MAX_VALUES = 50
 MAX_TEXT = 500
 MAX_LEAF_MATCHES = 200_000
 RRF_K = 60
-CATALOG_KINDS = ('post', 'comment', 'message', 'event', 'media', 'reaction')
+CATALOG_KINDS = ('post', 'comment', 'message', 'event', 'media', 'reaction',
+                 'document')
+CATALOG_SOURCES = ('facebook', 'document')
 
 
 def _strings(value, field):
@@ -160,7 +162,8 @@ def _all_catalog_ids(root):
     conn = _connect(path)
     try:
         return {row[0] for row in conn.execute(
-            "SELECT record_id FROM records WHERE source_type='facebook'")}
+            'SELECT record_id FROM records WHERE source_type IN (?,?)',
+            CATALOG_SOURCES)}
     finally:
         conn.close()
 
@@ -211,9 +214,9 @@ def _text_rule(root, value, sources):
                 rows = conn.execute(
                     'SELECT r.record_id FROM records r JOIN record_search '
                     'ON record_search.rowid = r.rowid '
-                    "WHERE r.source_type='facebook' AND record_search MATCH ? "
+                    'WHERE r.source_type IN (?,?) AND record_search MATCH ? '
                     'ORDER BY bm25(record_search) LIMIT ?',
-                    (value, MAX_LEAF_MATCHES + 1)).fetchall()
+                    (*CATALOG_SOURCES, value, MAX_LEAF_MATCHES + 1)).fetchall()
             except sqlite3.OperationalError as exc:
                 raise ValueError(
                     f'Catalog index rejected the text rule: {exc}. {syntax}') from None
@@ -246,8 +249,8 @@ def _actor_rule(root, values, sources):
             conn = _connect(path)
             try:
                 matches.update(('catalog', row[0]) for row in conn.execute(
-                    'SELECT record_id FROM records WHERE source_type=? '
-                    f'AND actor IN ({placeholders})', ('facebook', *values)))
+                    'SELECT record_id FROM records WHERE source_type IN (?,?) '
+                    f'AND actor IN ({placeholders})', (*CATALOG_SOURCES, *values)))
             finally:
                 conn.close()
     return matches
@@ -265,8 +268,9 @@ def _kind_rule(root, values, sources):
             conn = _connect(path)
             try:
                 matches.update(('catalog', row[0]) for row in conn.execute(
-                    'SELECT record_id FROM records WHERE source_type=? '
-                    f'AND record_kind IN ({placeholders})', ('facebook', *catalog_kinds)))
+                    'SELECT record_id FROM records WHERE source_type IN (?,?) '
+                    f'AND record_kind IN ({placeholders})',
+                    (*CATALOG_SOURCES, *catalog_kinds)))
             finally:
                 conn.close()
     return matches
@@ -309,8 +313,8 @@ def _date_rule(root, after, before, sources):
             conn = _connect(path)
             try:
                 for record_id, value in conn.execute(
-                        "SELECT record_id,occurred_at FROM records "
-                        "WHERE source_type='facebook'"):
+                        'SELECT record_id,occurred_at FROM records '
+                        'WHERE source_type IN (?,?)', CATALOG_SOURCES):
                     stamp = _epoch(value)
                     if stamp is None:
                         continue
@@ -419,12 +423,13 @@ def _catalog_items(root, keys):
         for chunk in _chunks(keys):
             placeholders = ','.join('?' for _ in chunk)
             rows = conn.execute(
-                'SELECT record_id,source_key,record_kind,actor,occurred_at,'
-                'substr(body,1,200) FROM records '
-                f"WHERE source_type='facebook' AND record_id IN ({placeholders})", chunk)
-            for record_id, source_key, kind, actor, occurred, body in rows:
+                'SELECT record_id,source_type,source_key,record_kind,actor,'
+                'occurred_at,substr(body,1,200) FROM records '
+                f'WHERE source_type IN (?,?) AND record_id IN ({placeholders})',
+                (*CATALOG_SOURCES, *chunk))
+            for record_id, source_type, source_key, kind, actor, occurred, body in rows:
                 items[('catalog', record_id)] = {
-                    'source': 'facebook', 'id': record_id, 'kind': kind,
+                    'source': source_type, 'id': record_id, 'kind': kind,
                     'title': source_key or '', 'actor': actor or '',
                     'date': occurred or '', 'snippet': (body or '')[:200]}
     finally:

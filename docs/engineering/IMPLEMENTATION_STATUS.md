@@ -740,8 +740,8 @@ Scheduler verification status:
 
 1. Run the benchmark harness on Windows and Linux and add a 1M-record run
    before making large-archive claims.
-2. Implement Phase IV document ingestion and consistent catalog source
-   registration (plain text, Markdown, PDF and DOCX first).
+2. Implement attachment content extraction and the remaining source
+   registration/interchange interfaces.
 3. Exercise intelligence against a live installed Ollama model and perform an
    interactive desktop acceptance run.
 
@@ -923,3 +923,46 @@ identity is mechanically validated; no live Ollama model was exercised in the
 automated suite; answer display is not token-streamed; no interactive desktop
 acceptance run is claimed. The next milestone is Phase IV document ingestion
 and broader catalog source registration.
+
+## v0.5 Intelligence Update — Phase IV: document ingestion (2026-11-28)
+
+- New `hb_engine/documents.py` imports local text, Markdown, CSV, JSON, PDF
+  and DOCX into the existing catalog as `source_type='document'` records.
+  Original files are hashed and referenced by path, never copied, uploaded or
+  modified.
+- Built-in extraction covers UTF-8/UTF-16 text, Markdown, CSV and validated
+  JSON. PDF text and page references use the optional `pypdf` package; DOCX
+  paragraphs and tables use optional `python-docx`. Without the package the
+  preview and import report extraction as unavailable; they never pretend a
+  binary was indexed as empty. Scanned PDFs without text are reported rather
+  than OCRed. No macros, scripts or embedded document instructions execute.
+- Limits: 50 MiB per file, 5,000,000 searchable characters (truncation is
+  recorded), 1,000 page references, hidden files and symlinks skipped. Stored
+  metadata includes path, hash, size, mtime, extractor, pages and explicit
+  limitations.
+- Imports are idempotent by SHA-256, changed files become later revisions
+  under a stable document key, extraction failures are itemized, and every run
+  is recorded in import history.
+- Unified search and the Intelligence retrieval layer now treat `document` as
+  a first-class source; catalog source selection can include `facebook` and
+  `document`, and search results carry the actual source type. The advanced
+  Boolean builder's catalog scope includes documents. The Tauri bridge and both
+  the Search and Import desktop workspaces expose document source and import
+  controls.
+- Catalog health, source verification, disable/enable and preview-first
+  removal apply to the `document` source through the existing catalog
+  mechanisms. Removing documents never deletes the original files.
+- Tests cover preview classification, text/Markdown/CSV/JSON indexing,
+  duplicate skipping, revisions, extraction failures, import history,
+  document-aware unified and advanced search, grounded retrieval, and missing
+  paths.
+- Verified: 319 tests, 317 passed, 2 skipped, zero failures on Python 3.12.0
+  and 3.13.7; `mypy==2.4.1` clean on 25 files; frontend type-check and
+  production build pass; `cargo check` and `cargo test` pass.
+
+Remaining limitations: PDF/DOCX extraction depends on optional local packages
+and was not exercised against a live package in automated tests; OCR, page
+navigation, document timeline inclusion, layout/image preservation and
+semantic deduplication remain unimplemented. Next: email-attachment content
+extraction (Phase 20), source-registration interfaces, and Honey Badger
+interchange (Phase V).

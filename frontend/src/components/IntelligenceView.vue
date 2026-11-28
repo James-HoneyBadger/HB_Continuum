@@ -108,6 +108,7 @@ const notice = ref("");
 const question = ref("");
 const sourceEmail = ref(true);
 const sourceFacebook = ref(true);
+const sourceDocument = ref(true);
 const fromDate = ref("");
 const toDate = ref("");
 const peopleText = ref("");
@@ -240,6 +241,7 @@ async function ask() {
   const sources = [
     sourceEmail.value ? "email" : null,
     sourceFacebook.value ? "facebook" : null,
+    sourceDocument.value ? "document" : null,
   ].filter((value): value is string => value !== null);
   if (!sources.length) {
     notice.value = "Choose at least one source.";
@@ -437,6 +439,7 @@ onMounted(() => {
         <div class="filters">
           <label class="check"><input v-model="sourceEmail" type="checkbox" /> Email</label>
           <label class="check"><input v-model="sourceFacebook" type="checkbox" /> Facebook</label>
+          <label class="check"><input v-model="sourceDocument" type="checkbox" /> Documents</label>
           <label class="range">From <input v-model="fromDate" type="date" /></label>
           <label class="range">To <input v-model="toDate" type="date" /></label>
           <label class="range">

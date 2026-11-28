@@ -28,6 +28,7 @@ const fromDate = ref("");
 const toDate = ref("");
 const sourceEmail = ref(true);
 const sourceFacebook = ref(true);
+const sourceDocument = ref(true);
 const sendersText = ref("");
 const kind = ref("");
 const tagsText = ref("");
@@ -39,6 +40,7 @@ const humanQuery = computed(() => {
   const chosen = [
     sourceEmail.value ? "email" : null,
     sourceFacebook.value ? "Facebook" : null,
+    sourceDocument.value ? "documents" : null,
   ].filter((value): value is string => value !== null);
   parts.push(chosen.length ? `in ${chosen.join(" and ")}` : "no source selected");
   if (sendersText.value.trim()) parts.push(`sender/actor ${sendersText.value.trim()}`);
@@ -138,6 +140,7 @@ async function runSearch(target = 1) {
   const sources = [
     sourceEmail.value ? "email" : null,
     sourceFacebook.value ? "facebook" : null,
+    sourceDocument.value ? "document" : null,
   ].filter((value): value is string => value !== null);
   if (!sources.length) {
     notice.value = "Choose at least one source.";
@@ -316,6 +319,7 @@ async function exportSelected() {
     <div class="row filters">
       <label class="check"><input v-model="sourceEmail" type="checkbox" /> Email</label>
       <label class="check"><input v-model="sourceFacebook" type="checkbox" /> Facebook</label>
+      <label class="check"><input v-model="sourceDocument" type="checkbox" /> Documents</label>
       <label class="range">
         Sender/actor
         <input v-model="sendersText" placeholder="exact, comma-separated" />

@@ -43,7 +43,7 @@ never written back into the archive.
 Every supplied record carries:
 
 - an evidence identifier (`E1`, `E2`, ...),
-- the source (`email` or `facebook`) and source type,
+- the source (`email`, `facebook` or `document`) and source type,
 - the original record identifier (SHA-256 hash or catalog record id),
 - title, participant/actor, declared date and source location,
 - an excerpt and whether it is the complete stored body or a truncation,

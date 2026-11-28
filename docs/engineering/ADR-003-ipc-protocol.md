@@ -28,7 +28,8 @@ spawned as `python3 dispatch.py --archive <root> serve`.
   `facebook_preview`, `facebook_import`, `preferences`, `preferences_set`,
   the `research_*` overlay methods, `intelligence_status`,
   `intelligence_models`, `intelligence_retrieve`, `intelligence_ask`, the
-  `conversation_*` methods, `export_evidence`, the `schedule_*` methods,
+  `conversation_*` methods, `document_preview`, `document_import`,
+  `export_evidence`, the `schedule_*` methods,
   `summarize`, `cancel` and `shutdown`.
 - `health` inspects an existing archive through a read-only connection and
   never migrates or writes during the request, returning
@@ -46,6 +47,10 @@ spawned as `python3 dispatch.py --archive <root> serve`.
   writing; `facebook_import` is a background job that streams per-file
   progress and returns the importer's counters, with `IMPORT_FAILED` for
   unreadable paths.
+- `document_preview` classifies local text, Markdown, CSV, JSON, PDF and DOCX
+  files and reports available extractors without writing. `document_import` is
+  a cancellable background job that hashes and indexes extracted text into the
+  catalog, records import history and never copies or modifies originals.
 - `timeline` returns messages ordered by their declared Date header with
   unparseable dates last, optionally filtered by sender; `correspondents`
   counts messages per sender. Both are read-only and cap `limit` at 5000.

@@ -212,7 +212,7 @@ fn search_params(
 ) -> Value {
     json!({
         "query": query,
-        "sources": sources.unwrap_or_else(|| vec!["email".to_string(), "facebook".to_string()]),
+        "sources": sources.unwrap_or_else(|| vec!["email".to_string(), "facebook".to_string(), "document".to_string()]),
         "page": page.unwrap_or(1),
         "page_size": page_size.unwrap_or(20),
         "after": after,
@@ -263,6 +263,16 @@ fn search_job(
         "search_job",
         search_params(query, sources, page, page_size, after, before, senders, kinds, tags),
     )
+}
+
+#[tauri::command]
+fn document_preview(state: State<AppState>, paths: Vec<String>) -> Result<Value, String> {
+    call(&state, "document_preview", json!({ "paths": paths }))
+}
+
+#[tauri::command]
+fn document_import(state: State<AppState>, paths: Vec<String>) -> Result<Value, String> {
+    call(&state, "document_import", json!({ "paths": paths }))
 }
 
 #[tauri::command]
@@ -338,7 +348,7 @@ fn search_advanced(
         "search_advanced",
         json!({
             "query": query,
-            "sources": sources.unwrap_or_else(|| vec!["email".to_string(), "facebook".to_string()]),
+            "sources": sources.unwrap_or_else(|| vec!["email".to_string(), "facebook".to_string(), "document".to_string()]),
             "limit": limit.unwrap_or(100),
             "offset": offset.unwrap_or(0),
         }),
@@ -380,7 +390,7 @@ fn advanced_query_save(
             "name": name,
             "description": description.unwrap_or_default(),
             "query": query,
-            "sources": sources.unwrap_or_else(|| vec!["email".to_string(), "facebook".to_string()]),
+            "sources": sources.unwrap_or_else(|| vec!["email".to_string(), "facebook".to_string(), "document".to_string()]),
         }),
     )
 }
@@ -1003,6 +1013,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ping, stats, search, search_job, search_advanced, search_validate,
+            document_preview, document_import,
             intelligence_status, intelligence_models, intelligence_retrieve,
             intelligence_ask, conversation_list, conversation_create,
             conversation_get, conversation_delete, conversation_export,

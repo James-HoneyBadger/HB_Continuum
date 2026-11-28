@@ -193,14 +193,14 @@ def normalize_request(payload):
     if not isinstance(payload, dict):
         raise ValueError('research request must be an object')
     question = _text(payload.get('question'), 'question', MAX_QUESTION)
-    sources = payload.get('sources', ('email', 'facebook'))
+    sources = payload.get('sources', ('email', 'facebook', 'document'))
     if isinstance(sources, str):
         sources = [part.strip() for part in sources.split(',') if part.strip()]
-    sources = _string_list(sources, 'sources', 2)
+    sources = _string_list(sources, 'sources', 3)
     if not sources:
-        sources = ['email', 'facebook']
-    if any(source not in ('email', 'facebook') for source in sources):
-        raise ValueError('sources must be email and/or facebook')
+        sources = ['email', 'facebook', 'document']
+    if any(source not in ('email', 'facebook', 'document') for source in sources):
+        raise ValueError('sources must be email, facebook and/or document')
     after = _epoch(payload.get('after'), 'after')
     before = _epoch(payload.get('before'), 'before')
     if after is not None and before is not None and after >= before:

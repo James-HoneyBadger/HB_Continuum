@@ -13,6 +13,9 @@ const importResult = ref<any>(null);
 const facebookPaths = ref<string[]>([]);
 const facebookPreview = ref<any>(null);
 const facebookResult = ref<any>(null);
+const documentPaths = ref<string[]>([]);
+const documentPreview = ref<any>(null);
+const documentResult = ref<any>(null);
 const history = ref<any[]>([]);
 const historyAvailable = ref(true);
 const { busy, progress, start, cancel } = useEngineJob();
@@ -103,6 +106,65 @@ async function runFacebookImport() {
   }
 }
 
+async function chooseDocumentFiles() {
+  try {
+    const selected = await open({
+      multiple: true,
+      filters: [{
+        name: "Documents",
+        extensions: ["txt", "md", "markdown", "csv", "json", "pdf", "docx"],
+      }],
+    });
+    if (!selected) return;
+    documentPaths.value = Array.isArray(selected) ? selected : [selected];
+    documentPreview.value = null;
+    documentResult.value = null;
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
+async function chooseDocumentFolder() {
+  try {
+    const selected = await open({ directory: true, multiple: false });
+    if (!selected || Array.isArray(selected)) return;
+    documentPaths.value = [selected];
+    documentPreview.value = null;
+    documentResult.value = null;
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
+async function runDocumentPreview() {
+  documentPreview.value = null;
+  documentResult.value = null;
+  try {
+    documentPreview.value = (await invoke("document_preview", {
+      paths: documentPaths.value,
+    })) as any;
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
+async function runDocumentImport() {
+  documentPreview.value = null;
+  documentResult.value = null;
+  try {
+    const outcome = await start("document_import", { paths: documentPaths.value });
+    if (outcome.event === "job_error") {
+      props.onError(String(outcome.message || "Document import failed"));
+      return;
+    }
+    documentResult.value = outcome.result;
+    await loadHistory();
+    props.onChanged();
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
 async function runImport() {
   importResult.value = null;
   const paths = importPaths.value.length ? importPaths.value : importPath.value ? [importPath.value] : [];
@@ -186,6 +248,46 @@ onMounted(loadHistory);
     </p>
     <ul v-if="facebookResult && facebookResult.warnings.length" class="errors">
       <li v-for="(warning, i) in facebookResult.warnings" :key="i">{{ warning }}</li>
+    </ul>
+
+    <h2>Import documents</h2>
+    <p class="meta">
+      Imports local text, Markdown, CSV, JSON, PDF and DOCX into the source-independent catalog.
+      Originals are hashed and referenced, never copied or uploaded. PDF and DOCX text extraction
+      requires an optional local package; files without extractable text are reported, not faked.
+    </p>
+    <div class="row">
+      <button :disabled="busy" @click="chooseDocumentFiles">Choose document files…</button>
+      <button :disabled="busy" @click="chooseDocumentFolder">Choose folder…</button>
+      <button :disabled="!documentPaths.length || busy" @click="runDocumentPreview">Preview</button>
+      <button :disabled="!documentPaths.length || busy" @click="runDocumentImport">Import</button>
+    </div>
+    <p v-if="documentPaths.length" class="meta">
+      {{ documentPaths.length === 1 ? documentPaths[0] : documentPaths.length + " selections" }}
+    </p>
+    <p v-if="documentPreview" class="meta">
+      {{ documentPreview.files_discovered }} files ·
+      {{ documentPreview.supported_files }} supported ·
+      {{ documentPreview.unsupported_files }} unsupported
+    </p>
+    <ul v-if="documentPreview && documentPreview.extractor_warnings.length" class="errors">
+      <li v-for="(warning, i) in documentPreview.extractor_warnings" :key="i">{{ warning }}</li>
+    </ul>
+    <ul v-if="documentPreview && documentPreview.warnings.length" class="errors">
+      <li v-for="(warning, i) in documentPreview.warnings" :key="i">{{ warning }}</li>
+    </ul>
+    <p v-if="documentResult" class="meta">
+      {{ documentResult.records_imported }} documents imported ·
+      {{ documentResult.files_skipped }} already present ·
+      {{ documentResult.extraction_failures }} extraction failures ·
+      {{ documentResult.characters_indexed.toLocaleString() }} characters indexed ·
+      {{ documentResult.pages_indexed }} pages indexed
+      <span v-if="documentResult.cancelled">· cancelled, completed work was kept</span>
+    </p>
+    <ul v-if="documentResult && documentResult.errors.length" class="errors">
+      <li v-for="(error, i) in documentResult.errors" :key="i">
+        <span class="meta">{{ error.path }}</span> {{ error.error }}
+      </li>
     </ul>
 
     <h2>Import history</h2>

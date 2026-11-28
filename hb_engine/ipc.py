@@ -665,10 +665,12 @@ def _string_list(value, name, max_items, limit=200):
     return cleaned or None
 
 def _advanced_query_sources(value):
-    sources = _string_list(value, 'sources', 2, 20)
+    sources = _string_list(value, 'sources', 3, 20)
     sources = sources or ['email', 'facebook']
+    sources = ['facebook' if source == 'document' else source for source in sources]
+    sources = list(dict.fromkeys(sources))
     if any(source not in ('email', 'facebook') for source in sources):
-        raise IPCError('INVALID_PARAMS', 'sources must be email and/or facebook')
+        raise IPCError('INVALID_PARAMS', 'sources must be email and/or catalog')
     return sources
 
 def _advanced_queries_list(root, workspace=None):
@@ -1044,12 +1046,13 @@ class IPCServer:
         query = params.get('query')
         if not isinstance(query, str) or not query.strip():
             raise IPCError('INVALID_PARAMS', 'search requires a non-empty query string')
-        sources = params.get('sources', ('email', 'facebook'))
+        sources = params.get('sources', ('email', 'facebook', 'document'))
         if isinstance(sources, str):
             sources = tuple(x.strip() for x in sources.split(',') if x.strip())
-        sources = tuple(sources) or ('email', 'facebook')
-        if not all(s in ('email', 'facebook') for s in sources):
-            raise IPCError('INVALID_PARAMS', 'sources must be email and/or facebook')
+        sources = tuple(sources) or ('email', 'facebook', 'document')
+        if not all(s in ('email', 'facebook', 'document') for s in sources):
+            raise IPCError('INVALID_PARAMS',
+                           'sources must be email, facebook and/or document')
         page = params.get('page', 1)
         page_size = params.get('page_size', 20)
         if not isinstance(page, int) or isinstance(page, bool) or page < 1:
@@ -1248,8 +1251,10 @@ class IPCServer:
         if isinstance(sources, str):
             sources = tuple(x.strip() for x in sources.split(',') if x.strip())
         sources = tuple(sources) or ('email', 'facebook')
+        sources = tuple('facebook' if source == 'document' else source
+                        for source in sources)
         if not all(source in ('email', 'facebook') for source in sources):
-            raise IPCError('INVALID_PARAMS', 'sources must be email and/or facebook')
+            raise IPCError('INVALID_PARAMS', 'sources must be email and/or catalog')
         limit = params.get('limit', 100)
         offset = params.get('offset', 0)
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 5000:
@@ -1494,6 +1499,31 @@ class IPCServer:
 
         return self._start_job(work)
 
+    def _document_preview(self, params):
+        from .documents import preview
+        paths = params.get('paths')
+        if not isinstance(paths, list) or not paths or not all(isinstance(p, str) for p in paths):
+            raise IPCError('INVALID_PARAMS', 'paths must be a non-empty list of strings')
+        return preview(paths)
+
+    def _start_document_import(self, params):
+        from .documents import import_files
+        paths = params.get('paths')
+        if not isinstance(paths, list) or not paths or not all(isinstance(p, str) for p in paths):
+            raise IPCError('INVALID_PARAMS', 'paths must be a non-empty list of strings')
+
+        def work(job_id, cancel_event):
+            def progress(done, total, path, status):
+                self._write(_event('progress', job_id=job_id, done=done, total=total,
+                                   hash='', status=f'{status} {path}'))
+            try:
+                return import_files(paths, self.root, progress=progress,
+                                    cancel_event=cancel_event)
+            except OSError as exc:
+                raise IPCError('IMPORT_FAILED', str(exc)) from None
+
+        return self._start_job(work)
+
     def _start_facebook_import(self, params):
         from .facebook import import_files
         paths = params.get('paths')
@@ -1637,6 +1667,10 @@ class IPCServer:
                 return _result(request_id, _facebook_preview(self.root, params.get('paths')))
             if method == 'facebook_import':
                 return _result(request_id, self._start_facebook_import(params))
+            if method == 'document_preview':
+                return _result(request_id, self._document_preview(params))
+            if method == 'document_import':
+                return _result(request_id, self._start_document_import(params))
             if method == 'import_eml':
                 return _result(request_id, self._start_eml_import(params))
             if method == 'import_history':

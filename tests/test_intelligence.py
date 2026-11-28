@@ -144,7 +144,7 @@ class IntelligenceTests(unittest.TestCase):
 
     def test_request_validation_and_query_building(self):
         spec = normalize_request({'question': 'When did the silver invoice change?'})
-        self.assertEqual(spec['sources'], ['email', 'facebook'])
+        self.assertEqual(spec['sources'], ['email', 'facebook', 'document'])
         self.assertEqual((spec['depth'], spec['scope']), (40, 'archive'))
         queries = retrieval_queries(spec['question'], ['invoice'])
         self.assertTrue(any('"silver"' in query for query in queries))
