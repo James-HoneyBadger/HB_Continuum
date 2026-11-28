@@ -201,6 +201,40 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.a.verify_attachments(),[sha256])
         self.assertRaises(ValueError,self.a.attachment_bytes,sha256)
         self.assertRaises(ValueError,self.a.attachment_bytes,'../escape')
+    def test_incremental_sync_uses_uid_watermark(self):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.select.return_value=('OK',[b'1']); m.response.return_value=('UIDVALIDITY',[b'7'])
+        m.uid.side_effect=[('OK',[b'5']),('OK',[(b'5',RAW)]),('OK',[b''])]
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.assertEqual(self.a.sync('host','user','pw'),1)
+            self.assertEqual(self.a.sync('host','user','pw'),0)
+        self.assertEqual(m.uid.call_args_list[0].args,('search',None,'ALL'))
+        self.assertEqual(m.uid.call_args_list[2].args,('search',None,'6:*'))
+        self.assertEqual(self.a._sync_state('host|user','INBOX','7'),5)
+    def test_batch_limit_resumes_from_watermark(self):
+        from preferences import save
+        save(self.a.root,{'batch_limit':1})
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.select.return_value=('OK',[b'1']); m.response.return_value=('UIDVALIDITY',[b'3'])
+        first=b'Subject: One\r\n\r\none\r\n'; second=b'Subject: Two\r\n\r\ntwo\r\n'
+        m.uid.side_effect=[('OK',[b'1 2 3']),('OK',[(b'1',first)]),
+                           ('OK',[b'2 3']),('OK',[(b'2',second)])]
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.assertEqual(self.a.sync('host','user','pw'),1)
+            self.assertEqual(self.a.sync('host','user','pw'),1)
+        self.assertEqual(m.uid.call_args_list[2].args,('search',None,'2:*'))
+        self.assertEqual(self.a._sync_state('host|user','INBOX','3'),2)
+        self.assertEqual(len(self.a.find('two')),1)
+    def test_changed_uidvalidity_rescans_mailbox(self):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.select.return_value=('OK',[b'1'])
+        m.response.side_effect=[('UIDVALIDITY',[b'7']),('UIDVALIDITY',[b'8'])]
+        m.uid.side_effect=[('OK',[b'5']),('OK',[(b'5',RAW)]),('OK',[b'5']),('OK',[(b'5',RAW)])]
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.assertEqual(self.a.sync('host','user','pw'),1)
+            self.assertEqual(self.a.sync('host','user','pw'),1)
+        self.assertEqual(m.uid.call_args_list[2].args,('search',None,'ALL'))
+        self.assertEqual(self.a.stats()['origins'],2)
     def test_version_flag(self):
         out=io.StringIO()
         with mock.patch('sys.argv',['dispatch.py','--version']), contextlib.redirect_stdout(out):

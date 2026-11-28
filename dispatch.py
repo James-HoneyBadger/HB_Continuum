@@ -56,7 +56,8 @@ class Archive:
         CREATE TABLE IF NOT EXISTS origins(account TEXT, folder TEXT, validity TEXT, uid TEXT, hash TEXT NOT NULL REFERENCES messages(hash), PRIMARY KEY(account,folder,validity,uid));
         CREATE TABLE IF NOT EXISTS sync_failures(account TEXT NOT NULL, folder TEXT NOT NULL, validity TEXT NOT NULL, uid TEXT NOT NULL, error TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 1, last_seen TEXT NOT NULL, PRIMARY KEY(account,folder,validity,uid));
         CREATE TABLE IF NOT EXISTS attachments(message TEXT NOT NULL REFERENCES messages(hash), filename TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL, PRIMARY KEY(message,filename,sha256));
-        CREATE INDEX IF NOT EXISTS attachments_sha256 ON attachments(sha256);''')
+        CREATE INDEX IF NOT EXISTS attachments_sha256 ON attachments(sha256);
+        CREATE TABLE IF NOT EXISTS sync_state(account TEXT NOT NULL, folder TEXT NOT NULL, validity TEXT NOT NULL, last_uid INTEGER NOT NULL DEFAULT 0, updated TEXT NOT NULL, PRIMARY KEY(account,folder,validity));''')
     @staticmethod
     def _part_text(part):
         """Extract decoded text from a MIME part; never raises on hostile charsets."""
@@ -286,12 +287,21 @@ class Archive:
             resp=m.response('UIDVALIDITY')[1]
             if not resp or resp[0] is None or not resp[0].decode().isdigit(): raise RuntimeError('Missing UIDVALIDITY')
             validity=resp[0].decode()
-            status,data=m.uid('search',None,'ALL')
+            account=host+'|'+user
+            watermark=self._sync_state(account,folder,validity)
+            # Only ask the server for UIDs above the stored watermark, then add any
+            # recorded failures below it so they are retried until they succeed or
+            # exhaust their attempt budget.
+            status,data=m.uid('search',None,f'{watermark+1}:*' if watermark else 'ALL')
             if status!='OK': raise RuntimeError('Search failed')
+            pending={int(uid) for uid in data[0].split() if uid.decode().isdigit() and int(uid)>watermark}
+            pending.update(uid for (uid,) in self.db.execute(
+                'SELECT uid FROM sync_failures WHERE account=? AND folder=? AND validity=?',(account,folder,validity))
+                if uid.isdigit() and int(uid)<=watermark)
             count=0
-            for uid in data[0].split():
-                origin=(host+'|'+user,folder,validity,uid.decode())
-                if self.db.execute('SELECT 1 FROM origins WHERE account=? AND folder IN (?,?) AND validity=? AND uid=?',(origin[0],folder,quoted,validity,uid.decode())).fetchone(): continue
+            for uid in sorted(pending):
+                origin=(account,folder,validity,str(uid))
+                if self.db.execute('SELECT 1 FROM origins WHERE account=? AND folder IN (?,?) AND validity=? AND uid=?',(account,folder,quoted,validity,str(uid))).fetchone(): continue
                 attempts=self._failure_attempts(origin)
                 if attempts>=SYNC_MAX_ATTEMPTS: continue
                 try:
@@ -303,8 +313,16 @@ class Archive:
                     raise
                 if attempts:
                     with self.db: self.db.execute('DELETE FROM sync_failures WHERE account=? AND folder=? AND validity=? AND uid=?',origin)
+                self._save_sync_state(account,folder,validity,uid)
                 if prefs['batch_limit'] and count>=prefs['batch_limit']: break
             return count
+    def _sync_state(self, account, folder, validity):
+        row=self.db.execute('SELECT last_uid FROM sync_state WHERE account=? AND folder=? AND validity=?',(account,folder,validity)).fetchone()
+        return row[0] if row else 0
+    def _save_sync_state(self, account, folder, validity, last_uid):
+        with self.db:
+            self.db.execute('''INSERT INTO sync_state(account,folder,validity,last_uid,updated) VALUES(?,?,?,?,datetime('now'))
+                ON CONFLICT(account,folder,validity) DO UPDATE SET last_uid=max(last_uid,excluded.last_uid), updated=excluded.updated''',(account,folder,validity,last_uid))
     def _fetch(self, connection, uid, attempts=SYNC_MAX_ATTEMPTS):
         """Fetch one UID with BODY.PEEK, retrying transient connection aborts."""
         failure=None
