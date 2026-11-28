@@ -159,6 +159,7 @@ class Archive:
             for column in sorted(added):
                 self.db.execute(f"ALTER TABLE messages ADD COLUMN {column} {'INTEGER' if column=='sent_ts' else 'TEXT'}")
         self.db.execute('CREATE INDEX IF NOT EXISTS messages_sent_ts ON messages(sent_ts)')
+        self.db.execute('CREATE INDEX IF NOT EXISTS messages_sender ON messages(sender)')
         self.db.execute('CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)')
         index_columns={row[1] for row in self.db.execute('PRAGMA table_info(search)')}
         if not {'recipient','cc','bcc'} <= index_columns: self._rebuild_search_index()
@@ -463,22 +464,22 @@ class Archive:
     def recent(self, limit=100):
         return self.db.execute('SELECT hash,subject,sender FROM messages ORDER BY rowid DESC LIMIT ?', (max(1,min(int(limit),5000)),)).fetchall()
     def timeline(self, sender=None, limit=100):
-        """Chronological view of declared message dates; unparseable dates sort last."""
-        from email.utils import parsedate_to_datetime
-        from datetime import timezone
-        sql='SELECT hash,subject,sender,date FROM messages'
-        params=()
+        """Chronological view of declared message dates; unparseable dates sort last.
+
+        Ordering is done by SQLite against the sent_ts index in two bounded queries,
+        so a large archive is never loaded and sorted in memory.
+        """
+        limit=max(1,min(int(limit),5000))
+        where=' WHERE sent_ts IS NOT NULL'; params=[]
         if sender is not None:
-            sql+=' WHERE sender=?'
-            params=(sender,)
-        def key(row):
-            try:
-                d=parsedate_to_datetime(row[3])
-                if d.tzinfo is None: d=d.replace(tzinfo=timezone.utc)
-                return (0,d.timestamp(),row[0])
-            except (ValueError,TypeError,OverflowError,OSError):
-                return (1,0,row[0])
-        return sorted(self.db.execute(sql,params),key=key)[:max(1,min(int(limit),5000))]
+            where+=' AND sender=?'; params.append(sender)
+        dated=self.db.execute(f'SELECT hash,subject,sender,date FROM messages{where} ORDER BY sent_ts,hash LIMIT ?',
+                              (*params,limit)).fetchall()
+        if len(dated)<limit:
+            missing=' WHERE sent_ts IS NULL'+(' AND sender=?' if sender is not None else '')
+            dated+=self.db.execute(f'SELECT hash,subject,sender,date FROM messages{missing} ORDER BY hash LIMIT ?',
+                                   (*params,limit-len(dated))).fetchall()
+        return dated
     def correspondents(self, limit=100):
         return self.db.execute(
             "SELECT sender, count(*) FROM messages GROUP BY sender ORDER BY count(*) DESC, sender LIMIT ?",

@@ -484,6 +484,21 @@ class Tests(unittest.TestCase):
         self.assertEqual(out.getvalue().strip(),'2')
         self.assertEqual([call.args[0] for call in m.select.call_args_list],['"INBOX"','"Archive"'])
         self.assertEqual(self.a.stats()['origins'],2)
+    def test_timeline_uses_stored_timestamps_and_bounds_the_result(self):
+        late=self.a.ingest(b'From: b@example.invalid\r\nDate: Wed, 3 Jan 2024 00:00:00 +0000\r\nSubject: late\r\n\r\nx\r\n')
+        early=self.a.ingest(b'From: a@example.invalid\r\nDate: Mon, 1 Jan 2024 00:00:00 +0000\r\nSubject: early\r\n\r\nx\r\n')
+        undated=self.a.ingest(b'From: a@example.invalid\r\nSubject: undated\r\n\r\nx\r\n')
+        broken=self.a.ingest(b'From: a@example.invalid\r\nDate: not a date\r\nSubject: broken\r\n\r\nx\r\n')
+        undated_order=[label for _,label in sorted([(undated,'undated'),(broken,'broken')])]
+        self.assertEqual([r[1] for r in self.a.timeline()],['early','late']+undated_order)
+        self.assertEqual([r[0] for r in self.a.timeline(limit=2)],[early,late])
+        self.assertEqual([r[1] for r in self.a.timeline(sender='b@example.invalid')],['late'])
+        self.assertEqual([r[1] for r in self.a.timeline(sender='a@example.invalid',limit=1)],['early'])
+        self.assertEqual(self.a.timeline(limit=0)[0][0],early)
+    def test_timeline_tie_breaks_by_hash_and_skips_unordered_rows(self):
+        undated=[self.a.ingest(b'Subject: first\r\nMessage-ID: <u1@example.invalid>\r\n\r\nx\r\n'),
+                 self.a.ingest(b'Subject: second\r\nMessage-ID: <u2@example.invalid>\r\n\r\nx\r\n')]
+        self.assertEqual([r[0] for r in self.a.timeline()],sorted(undated))
     def test_version_flag(self):
         out=io.StringIO()
         with mock.patch('sys.argv',['dispatch.py','--version']), contextlib.redirect_stdout(out):
