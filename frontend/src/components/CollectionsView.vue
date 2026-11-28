@@ -358,6 +358,7 @@ onMounted(load);
           </p>
           <p class="meta">{{ current.workspace }} · {{ current.item_count }} items · {{ current.description }}</p>
           <p v-if="notice" class="notice">{{ notice }}</p>
+          <p class="meta">Exported manifests and drafts are plaintext.</p>
 
           <h3>Add a record</h3>
           <div class="row add">

@@ -5,7 +5,9 @@ import argparse, hashlib, json, os, plistlib, re, subprocess, sys, tempfile
 from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
+from . import db
 from .dispatch import Archive
+from .encryption import is_encrypted_archive
 from .sync_lock import LOCK_SUPPORTED, SyncBusy, file_lock
 
 # Retained under its historical name for compatibility; it now covers
@@ -70,6 +72,13 @@ def tick(root,force=None,now=None,get_password=None):
         profiles=config(root)
         if force and force not in profiles: raise ValueError('Unknown profile')
         states=read_json(root/'schedule-status.json',{})
+        if is_encrypted_archive(root) and not db.session_unlocked(root):
+            stamp=now or utcnow()
+            for name,p in profiles.items():
+                if name==force or (force is None and due(profile(**p),states.get(name,{}),stamp)):
+                    states[name]={'status':'deferred: encrypted archive locked'}
+            write_json(root/'schedule-status.json',states)
+            return states
         try:
             ar=Archive(root)
         except SyncBusy:

@@ -47,6 +47,7 @@ after validation and an independent restore check.
 
 The migration is intentionally conservative and may require temporary space
 for both the plaintext backup and encrypted destination. It does not provide
-automatic deletion, key rotation, password recovery, in-place encryption or
-encrypted backup/restore. SQLCipher's distinct DB-API exception classes remain
-a future integration concern.
+automatic deletion, key rotation, password recovery, in-place encryption or an
+independent backup key. Encrypted backup/restore reuses the archive key;
+raw/config files remain plaintext. SQLCipher's distinct
+DB-API exception classes remain a future integration concern.

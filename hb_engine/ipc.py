@@ -9,6 +9,7 @@ events and a terminal job_complete or job_error event.
 """
 import hashlib, json, sqlite3, sys, threading, uuid
 from .db import connect as db_connect
+from .db import session_key
 from pathlib import Path
 
 PROTOCOL_VERSION = 1
@@ -1505,16 +1506,27 @@ class IPCServer:
         def work(job_id, cancel_event):
             self._write(_event('progress', job_id=job_id, done=0, total=1, hash='', status=action))
             try:
+                key = session_key(self.root)
                 if action == 'backup':
                     result = backup_engine.backup(self.root, path)
                 elif action == 'verify_backup':
-                    result = backup_engine.validate_snapshot(Path(path).expanduser())
+                    snapshot = Path(path).expanduser()
+                    if backup_engine.is_encrypted_archive(snapshot) and key is None:
+                        raise ValueError('Unlock the archive before verifying its encrypted backup')
+                    result = backup_engine.validate_snapshot(snapshot, key=key)
                 else:
-                    result = backup_engine.restore(path, params['destination'])
+                    snapshot = Path(path).expanduser()
+                    if backup_engine.is_encrypted_archive(snapshot) and key is None:
+                        raise ValueError('Unlock the archive before restoring its encrypted backup')
+                    result = backup_engine.restore(snapshot, params['destination'], key=key)
             except (ValueError, FileExistsError, OSError, sqlite3.Error) as exc:
                 code = {'backup': 'BACKUP_FAILED', 'verify_backup': 'BACKUP_INVALID',
                         'restore': 'RESTORE_FAILED'}[action]
                 raise IPCError(code, str(exc)) from None
+            except Exception as exc:
+                code = {'backup': 'BACKUP_FAILED', 'verify_backup': 'BACKUP_INVALID',
+                        'restore': 'RESTORE_FAILED'}[action]
+                raise IPCError(code, type(exc).__name__ + ': ' + str(exc)) from None
             self._write(_event('progress', job_id=job_id, done=1, total=1, hash='', status='complete'))
             return result
 

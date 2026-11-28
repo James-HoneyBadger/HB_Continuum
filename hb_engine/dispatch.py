@@ -904,7 +904,7 @@ def main(argv=None):
     q=sub.add_parser('migrate-encrypted'); q.add_argument('--destination',required=True); q.add_argument('--backup',required=True)
     a=p.parse_args(argv)
     from . import encryption
-    from .db import EncryptionUnavailable
+    from .db import EncryptionUnavailable, session_key
     root=Path(a.archive).expanduser().resolve()
     if a.cmd=='init-encrypted':
         password=getpass.getpass('New archive password: ')
@@ -931,7 +931,7 @@ def main(argv=None):
         print(json.dumps(result,indent=2))
         print(result['warning'],file=sys.stderr)
         return 0
-    if a.cmd!='serve' and encryption.is_encrypted_archive(root):
+    if a.cmd not in ('serve','verify-backup','restore') and encryption.is_encrypted_archive(root):
         try: encryption.unlock(root,getpass.getpass('Archive password: '))
         except (encryption.EncryptionError,EncryptionUnavailable) as exc:
             print(f'unlock: {exc}',file=sys.stderr); return 1
@@ -941,13 +941,28 @@ def main(argv=None):
         return 0
     if a.cmd in ('backup','verify-backup','restore'):
         from . import backup
+        backup_key=None; snapshot_root=None
         try:
+            if a.cmd in ('verify-backup','restore'):
+                snapshot_root=Path(a.snapshot).expanduser().resolve()
+                if encryption.is_encrypted_archive(snapshot_root):
+                    try: encryption.unlock(snapshot_root,getpass.getpass('Backup password: '))
+                    except (encryption.EncryptionError,EncryptionUnavailable) as exc:
+                        print(f'{a.cmd}: {exc}',file=sys.stderr); return 1
+                    backup_key=session_key(snapshot_root)
             if a.cmd=='backup': result=backup.backup(a.archive,a.destination)
-            elif a.cmd=='verify-backup': result=backup.validate_snapshot(Path(a.snapshot).expanduser())
-            else: result=backup.restore(a.snapshot,a.archive)
+            elif a.cmd=='verify-backup':
+                result=backup.validate_snapshot(snapshot_root,key=backup_key)
+            else:
+                result=backup.restore(snapshot_root,a.archive,key=backup_key)
         except (ValueError,FileExistsError,OSError,sqlite3.Error) as exc:
             print(f'{a.cmd}: {exc}',file=sys.stderr); return 1
-        print(json.dumps(result)); return 0
+        finally:
+            if snapshot_root is not None:
+                encryption.lock(snapshot_root)
+        print(json.dumps(result))
+        if result.get('warning'): print(result['warning'],file=sys.stderr)
+        return 0
     if a.cmd=='serve' and encryption.is_encrypted_archive(root):
         from .ipc import IPCServer
         IPCServer(root).serve()
@@ -1023,7 +1038,9 @@ def main(argv=None):
             elif a.scmd=='delete': print(json.dumps(s.delete(a.hash, a.type, a.model, a.prompt_version),indent=2))
         finally:
             s.close()
-    elif a.cmd=='export': ar.export(a.hashes,a.destination)
+    elif a.cmd=='export':
+        print('export: exported messages and evidence are plaintext',file=sys.stderr)
+        ar.export(a.hashes,a.destination)
     elif a.cmd=='sync': print(ar.sync(a.host,a.user,getpass.getpass(),a.folder))
     elif a.cmd=='serve':
         from .ipc import IPCServer

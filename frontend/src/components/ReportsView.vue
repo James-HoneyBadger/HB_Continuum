@@ -67,6 +67,7 @@ async function exportReport() {
       <button v-if="busy" @click="cancel">Cancel</button>
     </div>
     <p v-if="progress" class="meta">{{ progress }}</p>
+    <p class="meta">Reports are plaintext exports and may contain sensitive archive metadata.</p>
     <p v-if="result" class="ok">
       Report written to {{ result.path }} ({{ result.bytes }} bytes, {{ result.format }}).
     </p>

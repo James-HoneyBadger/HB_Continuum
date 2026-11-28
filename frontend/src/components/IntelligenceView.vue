@@ -427,6 +427,7 @@ onMounted(() => {
           <div class="row">
             <button type="submit" :disabled="busy">{{ busy ? "Researching…" : "Ask" }}</button>
             <button v-if="busy" type="button" @click="askJob.cancel()">Cancel</button>
+            <span class="export-warning">Conversation exports are plaintext.</span>
             <button type="button" :disabled="!selectedId" @click="exportConversation">
               Export conversation
             </button>
@@ -734,6 +735,10 @@ onMounted(() => {
   background: var(--hb-panel-alt);
   color: var(--hb-link);
   cursor: pointer;
+}
+.export-warning {
+  color: var(--hb-warning-text);
+  font-size: 13px;
 }
 .warning {
   color: var(--hb-warning-text);

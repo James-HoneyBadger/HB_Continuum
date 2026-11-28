@@ -145,8 +145,9 @@ the in-memory copy and prevents new connections.
 SQLCipher encrypts the three databases and their rollback journals. Encrypted
 connections use memory-backed temporary storage, secure deletion and SQLCipher
 memory security. Raw EML files, external documents, preferences, schedules,
-exports and reports remain plaintext. Encrypted backups are deliberately
-refused until keyed backup/restore is designed and tested.
+exports and reports remain plaintext. Encrypted backup/restore keeps database
+files encrypted with the archive key; raw/config files in snapshots remain
+plaintext. There is no independent backup key.
 
 The desktop application includes an unlock panel and an explicit **Lock**
 action; the IPC protocol exposes `encryption_status`, `encryption_unlock` and

@@ -16,26 +16,28 @@ from contextlib import closing, nullcontext
 from pathlib import Path
 
 from . import db as db_service
-from .encryption import is_encrypted_archive
+from .encryption import DESCRIPTOR_NAME, is_encrypted_archive
 from .migrations import DATABASES as _DATABASES
 from .sync_lock import sync_lock
 
 # Derive the backup set from the migration registry so a new database cannot
 # be silently omitted from preservation.
 DATABASES = tuple(name for _, name in _DATABASES)
-CONFIG = ('preferences.json', 'schedule.json', 'schedule-status.json')
+CONFIG = ('preferences.json', 'schedule.json', 'schedule-status.json',
+          '.hb-encryption.json')
 MANIFEST = 'backup-manifest.json'
 
 def digest(path):
     with path.open('rb') as handle:
         return hashlib.file_digest(handle, 'sha256').hexdigest()
 
-def connect(path):
+def connect(path, key=None):
     """Open a database read-only through a file URI, so validation cannot write."""
-    return db_service.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
+    return db_service.connect(path.resolve().as_uri() + '?mode=ro', uri=True, key=key)
 
-def copydb(source, target):
-    with closing(connect(source)) as src, closing(db_service.connect(target)) as dst:
+def copydb(source, target, key=None):
+    with closing(connect(source, key=key)) as src, \
+         closing(db_service.connect(target, key=key)) as dst:
         src.backup(dst)
         if dst.execute('PRAGMA journal_mode=DELETE').fetchone()[0].lower() != 'delete':
             raise ValueError('Cannot normalize snapshot journal mode')
@@ -66,7 +68,7 @@ def _valid_raw_name(name):
     return (name.startswith('raw/') and suffix == 'eml' and len(stem) == 68
             and all(c in '0123456789abcdef' for c in stem[4:]))
 
-def validate_snapshot(root):
+def validate_snapshot(root, key=None):
     """Raise ValueError unless `root` is a complete, unaltered snapshot."""
     root = Path(root)
     manifest_path = root / MANIFEST
@@ -74,6 +76,8 @@ def validate_snapshot(root):
         raise ValueError('Unsafe manifest')
     if not manifest_path.is_file():
         raise ValueError('Missing backup manifest')
+    if is_encrypted_archive(root) and key is None:
+        raise ValueError('Encrypted backup must be unlocked before validation')
     manifest = json.loads(manifest_path.read_text())
     if manifest.get('version') != 1 or not isinstance(manifest.get('files'), dict):
         raise ValueError('Invalid backup manifest')
@@ -97,7 +101,7 @@ def validate_snapshot(root):
             if name == 'archive.sqlite3':
                 raise ValueError('Missing archive database')
             continue
-        with closing(connect(root / name)) as db:
+        with closing(connect(root / name, key=key)) as db:
             if db.execute('PRAGMA integrity_check').fetchall() != [('ok',)]:
                 raise ValueError('SQLite integrity failure')
             if db.execute('PRAGMA foreign_key_check').fetchone():
@@ -145,8 +149,10 @@ def publish_stage(stage, dest):
 def backup(root, destination, *, lock=True):
     root = Path(root).expanduser().resolve()
     dest = Path(destination).expanduser().resolve()
-    if is_encrypted_archive(root):
-        raise ValueError('Encrypted archive backup is not implemented in this milestone')
+    encrypted = is_encrypted_archive(root)
+    key = db_service.session_key(root) if encrypted else None
+    if encrypted and key is None:
+        raise ValueError('Encrypted archive must be unlocked before backup')
     if dest.is_relative_to(root) or root.is_relative_to(dest):
         raise ValueError('Backup must be outside archive')
     if dest.exists():
@@ -164,13 +170,15 @@ def backup(root, destination, *, lock=True):
             if (root / name).is_file():
                 if (root / name).is_symlink():
                     raise ValueError('Unsafe source database')
-                copydb(root / name, stage / name)
+                copydb(root / name, stage / name, key=key)
         for name in CONFIG:
             if (root / name).is_file():
                 if (root / name).is_symlink():
                     raise ValueError('Unsafe source configuration')
-                shutil.copyfile(root / name, stage / name)
-        with closing(connect(stage / 'archive.sqlite3')) as db:
+                shutil.copy2(root / name, stage / name)
+                if name == DESCRIPTOR_NAME:
+                    (stage / name).chmod(0o600)
+        with closing(connect(stage / 'archive.sqlite3', key=key)) as db:
             for h, in db.execute('SELECT hash FROM messages'):
                 if len(h) != 64 or any(c not in '0123456789abcdef' for c in h):
                     raise ValueError('Invalid message hash')
@@ -180,20 +188,31 @@ def backup(root, destination, *, lock=True):
                 shutil.copyfile(source, stage / 'raw' / (h + '.eml'))
         files = {p.relative_to(stage).as_posix(): digest(p) for p in stage.rglob('*') if p.is_file()}
         (stage / MANIFEST).write_text(json.dumps({'version': 1, 'files': files}, indent=2))
-        result = validate_snapshot(stage)
+        result = validate_snapshot(stage, key=key)
+        result['encrypted'] = encrypted
+        if encrypted:
+            result['warning'] = (
+                'Database files in this backup are encrypted with the archive key. '
+                'Raw EML files, configuration and reports are not encrypted.')
+        else:
+            result['warning'] = (
+                'This backup contains plaintext databases and raw files.')
         publish_stage(stage, dest)
         return result
 
-def restore(snapshot, destination):
+def restore(snapshot, destination, key=None):
     src = Path(snapshot).expanduser().resolve()
     dest = Path(destination).expanduser().resolve()
-    if is_encrypted_archive(src):
-        raise ValueError('Encrypted archive restore is not implemented in this milestone')
+    encrypted = is_encrypted_archive(src)
+    if encrypted and key is None:
+        key = db_service.session_key(src)
+    if encrypted and key is None:
+        raise ValueError('Encrypted backup must be unlocked before restore')
     if dest.is_relative_to(src) or src.is_relative_to(dest):
         raise ValueError('Restore must use independent destination')
     if dest.exists():
         raise FileExistsError(f'Destination already exists: {dest}')
-    validate_snapshot(src)
+    validate_snapshot(src, key=key)
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=dest.parent, prefix='.hb-restore-') as tmp:
         stage = Path(tmp)
@@ -201,8 +220,10 @@ def restore(snapshot, destination):
             if child.is_dir():
                 shutil.copytree(child, stage / child.name)
             else:
-                shutil.copyfile(child, stage / child.name)
-        result = validate_snapshot(stage)
+                shutil.copy2(child, stage / child.name)
+                if child.name == DESCRIPTOR_NAME:
+                    (stage / child.name).chmod(0o600)
+        result = validate_snapshot(stage, key=key)
         # A restored copy must not resume background jobs on its own.
         path = stage / 'schedule.json'
         if path.exists():
@@ -216,6 +237,13 @@ def restore(snapshot, destination):
         files = {p.relative_to(stage).as_posix(): digest(p)
                  for p in stage.rglob('*') if p.is_file()}
         (stage / MANIFEST).write_text(json.dumps({'version': 1, 'files': files}, indent=2))
-        result = validate_snapshot(stage)
+        result = validate_snapshot(stage, key=key)
+        result['encrypted'] = encrypted
+        if encrypted:
+            result['warning'] = (
+                'Database files in this backup are encrypted with the archive key. '
+                'Raw EML files, configuration and reports are not encrypted.')
+        else:
+            result['warning'] = 'This restored archive contains plaintext databases and raw files.'
         publish_stage(stage, dest)
         return result

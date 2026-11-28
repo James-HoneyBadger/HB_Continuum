@@ -1,12 +1,15 @@
 # Implementation status — HB Continuum
 
 Maintained per the master engineering directive (section 41). Updated
-2026-11-27 on `develop/continuum-integration`.
+2026-11-28 on `develop/intelligence-update`.
 
 ## Current phase
 
-Phase I — Consolidation and correctness, with the first Phase II shell work
-landed (Overview dashboard, design tokens, timeline pagination).
+v0.5.0-beta consolidation, with the intelligence/search/document work,
+SQLCipher encrypted database creation, explicit plaintext-to-encrypted
+migration and archive protection landed. No production encryption claim is
+made and existing archives remain plaintext until the owner explicitly
+migrates them.
 
 ## Implemented capabilities
 
@@ -641,12 +644,13 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-268 Python tests ran: 0 failed; optional credential-backend tests skip when
-`keyring` or `cryptography` are unavailable (1 skip on Python 3.13.6, 2 on
-Python 3.15). `npm run build` (vue-tsc + vite), `cargo check` and `cargo test`
-pass; background EML import, import history, sources, source removal, source
-verification, journal, collections, reports, relationships, advanced queries
-and the subprocess IPC protocol are covered by tests.
+347 Python tests ran on Python 3.12.0 and 3.13.7 with 0 failures. Without the
+optional `sqlcipher3` binding, 329 passed and 19 skipped; with it installed,
+345 passed and 2 optional-extractor tests skipped. `mypy==2.4.1` was clean on
+28 source files. `npm run build` (vue-tsc + vite), `cargo check` and
+`cargo test` pass; background EML import, import history, sources, source
+removal, source verification, journal, collections, reports, relationships,
+advanced queries and the subprocess IPC protocol are covered by tests.
 
 Scheduler verification status:
 
@@ -748,8 +752,9 @@ Scheduler verification status:
 2. Expand source registration and interchange interfaces.
 3. Exercise intelligence against a live installed Ollama model and perform an
    interactive desktop acceptance run.
-4. Design key management, key rotation and keyed backup/restore as separate
-   future milestones.
+4. Design independent backup keys and key rotation as separate future
+   milestones; encrypted backup/restore is implemented and reuses the archive
+   key.
 
 ## Release qualification: v0.4.0-alpha (2026-11-27)
 
@@ -1068,8 +1073,9 @@ interchange (Phase V).
   SQLCipher memory security is enabled, and database copies failed under
   ordinary SQLite or a wrong key.
 - Raw EML files, external documents, preferences, schedules, exports and reports
-  remain plaintext. Encrypted-archive backup/restore is explicitly refused
-  rather than creating a plaintext copy.
+  remain plaintext. Encrypted-archive backup/restore keeps database files
+  encrypted with the archive key; raw/config files in snapshots remain
+  plaintext. No separate backup key or key rotation is implemented.
 - The packaged ARM64 engine was built with `sqlcipher3`, created an encrypted
   archive through `init-encrypted`, reopened it with the correct password, and
   rejected a wrong password. `encryption-status` reported `available: true`.
@@ -1079,7 +1085,7 @@ interchange (Phase V).
   28 files. The packaged engine smoke test passed with and without the binding
   installed.
 - Not implemented: in-place encryption, OS keychain or credential storage, key
-  rotation, password recovery, keyed backup/restore, a shared exception
+  rotation, password recovery, independent backup keys, a shared exception
   abstraction for SQLCipher's distinct DB-API exceptions, or any production
   encryption claim. Existing archives remain plaintext unless explicitly
   migrated to a separate encrypted destination.
@@ -1111,4 +1117,42 @@ interchange (Phase V).
   rejection, insufficient storage, failed conversion, short password,
   restoration failure and CLI password confirmation.
 - No owner archive was accessed. No in-place encryption, key rotation or
-  encrypted backup/restore is implemented.
+  independent backup key is implemented. Encrypted backup/restore reuses the
+  archive key.
+
+## Archive protection (2026-11-28)
+
+- Encrypted-archive backup and restore keep `archive.sqlite3`,
+  `research.sqlite3` and `catalog.sqlite3` encrypted with the archive key.
+  Snapshots include `.hb-encryption.json`; validation without the key or with a
+  wrong key fails. A restored encrypted archive starts locked.
+- Backup/restore still copy raw EML files, configuration and reports as
+  plaintext. The CLI, IPC result and desktop Backup workspace print/display
+  that boundary. There is no separate backup key, no key rotation and no
+  password recovery.
+- Scheduled synchronization refuses to bypass locking: when an encrypted
+  archive is locked, the tick records `deferred: encrypted archive locked`
+  without prompting for or storing credentials.
+- Export surfaces (Search, Reports, Collections, Intelligence and the CLI
+  export command) warn that exported messages and evidence are plaintext.
+- `docs/SECURITY_MODEL.md` documents assets, encrypted and unencrypted data,
+  the limits while unlocked or on a compromised host, temporary/staging files,
+  backups and legacy copies, local-AI boundaries and a threat model. It
+  includes macOS APFS encrypted-volume instructions using Disk Utility or
+  `hdiutil`, not a custom cryptographic file format.
+- Encrypted SQLite connections use memory-backed temporary storage and
+  SQLCipher memory security. Passwords and keys are not intentionally logged or
+  written to preferences; migration staging is removed on handled failure.
+- Packaged ARM64 verification: `init-encrypted`, synthetic EML import,
+  encrypted `backup`, password-protected `verify-backup`, wrong-password
+  rejection, `restore` into a new path, successful search in the restored
+  encrypted archive, and ordinary-SQLite rejection of the copied database all
+  passed.
+- Verification: 347 tests, 0 failures (329 passed/19 skipped without
+  SQLCipher; 345 passed/2 skipped with it), mypy clean on 28 files, frontend
+  build, `cargo check` and `cargo test` pass.
+- Remaining limits: no in-place encryption, password recovery, key rotation,
+  independent backup key or OS credential storage; original EML/external
+  documents/configuration/exports remain plaintext; a compromised unlocked
+  host can read the archive; old plaintext backups and snapshots may persist
+  until the owner removes them.

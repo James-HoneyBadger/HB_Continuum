@@ -11,7 +11,7 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from hb_engine import db, encryption, migrations
+from hb_engine import backup, db, encryption, migrations
 from hb_engine.ipc import IPCServer, PROTOCOL_VERSION
 from hb_engine.catalog import Catalog
 from hb_engine.documents import import_files as import_documents
@@ -113,9 +113,9 @@ class EncryptedArchiveTests(unittest.TestCase):
             conn.close()
         archive.db.close()
 
-        with self.assertRaises(ValueError):
-            from hb_engine import backup
-            backup.backup(self.root, self.root.parent / 'snapshot')
+        snapshot_result = backup.backup(self.root, self.root.parent / 'snapshot')
+        self.assertTrue(snapshot_result['encrypted'])
+        self.assertIn('not encrypted', snapshot_result['warning'])
 
         locked = encryption.lock(self.root)
         self.assertFalse(locked['unlocked'])
@@ -154,6 +154,56 @@ class EncryptedArchiveTests(unittest.TestCase):
             self.assertEqual(dispatch_module.main(
                 ['--archive', str(self.root), 'search', 'needle']), 1)
         self.assertIn('incorrect password', error.getvalue())
+
+    def test_encrypted_backup_and_restore_keep_databases_encrypted(self):
+        encryption.create(self.root, PASSWORD)
+        archive = Archive(self.root)
+        archive.ingest(b'From: a@example.invalid\r\nSubject: backup evidence\r\n'
+                       b'Date: Thu, 26 Nov 2026 09:00:00 +0000\r\n\r\nbackupneedle')
+        archive.db.close()
+        snapshot = Path(self.tmp.name) / 'snapshot'
+        result = backup.backup(self.root, snapshot)
+        self.assertTrue(result['encrypted'])
+        self.assertTrue(result['verified'])
+        self.assertIn('not encrypted', result['warning'])
+        self.assertTrue((snapshot / encryption.DESCRIPTOR_NAME).is_file())
+        for name in encryption.DATABASES:
+            self.assertTrue(db.is_encrypted_file(snapshot / name), name)
+        with self.assertRaisesRegex(ValueError, 'unlocked'):
+            backup.validate_snapshot(snapshot)
+        key = db.session_key(self.root)
+        self.assertTrue(backup.validate_snapshot(snapshot, key=key)['verified'])
+        with self.assertRaises(Exception):
+            backup.validate_snapshot(snapshot, key=os.urandom(db.KEY_BYTES))
+        restored = Path(self.tmp.name) / 'restored'
+        encryption.lock(self.root)
+        with self.assertRaises(ValueError):
+            backup.backup(self.root, Path(self.tmp.name) / 'locked-backup')
+        encryption.unlock(self.root, PASSWORD)
+        with self.assertRaises(Exception):
+            backup.restore(snapshot, Path(self.tmp.name) / 'wrong-key-restore',
+                           key=os.urandom(db.KEY_BYTES))
+        restored_result = backup.restore(snapshot, restored, key=key)
+        self.assertTrue(restored_result['encrypted'])
+        for name in encryption.DATABASES:
+            self.assertTrue(db.is_encrypted_file(restored / name), name)
+        encryption.unlock(restored, PASSWORD)
+        self.assertTrue(search_unified(restored, 'backupneedle'))
+        encryption.lock(restored)
+        encryption.lock(self.root)
+
+    def test_interrupted_encrypted_backup_leaves_no_snapshot(self):
+        encryption.create(self.root, PASSWORD)
+        archive = Archive(self.root)
+        archive.ingest(b'From: a@example.invalid\r\nSubject: interrupted backup\r\n'
+                       b'Date: Thu, 26 Nov 2026 09:00:00 +0000\r\n\r\ninterruptneedle')
+        archive.db.close()
+        snapshot = Path(self.tmp.name) / 'interrupted'
+        with mock.patch.object(backup, 'copydb', side_effect=OSError('synthetic interruption')):
+            with self.assertRaises(OSError):
+                backup.backup(self.root, snapshot)
+        self.assertFalse(snapshot.exists())
+        self.assertFalse(list(snapshot.parent.glob('.hb-backup-*')))
 
     def test_ipc_unlock_and_explicit_lock(self):
         encryption.create(self.root, PASSWORD)

@@ -19,6 +19,7 @@ const backupDestination = ref("");
 const snapshot = ref("");
 const restoreDestination = ref("");
 const notice = ref("");
+const warning = ref("");
 const restored = ref("");
 const { busy, progress, start } = useEngineJob();
 
@@ -44,6 +45,7 @@ async function choose(field: "backup" | "snapshot" | "restore") {
 
 function reset() {
   notice.value = "";
+  warning.value = "";
   restored.value = "";
 }
 
@@ -56,6 +58,7 @@ async function runBackup() {
       return;
     }
     notice.value = `Snapshot verified: ${outcome.result?.files ?? 0} files written to ${backupDestination.value}.`;
+    warning.value = String(outcome.result?.warning || "");
     await refreshSchema();
   } catch (e) {
     props.onError(String(e));
@@ -71,6 +74,7 @@ async function runVerify() {
       return;
     }
     notice.value = `Snapshot verified: ${outcome.result?.files ?? 0} files, hashes and indexes match.`;
+    warning.value = String(outcome.result?.warning || "");
   } catch (e) {
     props.onError(String(e));
   }
@@ -89,6 +93,7 @@ async function runRestore() {
     }
     restored.value = restoreDestination.value.trim();
     notice.value = "Restored copy verified. Scheduling profiles in it are disabled.";
+    warning.value = String(outcome.result?.warning || "");
     props.onChanged();
   } catch (e) {
     props.onError(String(e));
@@ -127,7 +132,8 @@ onMounted(refreshSchema);
     </div>
     <p class="meta">
       Copies databases, configuration and every original with a SHA-256 manifest. Existing
-      destinations are refused; the snapshot is validated before it is published.
+      destinations are refused; the snapshot is validated before it is published. Encrypted
+      archives keep database files encrypted, but raw EML files and configuration remain plaintext.
     </p>
 
     <h2>Verify snapshot</h2>
@@ -154,6 +160,7 @@ onMounted(refreshSchema);
     </p>
 
     <p v-if="notice" class="notice">{{ notice }}</p>
+    <p v-if="warning" class="warning">{{ warning }}</p>
   </section>
 </template>
 
@@ -185,6 +192,10 @@ button {
 }
 .notice {
   color: var(--hb-success-text);
+  font-size: 13px;
+}
+.warning {
+  color: var(--hb-error-text);
   font-size: 13px;
 }
 .bad {

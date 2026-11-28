@@ -71,7 +71,7 @@ To recover, continue using the original archive. Restore the verified plaintext
 backup to another independent directory with:
 
 ```sh
-python3 dispatch.py restore ~/plain-archive-backup ~/restored-archive
+python3 dispatch.py --archive ~/restored-archive restore ~/plain-archive-backup
 ```
 
 The restored copy is plaintext. Do not point a production workflow at it unless
@@ -96,9 +96,9 @@ plaintext archives may continue to contain readable information after a
 successful migration. Encrypting a new destination does not retroactively
 encrypt those copies. Store and retire them deliberately.
 
-Encrypted-archive backup/restore is not implemented in this milestone.
-`dispatch backup` and `dispatch restore` refuse encrypted archives rather than
-producing a plaintext copy.
+Encrypted-archive backup/restore preserves encrypted database files and
+requires the archive password. Raw EML files, configuration and reports inside
+the snapshot remain plaintext. There is no separate backup key.
 
 ## What is encrypted
 
@@ -117,14 +117,16 @@ producing a plaintext copy.
 - The public `.hb-encryption.json` KDF descriptor (salt and parameters only).
 - Loopback Ollama HTTP traffic.
 
-Use full-disk encryption if raw EML files and external documents must also be
-protected at rest.
+Use full-disk encryption or an encrypted APFS volume if raw EML files and
+external documents must also be protected at rest. See the
+[security threat model](SECURITY_MODEL.md) for macOS guidance and boundaries.
 
 ## Limitations
 
 - No migration of already encrypted archives or key rotation.
 - No OS keychain integration or password recovery.
-- No encrypted backup/restore.
+- Encrypted backup/restore reuses the archive key; there is no independent
+  backup key or key rotation.
 - SQLCipher's DB-API exceptions are not subclasses of `sqlite3.Error`; shared
   exception handling remains future work.
 - Validation compares row counts, hashes, FTS integrity and research table
@@ -139,8 +141,8 @@ protected at rest.
   wrong-key rejection, insufficient storage, failed conversion, short password,
   failed restoration validation, CLI password confirmation and hidden-staging
   cleanup.
-- Full suite: 344 tests, 328 passed and 16 skipped without the optional binding;
-  342 passed and 2 skipped with `sqlcipher3` installed.
+- Full suite: 347 tests, 329 passed and 19 skipped without the optional binding;
+  345 passed and 2 skipped with `sqlcipher3` installed.
 - The packaged ARM64 engine was built with `sqlcipher3`, migrated a synthetic
   plaintext archive, reported backup and restoration verification, retained the
   source, and searched the encrypted destination with the correct password.

@@ -136,6 +136,17 @@ def session_unlocked(root):
         return str(_resolved_path(root)) in _SESSION_KEYS
 
 
+def session_key(root):
+    """Return a temporary copy of the unlocked key, or None.
+
+    Callers must not persist the returned bytes. It exists for trusted
+    in-process operations such as encrypted backup and migration.
+    """
+    with _SESSION_LOCK:
+        value = _SESSION_KEYS.get(str(_resolved_path(root)))
+        return bytes(value) if value is not None else None
+
+
 def _session_key_for(path):
     parent = str(_resolved_path(path).parent)
     with _SESSION_LOCK:

@@ -74,6 +74,27 @@ The engine protocol exposes:
 These operate on the running engine process only. Closing the process or
 locking explicitly discards the in-memory key.
 
+## Encrypted backup and restore
+
+Encrypted archives can be backed up and restored without creating plaintext
+database files:
+
+```sh
+python3 dispatch.py --archive ~/encrypted-archive backup ~/encrypted-backup
+python3 dispatch.py verify-backup ~/encrypted-backup
+python3 dispatch.py --archive ~/restored-encrypted restore ~/encrypted-backup
+```
+
+The source archive prompts for its archive password, and the backup prompts
+for its backup password. The database files in the snapshot remain encrypted
+with the same key. Raw EML files, configuration and reports copied into the
+snapshot remain plaintext, and
+the command prints that warning. There is no separate backup key or key
+rotation.
+
+The desktop Backup workspace supports the same operations when the current
+archive is unlocked. A restored encrypted archive starts locked.
+
 ## Key derivation and handling
 
 - Password → 32-byte key using scrypt with a 16-byte random salt,
@@ -117,16 +138,19 @@ This milestone encrypts the three application databases only.
   and remain plaintext. HB Continuum does not copy them into the archive.
 - **Preferences, schedules and configuration** files remain plaintext.
 - **Exports and reports** written by the user remain plaintext.
-- **Backups**: encrypted-archive backup and restore are not implemented in this
-  milestone. `dispatch backup` and `dispatch restore` refuse encrypted archives
-  rather than creating a plaintext copy.
+- **Backups**: encrypted-archive backup and restore keep the database files
+  encrypted with the archive key. Raw EML files, configuration and reports in
+  the snapshot remain plaintext. Backup/restore use the same archive password;
+  there is no separate backup key or key rotation.
 - **Local AI**: inference sends evidence to a loopback Ollama endpoint over
   HTTP. Loopback transport encryption is not added by this milestone.
 - **Database descriptor** `.hb-encryption.json` is plaintext metadata. It
   reveals the KDF choice and salt, not the password or key.
 
-Use full-disk encryption for the archive directory if the raw EML files and
-external documents must also be protected at rest.
+Use full-disk encryption for the archive directory if the raw EML files,
+external documents, configuration and exports must also be protected at rest.
+See the [security threat model](SECURITY_MODEL.md) and macOS encrypted-volume
+guidance there.
 
 ## Session and artifact limits
 

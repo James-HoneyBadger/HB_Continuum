@@ -370,6 +370,7 @@ async function exportSelected() {
       <button @click="tagSelected">Tag selected</button>
       <button @click="exportSelected">Export selected</button>
     </div>
+    <p v-if="results.length" class="export-warning">Exported evidence is plaintext.</p>
 
     <div v-if="results.length" class="row">
       <select v-model="collectionId">
@@ -544,6 +545,10 @@ button {
   padding: 8px 16px;
 }
 .count,
+.export-warning {
+  color: var(--hb-warning-text);
+  font-size: 13px;
+}
 .notice {
   color: var(--hb-text-secondary);
 }

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 from dispatch import Archive
+from hb_engine import db, encryption
 from schedule import profile,due,tick,write_json
 import schedule
 from sync_lock import LOCK_SUPPORTED, sync_lock
@@ -70,6 +71,20 @@ class SchedulingTests(unittest.TestCase):
         sync.assert_not_called()
         self.assertEqual(result['mail']['status'],'disabled')
         self.assertNotIn('last_attempt',result['mail'])
+
+    def test_locked_encrypted_archive_defers_without_credentials(self):
+        if not db.encryption_available():
+            self.skipTest('optional sqlcipher3 binding is not installed')
+        encryption.create(self.root, 'synthetic schedule password')
+        encryption.lock(self.root)
+        write_json(self.root/'schedule.json',{'mail':self.p})
+        called=[]
+        result=tick(self.root,now=self.now,
+                    get_password=lambda p: called.append(p) or 'should-not-be-used')
+        self.assertEqual(result['mail']['status'],'deferred: encrypted archive locked')
+        self.assertEqual(called,[])
+        self.assertNotIn('should-not-be-used',
+                         (self.root/'schedule-status.json').read_text())
 
     def test_tick_without_flock_runs_unescorted(self):
         write_json(self.root/'schedule.json',{'mail':self.p})
