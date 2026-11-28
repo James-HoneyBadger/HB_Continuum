@@ -55,7 +55,8 @@ the release was qualified, not what it contains.
 | MBOX import with reconstruction provenance | `mbox-import` | Implemented | `tests/test_mbox.py` |
 | MBOX preview: counts, date range, duplicates, problems | `mbox-preview` | Implemented | `tests/test_mbox.py` |
 | MBOX export with manifest and overwrite protection | `mbox-export` | Implemented | `tests/test_mbox.py` |
-| Resumable IMAP synchronization via UID watermark | `resumable-sync` | Not yet committed | No code in the tag |
+| Incremental IMAP synchronization via a UID watermark | `incremental-sync` | Implemented | `tests/test_dispatch.py` |
+| Mailbox discovery and multi-folder runs | `mailbox-discovery` | Not yet committed | No code in the tag |
 | Attachment-name and attachment-type search filters | `attachment-filters` | Not yet committed | No code in the tag |
 | Recipient-header indexing and duplicate report | `recipient-index` | Not yet committed | No code in the tag |
 | OAuth mail authentication | `oauth` | Not yet committed | No code in the tag |
