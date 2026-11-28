@@ -3,7 +3,7 @@
 import unittest,tempfile, json, sqlite3, io, contextlib
 from unittest import mock
 from pathlib import Path
-from dispatch import Archive, __version__, main
+from dispatch import Archive, parse_mailbox_list, __version__, main
 RAW=b'From: sender@example.invalid\r\nSubject: Synthetic invoice\r\nMessage-ID: <test@example.invalid>\r\n\r\nTest evidence only.\r\n'
 class Tests(unittest.TestCase):
     def setUp(self):
@@ -182,3 +182,61 @@ class SyncWatermarkBoundaryTests(unittest.TestCase):
                 m.uid.assert_called_once_with('search',None,'UID 4294967295:*')
             finally:
                 ar.db.close()
+
+
+class MailboxDiscoveryTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.a=Archive(Path(self.tmp.name)/'archive')
+    def tearDown(self):
+        self.a.db.close()
+
+    def test_mailboxes_skips_noselect_entries(self):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.list.return_value=('OK',[b'(\\HasNoChildren) "/" "INBOX"',
+                                   b'(\\Noselect) "/" "[Gmail]"',
+                                   b'(\\HasNoChildren) "/" "Sent Items"'])
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.assertEqual(self.a.mailboxes('host','user','pw'),
+                             ['INBOX','Sent Items'])
+
+    def test_sync_mailboxes_reports_each_folder_and_continues_after_a_failure(self):
+        discovered=self.a.mailboxes
+        with mock.patch.object(Archive,'mailboxes',staticmethod(lambda *a: ['INBOX','Broken'])), \
+             mock.patch.object(Archive,'sync',autospec=True) as sync:
+            sync.side_effect=[3, RuntimeError('boom')]
+            result=self.a.sync_mailboxes('host','user','pw')
+        self.assertEqual(result['folders']['INBOX'],{'imported':3})
+        self.assertIn('boom',result['folders']['Broken']['error'])
+        self.assertEqual(result['imported'],3)
+        self.assertEqual(result['failed'],1)
+        self.assertEqual(sync.call_count,2)
+
+    def test_gmail_password_spaces_are_removed_before_listing(self):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.list.return_value=('OK',[b'(\\HasNoChildren) "/" "INBOX"'])
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.a.mailboxes('imap.gmail.com','user','abcd efgh ijkl mnop')
+        m.login.assert_called_once_with('user','abcdefghijklmnop')
+
+    def test_literal_mailbox_names_are_unpacked(self):
+        line=(b'(\\HasNoChildren) "/" {10}',b'Sent Items')
+        self.assertEqual(parse_mailbox_list([line]),['Sent Items'])
+
+    def test_quoted_names_unescape_backslashes(self):
+        line=b'(\\HasNoChildren) "/" "Projects\\\\2026"'
+        self.assertEqual(parse_mailbox_list([line]),['Projects\\2026'])
+
+    def test_explicit_empty_selection_does_not_sync_everything(self):
+        with mock.patch.object(Archive,'mailboxes',autospec=True) as discover, \
+             mock.patch.object(Archive,'sync',autospec=True) as sync:
+            with self.assertRaises(ValueError):
+                self.a.sync_mailboxes('host','user','pw',folders=[])
+        discover.assert_not_called()
+        sync.assert_not_called()
+
+    def test_sync_mailboxes_rejects_an_empty_server_listing(self):
+        with mock.patch.object(Archive,'mailboxes',staticmethod(lambda *a: [])):
+            with self.assertRaises(ValueError):
+                self.a.sync_mailboxes('host','user','pw')

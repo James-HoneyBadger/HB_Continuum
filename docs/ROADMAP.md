@@ -20,9 +20,9 @@ new ambition.
 
 1. **MBOX interoperability.** Import, preview and export now work
    ([tutorial](TUTORIAL.md)); round-trip fidelity is normalised, not byte-identical.
-2. **Mailbox discovery.** Synchronization now asks the server only for UIDs
-   above a per-folder watermark and resets that watermark when UIDVALIDITY
-   changes; discovering and syncing several mailboxes in one run is still to do.
+2. **Acquisition breadth.** Incremental synchronization and mailbox discovery
+   are implemented; what remains is scheduling several accounts, OAuth for
+   providers that reject app passwords, and provider-specific quirks.
 3. **Attachment search filters** by name and type, surfaced in the desktop
    search controls.
 4. **Recipient-header indexing**, acquisition-time provenance and a duplicate
