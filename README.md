@@ -4,6 +4,12 @@
 
 HB Continuum is in active real-world use. It has moved beyond a proof of concept: live mailbox retrieval, searchable local preservation and source-backed historical research have been demonstrated with more than 31,000 unique archived messages across two mail providers. Development continues, but the core archival workflow is working software today.
 
+## Independent and interoperable
+
+**Independent by design. Interoperable by choice. Intelligent when desired.**
+
+Each application works independently; optional integrations remain under user control. AI is never mandatory. See the [integration tutorial](docs/PRIVATE_INTELLIGENCE_WORKSTATION.md).
+
 ## Beyond email: a source-independent continuum
 
 *Time is linear. Knowledge need not be.*
