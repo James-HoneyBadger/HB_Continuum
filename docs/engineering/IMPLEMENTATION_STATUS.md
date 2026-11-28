@@ -711,9 +711,10 @@ Scheduler verification status:
 
 ## Known limitations
 
-- Existing archives are plaintext and are not migrated. New archives can be
-  created encrypted, but raw EML files, external documents, preferences and
-  exports remain unencrypted. No OAuth. HTML is reduced to offline text but
+- Existing archives remain plaintext unless the user runs the explicit
+  migration to a separate encrypted destination. New archives can be created
+  encrypted. Raw EML files, external documents, preferences and exports remain
+  unencrypted. No OAuth. HTML is reduced to offline text but
   never rendered. PDF and DOCX email attachments are converted only when the
   optional local extractors are installed; image and legacy Office contents
   are not converted, so those attachments expose names, MIME types and any
@@ -747,8 +748,8 @@ Scheduler verification status:
 2. Expand source registration and interchange interfaces.
 3. Exercise intelligence against a live installed Ollama model and perform an
    interactive desktop acceptance run.
-4. Design encrypted migration, key management and keyed backup/restore as a
-   separate future milestone.
+4. Design key management, key rotation and keyed backup/restore as separate
+   future milestones.
 
 ## Release qualification: v0.4.0-alpha (2026-11-27)
 
@@ -1072,17 +1073,42 @@ interchange (Phase V).
 - The packaged ARM64 engine was built with `sqlcipher3`, created an encrypted
   archive through `init-encrypted`, reopened it with the correct password, and
   rejected a wrong password. `encryption-status` reported `available: true`.
-- Verification: 337 tests on Python 3.12.0 and 3.13.7. Without the optional
-  binding, 328 passed and 9 skipped; with `sqlcipher3` installed in a temporary
-  Python 3.13 environment, 335 passed and 2 skipped. `mypy==2.4.1` was clean on
-  27 files. The packaged engine smoke test passed with and without the binding
+- Verification: 344 tests on Python 3.12.0 and 3.13.7. Without the optional
+  binding, 328 passed and 16 skipped; with `sqlcipher3` installed in a temporary
+  Python 3.13 environment, 342 passed and 2 skipped. `mypy==2.4.1` was clean on
+  28 files. The packaged engine smoke test passed with and without the binding
   installed.
-- Not implemented: encryption or migration of existing archives, OS keychain
-  or credential storage, key rotation, password recovery, keyed backup/restore
-  and migration workflows, a shared exception abstraction for SQLCipher's
-  distinct DB-API exceptions, or any production encryption claim. Existing
-  archives remain plaintext.
-- Decision: SQLCipher is accepted for new encrypted archives. Migration of
-  existing archives remains a separate future milestone. See
-  [ADR-004](ADR-004-encrypted-databases.md) and
-  [Encryption](../ENCRYPTION.md).
+- Not implemented: in-place encryption, OS keychain or credential storage, key
+  rotation, password recovery, keyed backup/restore, a shared exception
+  abstraction for SQLCipher's distinct DB-API exceptions, or any production
+  encryption claim. Existing archives remain plaintext unless explicitly
+  migrated to a separate encrypted destination.
+- Decision: SQLCipher is accepted for new encrypted archives and explicit
+  plaintext-to-encrypted migration. See
+  [ADR-004](ADR-004-encrypted-databases.md),
+  [ADR-005](ADR-005-encrypted-migration.md),
+  [Encryption](../ENCRYPTION.md) and
+  [Migration](../ENCRYPTION_MIGRATION.md).
+
+
+## Encrypted migration (2026-11-28)
+
+- `dispatch.py --archive SOURCE migrate-encrypted --destination DEST --backup BACKUP`
+  implements an explicit migration from a plaintext archive to a separate
+  encrypted archive. The original is never modified or deleted automatically.
+- Migration holds the source's exclusive maintenance lock, checks schema
+  versions and SQLite quick-check, verifies available storage, creates and
+  validates a plaintext backup, exports each source database into encrypted
+  staging files with `sqlcipher_export()`, applies pending migrations to the
+  encrypted copies, validates schema, row counts, message hashes, FTS integrity,
+  research table contents and raw file hashes, then independently restores and
+  validates the backup before publishing the destination.
+- Destination publication is atomic. Failures remove staging and leave the
+  source and verified backup intact. The backup is plaintext and the command
+  warns that legacy backups, snapshots and copies may remain plaintext.
+- Tests cover successful migration, source immutability, encrypted destination
+  access, copied raw/config files, ordinary SQLite rejection, wrong-key
+  rejection, insufficient storage, failed conversion, short password,
+  restoration failure and CLI password confirmation.
+- No owner archive was accessed. No in-place encryption, key rotation or
+  encrypted backup/restore is implemented.

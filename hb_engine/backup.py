@@ -12,7 +12,7 @@ import json
 import shutil
 import sqlite3
 import tempfile
-from contextlib import closing
+from contextlib import closing, nullcontext
 from pathlib import Path
 
 from . import db as db_service
@@ -142,7 +142,7 @@ def publish_stage(stage, dest):
         shutil.rmtree(dest)
         raise
 
-def backup(root, destination):
+def backup(root, destination, *, lock=True):
     root = Path(root).expanduser().resolve()
     dest = Path(destination).expanduser().resolve()
     if is_encrypted_archive(root):
@@ -156,7 +156,8 @@ def backup(root, destination):
     if (root / 'raw').is_symlink():
         raise ValueError('Unsafe source raw directory')
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with sync_lock(root), tempfile.TemporaryDirectory(dir=dest.parent, prefix='.hb-backup-') as tmp:
+    lock_context = sync_lock(root) if lock else nullcontext()
+    with lock_context, tempfile.TemporaryDirectory(dir=dest.parent, prefix='.hb-backup-') as tmp:
         stage = Path(tmp)
         (stage / 'raw').mkdir(mode=0o700)
         for name in DATABASES:

@@ -8,6 +8,10 @@ upgrade for existing archives.
 to open exactly as before. There is no command that encrypts an existing
 archive in place.
 
+Existing archives can also be migrated to a new encrypted destination; see
+[Encrypted archive migration](ENCRYPTION_MIGRATION.md). The original archive is
+never deleted automatically.
+
 ## Create a new encrypted archive
 
 Choose a new or empty destination. Passwords must be at least 12 characters and

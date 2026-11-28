@@ -122,7 +122,7 @@ def _close_archive(archive, catalog, research):
                 pass
 
 
-def create(root, password):
+def create(root, password, *, initialize=True):
     """Create three empty encrypted databases in a new archive directory.
 
     The destination must not exist or must be an empty directory. Creation is
@@ -151,13 +151,18 @@ def create(root, password):
     archive = catalog = research = None
     try:
         db.bind_session_key(staging, key)
-        from .catalog import Catalog
-        from .dispatch import Archive
-        from .research import Research
-        archive = Archive(staging)
-        catalog = Catalog(staging)
-        research = Research(archive)
-        _close_archive(archive, catalog, research)
+        if initialize:
+            from .catalog import Catalog
+            from .dispatch import Archive
+            from .research import Research
+            archive = Archive(staging)
+            catalog = Catalog(staging)
+            research = Research(archive)
+            _close_archive(archive, catalog, research)
+        else:
+            for name in DATABASES:
+                conn = db.connect(staging / name, key=key)
+                conn.close()
         _write_descriptor(staging, descriptor)
         db.clear_session_key(staging)
         if root.exists():

@@ -901,6 +901,7 @@ def main(argv=None):
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
     q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); fb.add_parser('verify'); fb.add_parser('reindex'); q=sub.add_parser('documents'); dc=q.add_subparsers(dest='dcmd',required=True); dp=dc.add_parser('preview'); dp.add_argument('paths',nargs='+'); di=dc.add_parser('import'); di.add_argument('paths',nargs='+'); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version'); q=sub.add_parser('search-all'); q.add_argument('query'); q.add_argument('--limit',type=int,default=100); q.add_argument('--sources',default='email,facebook,document'); sub.add_parser('serve'); sub.add_parser('health'); sub.add_parser('reindex'); sub.add_parser('recover-orphans'); q=sub.add_parser('import-history'); q.add_argument('--limit',type=int,default=50); q=sub.add_parser('backup'); q.add_argument('destination'); q=sub.add_parser('verify-backup'); q.add_argument('snapshot'); q=sub.add_parser('restore'); q.add_argument('snapshot'); q=sub.add_parser('schedule'); q.add_argument('args',nargs=argparse.REMAINDER); q=sub.add_parser('migrate'); q.add_argument('--dry-run',action='store_true'); q.add_argument('--no-snapshot',action='store_true')
     sub.add_parser('init-encrypted'); sub.add_parser('encryption-status')
+    q=sub.add_parser('migrate-encrypted'); q.add_argument('--destination',required=True); q.add_argument('--backup',required=True)
     a=p.parse_args(argv)
     from . import encryption
     from .db import EncryptionUnavailable
@@ -916,6 +917,20 @@ def main(argv=None):
         print(json.dumps(result,indent=2)); return 0
     if a.cmd=='encryption-status':
         print(json.dumps(encryption.status(root),indent=2)); return 0
+    if a.cmd=='migrate-encrypted':
+        from . import migration
+        password=getpass.getpass('New encrypted archive password: ')
+        confirm=getpass.getpass('Confirm password: ')
+        if password!=confirm:
+            print('migrate-encrypted: passwords do not match',file=sys.stderr); return 1
+        try:
+            result=migration.migrate(root,a.destination,a.backup,password)
+        except (migration.MigrationError,encryption.EncryptionError,
+                EncryptionUnavailable,OSError,ValueError) as exc:
+            print(f'migrate-encrypted: {exc}',file=sys.stderr); return 1
+        print(json.dumps(result,indent=2))
+        print(result['warning'],file=sys.stderr)
+        return 0
     if a.cmd!='serve' and encryption.is_encrypted_archive(root):
         try: encryption.unlock(root,getpass.getpass('Archive password: '))
         except (encryption.EncryptionError,EncryptionUnavailable) as exc:
