@@ -192,19 +192,21 @@ onMounted(loadHistory);
 
 <template>
   <section>
+    <p v-if="progress" class="meta job-progress" aria-live="polite">{{ progress }}</p>
     <h2>Import EML</h2>
     <p class="meta">
-      Original message bytes are preserved under their SHA-256 and never modified. Import is idempotent.
+      Original message bytes are preserved under their SHA-256 and never modified. Import is
+      idempotent, and choosing a folder searches its subfolders recursively for
+      <code>.eml</code> files.
     </p>
     <div class="row">
       <button :disabled="busy" @click="chooseFiles">Choose .eml files…</button>
       <button :disabled="busy" @click="chooseFolder">Choose folder…</button>
       <button @click="runImport" :disabled="busy || (!importPaths.length && !importPath)">
-        {{ busy ? "Importing…" : "Import" }}
+        {{ busy ? "Importing…" : "Import EML" }}
       </button>
       <button v-if="busy" @click="cancel">Cancel</button>
     </div>
-    <p v-if="progress" class="meta">{{ progress }}</p>
     <p v-if="importPaths.length" class="meta">
       {{ importPaths.length === 1 ? importPaths[0] : importPaths.length + " files selected" }}
     </p>
@@ -226,15 +228,14 @@ onMounted(loadHistory);
       or uploaded; each record keeps its source JSON and import is idempotent.
     </p>
     <div class="row">
-      <button @click="chooseFacebookFiles">Choose JSON files…</button>
-      <button @click="chooseFacebookFolder">Choose export folder…</button>
+      <button :disabled="busy" @click="chooseFacebookFiles">Choose JSON files…</button>
+      <button :disabled="busy" @click="chooseFacebookFolder">Choose export folder…</button>
       <button :disabled="!facebookPaths.length || busy" @click="runFacebookPreview">Preview</button>
       <button :disabled="!facebookPaths.length || busy" @click="runFacebookImport">Import</button>
     </div>
     <p v-if="facebookPaths.length" class="meta">
       {{ facebookPaths.length === 1 ? facebookPaths[0] : facebookPaths.length + " selections" }}
     </p>
-    <p v-if="progress" class="meta">{{ progress }}</p>
     <p v-if="facebookPreview" class="meta">
       {{ facebookPreview.files_discovered }} files · {{ facebookPreview.supported_records }} supported
       records · {{ facebookPreview.unsupported_records }} unsupported

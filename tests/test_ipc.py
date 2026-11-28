@@ -27,6 +27,28 @@ class IPCServerTests(unittest.TestCase):
         resp=self.server.handle(request('ping'))
         self.assertEqual(resp['result']['pong'],True)
 
+    def test_archive_status_and_create_archive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'new-archive'
+            server = IPCServer(root, out=io.StringIO())
+            status = server.handle(request('archive_status'))['result']
+            self.assertFalse(status['exists'])
+            created = server.handle(request('create_archive', path=str(root)))['result']
+            self.assertTrue(created['exists'])
+            self.assertTrue((root / 'archive.sqlite3').is_file())
+            self.assertTrue((root / 'catalog.sqlite3').is_file())
+            self.assertTrue((root / 'research.sqlite3').is_file())
+            self.assertTrue(server.handle(request('archive_status'))['result']['exists'])
+            repeat = server.handle(request('create_archive', path=str(root)))
+            self.assertEqual(repeat['error']['code'], 'ARCHIVE_EXISTS')
+            self.assertEqual(server.handle(request('create_archive', path=''))['error']['code'],
+                             'INVALID_PARAMS')
+            encrypted = Path(tmp) / 'encrypted-looking'
+            encrypted.mkdir()
+            (encrypted / '.hb-encryption.json').write_text('{}')
+            unsafe = server.handle(request('create_archive', path=str(encrypted)))
+            self.assertEqual(unsafe['error']['code'], 'ARCHIVE_EXISTS')
+
     def test_stats(self):
         resp=self.server.handle(request('stats'))
         self.assertEqual(resp['result']['archive']['messages'],1)

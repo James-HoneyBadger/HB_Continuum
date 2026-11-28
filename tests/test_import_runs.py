@@ -58,6 +58,16 @@ class ImportRunTests(unittest.TestCase):
             self.assertEqual(len(result['errors']),1)
             self.assertEqual(result['existing'],1)
 
+    def test_nested_folders_and_duplicate_paths_are_imported_once(self):
+        nested = self.inbox / 'nested' / 'deeper'
+        nested.mkdir(parents=True)
+        (self.inbox / 'top.eml').write_bytes(message('top'))
+        (nested / 'lower.EML').write_bytes(message('lower'))
+        result = self.a.import_files([str(self.inbox), str(nested / 'lower.EML')])
+        self.assertEqual(result['files_seen'], 2)
+        self.assertEqual(result['imported'], 2)
+        self.assertEqual(result['errors'], [])
+
     def test_sync_records_a_run(self):
         with mock.patch.object(Archive,'_sync',return_value=2):
             self.assertEqual(self.a.sync('imap.example','me','secret','INBOX'),2)

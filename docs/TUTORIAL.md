@@ -24,7 +24,7 @@ This is not a replacement mail client, cloud backup service, or automated mailbo
 
 ## 2. Start with a disposable practice archive
 
-Install Python 3.12 or newer with SQLite FTS5 support. Tkinter is optional for desktop browsing; some Linux distributions package it separately. From a terminal:
+Install Python 3.12 or newer with SQLite FTS5 support. The native Tauri desktop shell is the primary interface, with macOS Apple Silicon as the qualified desktop target. Tkinter is only used by the legacy workstation; some Linux distributions package it separately. From a terminal:
 
 ```sh
 git clone https://github.com/James-HoneyBadger/HB_Continuum.git
@@ -35,7 +35,7 @@ python3 dispatch.py --version
 python3 -m unittest discover -s tests -v
 ```
 
-Examples below use a POSIX shell (Linux/macOS); on Windows use your Python launcher and equivalent paths. The [v0.4.0-beta release](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.4.0-beta) is tagged on `develop/continuum-integration`; `main` still carries the v0.3.0 public beta. Development branches beyond a published tag are alpha work and are not part of that release.
+Examples below use a POSIX shell (Linux/macOS). On Windows use your Python launcher and equivalent paths; packaged desktop builds for Windows and Linux are not qualified. Published releases are listed on GitHub. Development branches beyond a published tag are alpha work and are not part of that release.
 
 Create a synthetic email outside the repository using a plain-text editor, saving it as `~/dispatch-practice.eml` (not .txt):
 
@@ -63,6 +63,19 @@ python3 dispatch.py --archive ~/dispatch-practice verify
 The import prints a 64-character SHA-256 hash. Search returns JSON rows containing the hash, subject and sender. Verify prints an empty JSON array when every indexed raw message exists and matches its expected hash; otherwise it lists problematic hashes and exits unsuccessfully. Import the identical file again: the same raw bytes produce the same hash and only one indexed message.
 
 The archive directory contains `raw/<hash>.eml` and `archive.sqlite3`. The original message is retained as received or imported, including headers and MIME attachments. The search index is a derived representation, not a substitute for the original. Imported files do not automatically acquire IMAP account/folder provenance.
+
+## 2.1 Open the desktop application
+
+The desktop application does not silently create a hidden archive. On first launch it asks you to choose a folder:
+
+1. Choose an empty folder and select **Create archive here**, or choose an existing HB Continuum archive.
+2. If the archive is encrypted, the unlock panel appears. Enter the archive password; it stays in memory for that session and can be cleared with **Lock**.
+3. Use **Open folder…** to browse with the native folder picker, or type a path and press Return.
+4. Import EML files or folders from the **Import** workspace. Folder imports search subfolders recursively; Document, Facebook and EML imports are separate, clearly labelled actions.
+
+New desktop-created archives are standard unencrypted archives. To create an encrypted archive, run `python3 dispatch.py --archive PATH init-encrypted` before opening the folder in the desktop application.
+
+To build the desktop shell from source on macOS, follow [Packaging](PACKAGING.md). No signed or notarized installer is currently provided.
 
 ## 3. Find things without opening a webmail account
 
@@ -111,7 +124,7 @@ python3 dispatch.py --archive ~/MailArchive search 'renewal OR cancellation'
 
 These are fictional settings. Each run prompts for that account's credentials. Origins retain host/user, folder, UIDVALIDITY and UID; identical raw message bytes share one hash and can have multiple origins. Forwarding, added headers or message changes may produce a different hash even when the human-visible text is identical. Do not mistake byte-level deduplication for semantic deduplication.
 
-This manual workflow is available now. Saved account profiles, automatic scheduling, OAuth, credential vault integration and unified account/folder management are future goals. Use separate archives for different people or security boundaries; a unified archive is not access-controlled per mailbox.
+This manual workflow is available now. Saved account profiles, automatic scheduling and platform credential stores are implemented for the portable engine; see [Scheduled synchronization](SCHEDULED_SYNC.md). OAuth and unified account/folder discovery remain future work. Use separate archives for different people or security boundaries; a unified archive is not access-controlled per mailbox.
 
 ## 6. Real-world research: reconstruct a disputed invoice
 

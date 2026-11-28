@@ -64,7 +64,8 @@ a released app should rely on steps 1–2.
 With the engine built for the current host:
 
 ```sh
-cd frontend && npm install
+cd frontend
+npm ci
 npm run tauri -- build --config src-tauri/tauri.bundle.conf.json
 ```
 
@@ -88,10 +89,27 @@ environment; otherwise those features fail with their normal "not installed"
 errors. The Tauri shell never needs Tkinter, so a build machine without it
 still produces a fully functional shell engine.
 
+## macOS desktop qualification
+
+The native Tauri desktop shell is qualified on **macOS Apple Silicon only**.
+It uses the standard macOS application menu for Quit, Undo/Redo, Cut/Copy/Paste,
+Select All, Minimize, Zoom and Close. The first launch starts in an explicit
+archive chooser: choose an empty folder and **Create archive here**, or open an
+existing archive (including an encrypted one). No hidden archive is created.
+New archives created from this screen are unencrypted; create encrypted
+archives with `dispatch.py --archive PATH init-encrypted` first.
+
+The Linux and Windows CI jobs exercise the portable Python engine, not a
+packaged native desktop application. They do not establish packaged-desktop
+support, signing or a verified installer for those platforms.
+
 ## Limitations
 
 - No signing, notarization or auto-update is implemented; those are release
   decisions for the repository owner.
 - The engine binary embeds the Python runtime, so it is roughly 30 MB.
-- The PyInstaller build is validated on the three CI platforms, but not yet
-  reproduced on a machine without network access to PyPI.
+- The PyInstaller engine build is exercised on the three CI platforms, but the
+  desktop bundle has not been reproduced on a machine without network access
+  to PyPI.
+- macOS Intel, Linux desktop and Windows desktop app bundles are not claimed as
+  qualified.

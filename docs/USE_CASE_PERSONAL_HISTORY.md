@@ -20,7 +20,7 @@ python3 dispatch.py --archive ~/PersonalMailArchive sync imap.provider-two.inval
 python3 dispatch.py --archive ~/PersonalMailArchive verify
 ~~~
 
-These hosts and addresses are placeholders. Use actual provider settings, supported authentication and exact folder names; never put credentials in commands, source control or reports. Repeat for Sent and other relevant folders. OAuth, automatic folder discovery and all-account scheduling are not currently provided. Live-provider compatibility varies.
+These hosts and addresses are placeholders. Use actual provider settings, supported authentication and exact folder names; never put credentials in commands, source control or reports. Repeat for Sent and other relevant folders. OAuth and automatic folder discovery are not currently provided; per-account scheduled synchronization is available. Live-provider compatibility varies.
 
 HB Continuum retains original message bytes as EML files, records IMAP origins, and indexes searchable text in SQLite. Identical message bytes share one hash; similar messages with different headers can remain distinct. Alex checks folder coverage, representative dates and attachments against the source accounts, then backs up the entire archive on encrypted storage and tests a restored copy. Hash verification alone cannot prove completeness or authenticity.
 

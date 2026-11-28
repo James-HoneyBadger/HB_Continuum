@@ -13,6 +13,11 @@ authentication and requests sent to your selected mail provider.
 | Windows | Task Scheduler (`schtasks`) | Windows Credential Manager via `keyring` |
 | other | not supported (clear error) | `keyring`, else encrypted file |
 
+CI exercises the scheduler implementations on Ubuntu, macOS and Windows.
+Only the native macOS Apple Silicon desktop application is qualified as a
+packaged desktop target; the Linux and Windows entries describe portable
+engine paths, not a verified packaged application.
+
 Generated unit files, task definitions and profiles never contain a password.
 Only the synchronization command line is written; credentials are resolved
 from the store when a job runs.
@@ -48,9 +53,9 @@ python3 scripts/scheduler_smoke.py
 
 1. Finish any import started with an older version of HB Continuum (formerly HB Dispatch). This
    matters because older versions did not participate in the synchronization lock.
-2. Start the correspondence workstation with
-   `python3 dispatch.py --archive ~/HB_Mail_Archive gui` and select
-   **Synchronization center**, or open it directly with
+2. Open the archive in the native desktop application and select **Sync**.
+   The legacy Tk interface calls this **Synchronization center**; it can also
+   be opened directly with
    `python3 schedule.py --archive ~/HB_Mail_Archive gui`.
 3. Create a profile for each provider. Enter its IMAP server, exact username
    (matching your prior manual import), and mailbox names separated by semicolons.

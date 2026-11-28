@@ -14,6 +14,10 @@ never deleted automatically.
 
 ## Create a new encrypted archive
 
+The desktop archive chooser creates standard unencrypted archives. New
+encrypted archives are currently created from the command line; existing
+encrypted archives can then be opened and unlocked in the desktop application.
+
 Choose a new or empty destination. Passwords must be at least 12 characters and
 are entered twice through a hidden prompt; they are never passed on the command
 line.

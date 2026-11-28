@@ -72,6 +72,8 @@ python3 dispatch.py export evidence HASH
 python3 -m unittest discover -s tests -v
 ```
 
+`dispatch.py gui` starts the legacy Tk workstation; the native Tauri shell is the primary desktop application.
+
 Source-independent imports and unified search use the same CLI:
 
 ```sh
@@ -87,6 +89,30 @@ For mailbox names containing spaces, use normal shell quoting, e.g. `--folder "S
 
 Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, read-only mailbox selection and BODY.PEEK. Passwords are prompted for, never stored by the application. Provider-specific authentication may be required. Gmail OAuth and a native MCP integration remain future work. Manual synchronization prompts for passwords; scheduled synchronization supports platform-specific schedulers and credential stores.
 
+## Desktop application
+
+The native Tauri desktop shell is the primary application. **macOS on Apple Silicon is the qualified desktop target.** The portable Python engine is exercised by CI on Linux and Windows, but packaged desktop builds on those platforms have not been qualified and are not claimed as supported.
+
+For development on macOS:
+
+```sh
+cd frontend
+npm ci
+npm run tauri -- dev
+```
+
+For a local bundled application:
+
+```sh
+python3 -m pip install pyinstaller
+python3 scripts/build_engine.py
+cd frontend
+npm ci
+npm run tauri -- build --config src-tauri/tauri.bundle.conf.json
+```
+
+The build is unsigned and not notarized. On first launch, choose an archive folder and select **Create archive here**, or choose an existing archive. New archives created from the desktop are standard unencrypted archives; existing encrypted archives can be opened and unlocked. To create a new encrypted archive, use `python3 dispatch.py --archive PATH init-encrypted` before opening it. See [Packaging](docs/PACKAGING.md) for the full build and sidecar layout.
+
 ## Engine layout
 
 The engine implementation lives in `hb_engine/`, with the CLI, IPC server, archive, catalog, research overlay, migrations, search and local intelligence modules sharing one package. `dispatch.py` remains the command-line and PyInstaller entry point, and the historical top-level module names are compatibility aliases, so existing scripts and tests keep the same imports.
@@ -95,15 +121,15 @@ The archive uses three SQLite databases: `archive.sqlite3` for email, origins, t
 
 ## Privacy and limitations
 
-Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. New archives can be created with encrypted SQLCipher databases, and existing plaintext archives can be migrated to a separate encrypted destination without modifying or deleting the original. Encrypted archives can be locked explicitly; scheduled synchronization defers instead of bypassing the lock. Encrypted backups keep database files encrypted, but raw EML files and configuration remain plaintext. External documents are not copied into the archive and remain unencrypted at their original locations. See [Encryption](docs/ENCRYPTION.md), [migration](docs/ENCRYPTION_MIGRATION.md) and the [security threat model](docs/SECURITY_MODEL.md). Verify backup and restore with `dispatch backup`, `dispatch verify-backup` and `dispatch restore`, and diagnose local consistency with `dispatch health` (see [Archive hardening](docs/ARCHIVE_HARDENING.md)). Failed imports may leave unindexed raw files; `dispatch recover-orphans` and `dispatch reindex` repair them from the preserved originals. Failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS, Gmail and iCloud Mail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search indexes plain-text bodies, HTML reduced to offline text, and attachment names, types and bounded text. Optional document extraction adds searchable PDF and DOCX text for imported documents and email attachments; scanned images are not OCRed, and other Office or image attachment contents are not converted. Facebook exports are read in place and never modified; the catalog preserves original record JSON, revision identity and attachment metadata, not attachment bytes. Optional local AI summaries and research answers are derived text: historical evidence is treated as untrusted data, and model output cannot modify the archive. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Continuum as the sole evidence archive.
+Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. The packaged desktop application is qualified on macOS Apple Silicon only; Linux and Windows source paths remain available without packaged-desktop qualification. Use an encrypted disk and keep all real mail and credentials outside the repository. New archives can be created with encrypted SQLCipher databases, and existing plaintext archives can be migrated to a separate encrypted destination without modifying or deleting the original. Encrypted archives can be locked explicitly; scheduled synchronization defers instead of bypassing the lock. Encrypted backups keep database files encrypted, but raw EML files and configuration remain plaintext. External documents are not copied into the archive and remain unencrypted at their original locations. See [Encryption](docs/ENCRYPTION.md), [migration](docs/ENCRYPTION_MIGRATION.md) and the [security threat model](docs/SECURITY_MODEL.md). Verify backup and restore with `dispatch backup`, `dispatch verify-backup` and `dispatch restore`, and diagnose local consistency with `dispatch health` (see [Archive hardening](docs/ARCHIVE_HARDENING.md)). Failed imports may leave unindexed raw files; `dispatch recover-orphans` and `dispatch reindex` repair them from the preserved originals. Failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS, Gmail and iCloud Mail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search indexes plain-text bodies, HTML reduced to offline text, and attachment names, types and bounded text. Optional document extraction adds searchable PDF and DOCX text for imported documents and email attachments; scanned images are not OCRed, and other Office or image attachment contents are not converted. Facebook exports are read in place and never modified; the catalog preserves original record JSON, revision identity and attachment metadata, not attachment bytes. Optional local AI summaries and research answers are derived text: historical evidence is treated as untrusted data, and model output cannot modify the archive. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Continuum as the sole evidence archive.
 
 ## Scheduled synchronization
 
-Maintain multiple mailboxes automatically with the local synchronization center, configurable interval or daily schedules and platform-specific credential stores. See [Scheduled synchronization](docs/SCHEDULED_SYNC.md). Finish any older manual import before enabling the service.
+Maintain multiple mailboxes automatically with the **Sync** workspace, configurable interval or daily schedules and platform-specific credential stores. See [Scheduled synchronization](docs/SCHEDULED_SYNC.md). Finish any older manual import before enabling the service.
 
-## Configuration center
+## Preferences
 
-Customize the workstation per archive with validated, portable settings for appearance, research, file locations, integrity checks and synchronization. Open **Configuration center** in the desktop application. See [Configuration reference](docs/CONFIGURATION.md).
+Customize the workstation per archive with validated, portable settings for appearance, research, file locations, integrity checks and synchronization. Open **Preferences** in the desktop application. The legacy Tk workstation calls the same settings **Configuration center**. See [Configuration reference](docs/CONFIGURATION.md).
 
 ## Research workbench
 
@@ -208,22 +234,8 @@ Research; Collections, including adding the open message from the Timeline or
 the open record from the Search reader; Journal with revision history; archive
 Reports; Relationships; synchronization; Health with resumable repair jobs;
 Backup with schema status and validated backup, verification and restore; and
-Preferences. From a checkout of the development branch or v0.4.0-beta tag:
-
-```sh
-cd frontend && npm install
-npm run tauri -- dev
-```
-
-Development runs the engine from the checkout. To build a distributable
-app, first produce the standalone engine sidecar for the host, then package:
-
-```sh
-python3 scripts/build_engine.py
-cd frontend && npm run tauri -- build --config src-tauri/tauri.bundle.conf.json
-```
-
-The shell prefers a bundled `hb-engine` binary, falls back to
+Preferences. See [Desktop application](#desktop-application) for first-launch
+and build steps. The shell prefers a bundled `hb-engine` binary, falls back to
 `python3 dispatch.py` during development, and accepts `HB_ENGINE` /
 `HB_ENGINE_SCRIPT` overrides. See [Packaging](docs/PACKAGING.md).
 

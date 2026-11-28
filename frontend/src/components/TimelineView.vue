@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
 const props = defineProps<{ onError: (message: string) => void; onChanged: () => void }>();
@@ -29,6 +29,7 @@ const senders = ref<Correspondent[]>([]);
 const rows = ref<TimelineRow[]>([]);
 const selectedSender = ref<string | null>(null);
 const detail = ref<any>(null);
+const detailPanel = ref<HTMLElement | null>(null);
 const collections = ref<Collection[]>([]);
 const collectionId = ref<number | null>(null);
 const collectionNote = ref("");
@@ -114,6 +115,8 @@ async function open(row: TimelineRow) {
       row.source === "document"
         ? await invoke("record", { recordId: row.record_id })
         : await invoke("message", { hash: row.hash });
+    await nextTick();
+    detailPanel.value?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) {
     props.onError(String(e));
   }
@@ -197,6 +200,7 @@ onMounted(() => {
         Filtered to {{ selectedSender }}
         <button class="link" @click="filter(null)">Show all</button>
       </span>
+      <span v-if="loading" class="meta">Loading…</span>
       <span v-else class="meta">
         {{ rows.length }} entries from position {{ offset + 1 }},
         {{ fromDate || toDate ? "filtered by date" : "undated last" }}
@@ -239,7 +243,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <section v-if="detail" class="detail">
+    <section v-if="detail" ref="detailPanel" class="detail">
       <h3>{{ detail.subject || detail.source_key || "(no subject)" }}</h3>
       <p class="meta">{{ detail.sender || detail.actor }} {{ detail.date || detail.occurred_at }}</p>
       <div class="row">

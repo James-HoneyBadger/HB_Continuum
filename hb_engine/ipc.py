@@ -7,7 +7,7 @@ method, and params. Responses carry the same protocol_version and
 request_id with either result or error. Long-running jobs emit progress
 events and a terminal job_complete or job_error event.
 """
-import hashlib, json, sqlite3, sys, threading, uuid
+import hashlib, json, shutil, sqlite3, sys, threading, uuid
 from .db import connect as db_connect
 from .db import session_key
 from pathlib import Path
@@ -23,6 +23,71 @@ def _result(request_id, result):
 
 def _event(kind, **payload):
     return {'protocol_version': PROTOCOL_VERSION, 'event': kind, **payload}
+
+def _archive_status(root):
+    root = Path(root).expanduser()
+    return {
+        'path': str(root),
+        'exists': ((root / 'archive.sqlite3').is_file()
+                   and not (root / 'archive.sqlite3').is_symlink()),
+        'databases': {
+            name: (root / name).is_file()
+            for name in ('archive.sqlite3', 'catalog.sqlite3', 'research.sqlite3')
+        },
+    }
+
+
+def _create_archive(root):
+    """Create a new plaintext archive directory after an explicit UI request."""
+    from .catalog import Catalog
+    from .dispatch import Archive
+    from .migrations import MigrationError
+    from .research import Research
+    from .sync_lock import SyncBusy
+
+    candidate = Path(root).expanduser()
+    if candidate.is_symlink():
+        raise IPCError('ARCHIVE_PATH', 'The archive location must not be a symbolic link.')
+    path = candidate.resolve()
+    if path.exists() and not path.is_dir():
+        raise IPCError('ARCHIVE_PATH', 'The archive location is not a directory.')
+    names = ('archive.sqlite3', 'catalog.sqlite3', 'research.sqlite3')
+    if path.is_dir() and any((path / name).is_symlink() for name in names):
+        raise IPCError('ARCHIVE_PATH', 'Archive database paths must not be symbolic links.')
+    if path.is_dir() and ((path / '.hb-encryption.json').is_file()
+                          or (path / '.hb-encryption.json').is_symlink()):
+        raise IPCError('ARCHIVE_EXISTS',
+                       'That folder contains encryption metadata. Open it as an existing '
+                       'archive or choose an empty folder.')
+    if path.is_dir() and any((path / name).exists() for name in names):
+        raise IPCError('ARCHIVE_EXISTS',
+                       'That folder already contains HB Continuum databases. '
+                       'Choose an empty folder or open the existing archive.')
+    created = not path.exists()
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    archive = None
+    try:
+        archive = Archive(path)
+        catalog = Catalog(path)
+        catalog.close()
+        research = Research(archive)
+        research.close()
+    except (ValueError, OSError, sqlite3.Error, MigrationError, SyncBusy) as exc:
+        if created:
+            shutil.rmtree(path, ignore_errors=True)
+        else:
+            for name in names:
+                try:
+                    (path / name).unlink()
+                except FileNotFoundError:
+                    pass
+        raise IPCError('ARCHIVE_CREATE_FAILED',
+                       'Could not create the archive: ' + str(exc)) from None
+    finally:
+        if archive is not None:
+            archive.db.close()
+    return _archive_status(path)
+
 
 def _archive_stats(root):
     path = Path(root) / 'archive.sqlite3'
@@ -1716,6 +1781,14 @@ class IPCServer:
                     raise IPCError('ARCHIVE_BUSY',
                                    'cancel active jobs before locking the archive')
                 return _result(request_id, _encryption_lock(self.root))
+            if method == 'archive_status':
+                return _result(request_id, _archive_status(self.root))
+            if method == 'create_archive':
+                path = params.get('path')
+                if not isinstance(path, str) or not path.strip():
+                    raise IPCError('INVALID_PARAMS',
+                                   'create_archive requires a destination path')
+                return _result(request_id, _create_archive(path))
             if method == 'stats':
                 return _result(request_id, {'archive': _archive_stats(self.root),
                                             'catalog': self._catalog_stats()})

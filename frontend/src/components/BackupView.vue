@@ -4,7 +4,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEngineJob } from "../composables/useEngineJob";
 
-const props = defineProps<{ onError: (message: string) => void; onChanged: () => void }>();
+const props = defineProps<{
+  onError: (message: string) => void;
+  onChanged: () => void;
+  onOpenArchive: (path: string) => void;
+}>();
 
 interface DatabaseReport {
   present?: boolean;
@@ -156,7 +160,8 @@ onMounted(refreshSchema);
       disables its scheduling profiles. Keychain credentials are never part of a snapshot.
     </p>
     <p v-if="restored" class="meta">
-      Restored to {{ restored }} — enter that path in the Archive field at the top to open it.
+      Restored to {{ restored }}.
+      <button type="button" @click="props.onOpenArchive(restored)">Open restored archive</button>
     </p>
 
     <p v-if="notice" class="notice">{{ notice }}</p>

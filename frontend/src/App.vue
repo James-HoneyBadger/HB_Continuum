@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import OverviewView from "./components/OverviewView.vue";
 import SearchView from "./components/SearchView.vue";
 import AdvancedSearchView from "./components/AdvancedSearchView.vue";
@@ -47,6 +48,24 @@ const tabs = [
   "Preferences",
 ] as const;
 const tab = ref<(typeof tabs)[number]>("Overview");
+const tabHelp: Record<(typeof tabs)[number], string> = {
+  Overview: "Archive summary and coverage",
+  Intelligence: "Ask questions and inspect cited evidence",
+  Timeline: "Browse records in date order",
+  Relationships: "Thread co-participation",
+  Search: "Search email, Facebook and documents",
+  Advanced: "Build an explicit boolean query",
+  Sources: "Coverage and removal of imported sources",
+  Import: "Import EML, Facebook exports and documents",
+  Research: "Saved searches, rules and reports",
+  Collections: "Named evidence collections",
+  Journal: "Your retrospective notes",
+  Reports: "Archive consistency reports",
+  Sync: "Scheduled mailbox synchronization",
+  Health: "Local consistency checks and repair",
+  Backup: "Verified snapshots and restoration",
+  Preferences: "Archive-specific settings",
+};
 
 const archive = ref("~/.hb-dispatch");
 const stats = ref<Stats | null>(null);
@@ -55,10 +74,13 @@ const verifyResult = ref<{ checked: number; bad: string[] } | null>(null);
 const encryption = ref<EncryptionStatus>({ encrypted: false, unlocked: false });
 const password = ref("");
 const unlocking = ref(false);
+const working = ref(false);
+const archiveExists = ref<boolean | null>(null);
 
 async function refreshStats() {
   try {
     stats.value = (await invoke("stats")) as Stats;
+    error.value = "";
   } catch (e) {
     error.value = String(e);
   }
@@ -75,19 +97,84 @@ async function refreshEncryption() {
   }
 }
 
-async function applyArchive() {
+async function refreshArchive() {
   error.value = "";
-  verifyResult.value = null;
-  stats.value = null;
-  password.value = "";
   try {
-    await invoke("set_archive", { path: archive.value });
+    const status = (await invoke("archive_status")) as { exists: boolean };
+    archiveExists.value = Boolean(status.exists);
+    if (!status.exists) {
+      stats.value = null;
+      verifyResult.value = null;
+      encryption.value = { encrypted: false, unlocked: false };
+      return;
+    }
+    encryption.value = { encrypted: false, unlocked: false };
     await refreshEncryption();
     if (!encryption.value.encrypted || encryption.value.unlocked) {
       await refreshStats();
     }
   } catch (e) {
+    archiveExists.value = null;
     error.value = String(e);
+  }
+}
+
+async function applyArchive() {
+  if (!archive.value.trim()) {
+    error.value = "Enter an archive folder or choose one.";
+    return;
+  }
+  error.value = "";
+  verifyResult.value = null;
+  stats.value = null;
+  password.value = "";
+  archiveExists.value = null;
+  working.value = true;
+  try {
+    await invoke("set_archive", { path: archive.value.trim() });
+    await refreshArchive();
+  } catch (e) {
+    archiveExists.value = null;
+    error.value = String(e);
+  } finally {
+    working.value = false;
+  }
+}
+
+async function chooseArchiveFolder() {
+  error.value = "";
+  try {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Choose an HB Continuum archive folder",
+    });
+    if (!selected || Array.isArray(selected)) return;
+    archive.value = selected;
+    await applyArchive();
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function createArchive() {
+  if (!archive.value.trim()) {
+    error.value = "Choose a folder for the new archive first.";
+    return;
+  }
+  error.value = "";
+  stats.value = null;
+  archiveExists.value = null;
+  working.value = true;
+  try {
+    await invoke("create_archive", { path: archive.value.trim() });
+    await invoke("set_archive", { path: archive.value.trim() });
+    await refreshArchive();
+  } catch (e) {
+    archiveExists.value = null;
+    error.value = String(e);
+  } finally {
+    working.value = false;
   }
 }
 
@@ -111,9 +198,9 @@ async function unlockArchive() {
 async function lockArchive() {
   error.value = "";
   password.value = "";
-  stats.value = null;
   try {
     encryption.value = (await invoke("encryption_lock")) as EncryptionStatus;
+    stats.value = null;
   } catch (e) {
     error.value = String(e);
   }
@@ -133,12 +220,29 @@ function reportError(message: string) {
   error.value = message;
 }
 
-onMounted(async () => {
-  await refreshEncryption();
-  if (!encryption.value.encrypted || encryption.value.unlocked) {
-    await refreshStats();
-  }
+function selectTab(name: (typeof tabs)[number]) {
+  tab.value = name;
+  error.value = "";
+}
+
+function openArchiveFromChild(path: string) {
+  archive.value = path;
+  void applyArchive();
+}
+
+function handleShortcut(event: KeyboardEvent) {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+  if (event.key.toLowerCase() !== "f") return;
+  if (archiveExists.value !== true || (encryption.value.encrypted && !encryption.value.unlocked)) return;
+  event.preventDefault();
+  selectTab("Search");
+}
+
+onMounted(() => {
+  void refreshArchive();
+  window.addEventListener("keydown", handleShortcut);
 });
+onUnmounted(() => window.removeEventListener("keydown", handleShortcut));
 </script>
 
 <template>
@@ -151,17 +255,41 @@ onMounted(async () => {
       <div class="archive-bar">
         <label class="grow">
           Archive
-          <input v-model="archive" placeholder="~/.hb-dispatch" spellcheck="false" />
+          <input
+            v-model="archive"
+            placeholder="~/.hb-dispatch"
+            spellcheck="false"
+            @keyup.enter="applyArchive"
+          />
         </label>
-        <button @click="applyArchive">Open</button>
-        <button :disabled="encryption.encrypted && !encryption.unlocked" @click="runVerify">Verify integrity</button>
+        <button :disabled="working" @click="applyArchive">
+          {{ working ? "Working…" : "Open" }}
+        </button>
+        <button :disabled="working" @click="chooseArchiveFolder">Open folder…</button>
+        <button
+          :disabled="working || !archiveExists || (encryption.encrypted && !encryption.unlocked)"
+          @click="runVerify"
+        >
+          Verify integrity
+        </button>
         <button v-if="encryption.encrypted && encryption.unlocked" @click="lockArchive">
           Lock
         </button>
       </div>
     </header>
 
-    <section v-if="encryption.encrypted && !encryption.unlocked" class="unlock-panel">
+    <section v-if="archiveExists === null" class="center-state" aria-live="polite">
+      <h2>{{ error ? "Could not open the archive" : "Opening archive…" }}</h2>
+      <p class="meta">
+        {{ error || "Checking the selected archive folder." }}
+      </p>
+      <div v-if="error" class="row">
+        <button :disabled="working" @click="refreshArchive">Try again</button>
+        <button :disabled="working" @click="chooseArchiveFolder">Choose another folder…</button>
+      </div>
+    </section>
+
+    <section v-else-if="encryption.encrypted && !encryption.unlocked" class="unlock-panel">
       <h2>Encrypted archive locked</h2>
       <p class="meta">
         Enter the archive password. It is used only in memory to unlock this session and is
@@ -173,6 +301,7 @@ onMounted(async () => {
           v-model="password"
           type="password"
           autocomplete="current-password"
+          autofocus
           placeholder="Archive password"
           @keyup.enter="unlockArchive"
         />
@@ -180,6 +309,27 @@ onMounted(async () => {
           {{ unlocking ? "Unlocking…" : "Unlock" }}
         </button>
       </div>
+    </section>
+
+    <section v-else-if="archiveExists === false" class="center-state">
+      <h2>No archive at this location</h2>
+      <p class="meta">
+        HB Continuum keeps each archive in its own folder. Choose an existing archive or
+        create a new one here. Nothing is downloaded or uploaded.
+      </p>
+      <p class="path"><code>{{ archive }}</code></p>
+      <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <div class="row">
+        <button :disabled="working" @click="createArchive">
+          {{ working ? "Creating…" : "Create archive here" }}
+        </button>
+        <button :disabled="working" @click="chooseArchiveFolder">Choose another folder…</button>
+      </div>
+      <p class="meta">
+        New archives created here use standard SQLite files. To create an encrypted archive,
+        run <code>dispatch.py --archive PATH init-encrypted</code> before opening it. Existing
+        encrypted archives can be opened from this screen.
+      </p>
     </section>
 
     <div v-else class="body">
@@ -190,7 +340,8 @@ onMounted(async () => {
           type="button"
           :class="['nav-item', { active: tab === name }]"
           :aria-current="tab === name ? 'page' : undefined"
-          @click="tab = name"
+          :title="tabHelp[name]"
+          @click="selectTab(name)"
         >
           {{ name }}
         </button>
@@ -212,7 +363,12 @@ onMounted(async () => {
         <ReportsView v-else-if="tab === 'Reports'" :on-error="reportError" :on-changed="refreshStats" />
         <SyncView v-else-if="tab === 'Sync'" :on-error="reportError" :on-changed="refreshStats" />
         <HealthView v-else-if="tab === 'Health'" :on-error="reportError" :on-changed="refreshStats" />
-        <BackupView v-else-if="tab === 'Backup'" :on-error="reportError" :on-changed="refreshStats" />
+        <BackupView
+          v-else-if="tab === 'Backup'"
+          :on-error="reportError"
+          :on-changed="refreshStats"
+          :on-open-archive="openArchiveFromChild"
+        />
         <PreferencesView v-else :on-error="reportError" :on-changed="refreshStats" />
       </main>
     </div>
@@ -324,6 +480,33 @@ button:disabled {
   padding: 9px;
   font-size: 14px;
 }
+.center-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 28px;
+  gap: 12px;
+}
+.center-state h2 {
+  margin: 0;
+  font-size: 19px;
+}
+.center-state .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.path {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--hb-panel-alt);
+  border: 1px solid var(--hb-border);
+  border-radius: var(--hb-radius);
+  overflow-wrap: anywhere;
+}
 .body {
   flex: 1;
   display: flex;
@@ -388,30 +571,7 @@ button:disabled {
   color: var(--hb-error-text);
 }
 @media (max-width: 720px) {
-  .unlock-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  max-width: 560px;
-  margin: 0 auto;
-  padding: 24px;
-  gap: 12px;
-}
-.unlock-panel h2 {
-  margin: 0;
-  font-size: 18px;
-}
-.unlock-panel .row {
-  display: flex;
-  gap: 8px;
-}
-.unlock-panel input {
-  flex: 1;
-  padding: 9px;
-  font-size: 14px;
-}
-.body {
+  .body {
     flex-direction: column;
   }
   .nav {

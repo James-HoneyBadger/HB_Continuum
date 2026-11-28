@@ -7,8 +7,8 @@ Maintained per the master engineering directive (section 41). Updated
 
 v0.5.0-beta consolidation, with the intelligence/search/document work,
 SQLCipher encrypted database creation, explicit plaintext-to-encrypted
-migration, archive protection and practical research workflow refinement
-landed. No production encryption claim is
+migration, archive protection, practical research workflow refinement and
+everyday usability work landed. No production encryption claim is
 made and existing archives remain plaintext until the owner explicitly
 migrates them.
 
@@ -645,9 +645,9 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-354 Python tests ran on Python 3.12.0 and 3.13.7 with 0 failures. Without the
-optional `sqlcipher3` binding, 335 passed and 19 skipped; with it installed,
-352 passed and 2 optional-extractor tests skipped. `mypy==2.4.1` was clean on
+357 Python tests ran on Python 3.12.0 and 3.13.7 with 0 failures. Without the
+optional `sqlcipher3` binding, 338 passed and 19 skipped; with it installed,
+355 passed and 2 optional-extractor tests skipped. `mypy==2.4.1` was clean on
 28 source files. `npm run build` (vue-tsc + vite), `cargo check` and
 `cargo test` pass; background EML import, import history, sources, source
 removal, source verification, journal, collections, reports, relationships,
@@ -1149,8 +1149,8 @@ interchange (Phase V).
   rejection, `restore` into a new path, successful search in the restored
   encrypted archive, and ordinary-SQLite rejection of the copied database all
   passed.
-- Verification: 354 tests, 0 failures (335 passed/19 skipped without
-  SQLCipher; 352 passed/2 skipped with it), mypy clean on 28 files, frontend
+- Verification: 357 tests, 0 failures (338 passed/19 skipped without
+  SQLCipher; 355 passed/2 skipped with it), mypy clean on 28 files, frontend
   build, `cargo check` and `cargo test` pass.
 - Remaining limits: no in-place encryption, password recovery, key rotation,
   independent backup key or OS credential storage; original EML/external
@@ -1191,3 +1191,34 @@ interchange (Phase V).
   claims and contradiction labels are validated for citation identity, not
   truth; per-token streaming is not implemented; no live Ollama model or
   interactive desktop acceptance run is claimed by the automated suite.
+
+
+## Everyday usability (2026-11-28)
+
+- The desktop no longer starts against a hidden implicit archive. First launch
+  reports a missing archive without creating one, offers an explicit
+  **Create archive here** action, and provides a native folder picker.
+  `archive_status` and `create_archive` are narrowly scoped IPC methods; the
+  latter refuses existing databases, encryption metadata, symlinked paths and
+  cleans up partial files after a handled failure.
+- The archive chooser accepts Return, the search workspace is focused when
+  opened, Cmd/Ctrl+F opens Search, and the native macOS menu supplies
+  Quit, Undo/Redo, Cut/Copy/Paste, Select All, Minimize, Zoom and Close.
+  The Tauri window has a usable minimum size and centers on first launch.
+- The Tauri shell now stops its Python engine when the application exits or
+  switches archives instead of leaving an orphaned process.
+- The restored-archive workflow can reopen the verified copy directly from the
+  Backup workspace instead of asking the user to retype a path.
+- Search and Timeline readers scroll into view after opening a record.
+- EML folder imports are recursive, case-insensitive for `.eml`, skip hidden
+  paths and deduplicate repeated selections. Import progress is shown once
+  rather than repeated under each import section, and all importer actions are
+  disabled consistently while a job is running.
+- The stale scheduler warning was corrected; documentation now names the
+  desktop **Preferences** and **Sync** workspaces, qualifies the native desktop
+  as macOS Apple Silicon only, and describes first launch, encrypted archive
+  creation, and unsigned local packaging accurately.
+- Verification: 357 tests, 0 failures (338 passed/19 skipped without SQLCipher;
+  355 passed/2 skipped with it), mypy clean on 28 files, frontend build,
+  `cargo check`, `cargo test`, Tauri debug build and packaged-engine smoke
+  passed. The synthetic research demo remains available and was run locally.

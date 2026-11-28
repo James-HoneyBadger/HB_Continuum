@@ -12,7 +12,7 @@ No network request is made unless **both** preferences hold:
 - `ai.enabled` is `true`.
 - `ai.backend` is `ollama`.
 
-Set these in the Configuration center (AI tab) or by editing
+Set these in the desktop **Preferences** workspace (AI group) or by editing
 `preferences.json`. The default is `ai.enabled=false` and `ai.backend=none`.
 
 | Preference | Default | Meaning |

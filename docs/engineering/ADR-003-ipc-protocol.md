@@ -24,7 +24,8 @@ spawned as `python3 dispatch.py --archive <root> serve`.
   `search_advanced`, `search_validate`, `message`, `thread`, `timeline`,
   `correspondents`, `relationships`, `record`, `verify`, `health`,
   `migrate_status`, `reindex`,
-  `recover_orphans`, `backup`, `verify_backup`, `restore`, `import_eml`,
+  `recover_orphans`, `backup`, `verify_backup`, `restore`, `archive_status`,
+  `create_archive`, `import_eml`,
   `facebook_preview`, `facebook_import`, `preferences`, `preferences_set`,
   the `research_*` overlay methods, `intelligence_status`,
   `intelligence_models`, `intelligence_retrieve`, `intelligence_ask`, the
@@ -39,7 +40,10 @@ spawned as `python3 dispatch.py --archive <root> serve`.
   when they open it, exactly like the CLI, and report `MIGRATION_ERROR` if
   the schema is newer than this build.
 - `migrate_status` reports on-disk schema versions and pending steps in
-  dry-run mode. `backup`, `verify_backup` and `restore` are background jobs
+  dry-run mode. `archive_status` distinguishes a missing archive from an empty
+  one without creating files. `create_archive` creates the three databases only
+  after an explicit desktop request and refuses an existing or unsafe path.
+  `backup`, `verify_backup` and `restore` are background jobs
   that validate before publishing; failures report `BACKUP_FAILED`,
   `BACKUP_INVALID` or `RESTORE_FAILED`, and missing paths are rejected as
   `INVALID_PARAMS` before a job starts.

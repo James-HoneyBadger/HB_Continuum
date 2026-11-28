@@ -35,7 +35,7 @@ Dispatch and Continuum can operate independently. Neither requires Ollama, a com
    ollama list
    ```
 
-   Select a smaller model if memory is constrained. In Continuum Configuration Center > AI, enable AI, choose Ollama, set the endpoint to `http://localhost:11434` and model to `qwen3.5:9b`. Start with one message or thread, not the entire archive. See [AI summarization](AI_SUMMARIZATION.md).
+   Select a smaller model if memory is constrained. In Continuum **Preferences** > AI, enable AI, choose Ollama, set the endpoint to `http://localhost:11434` and model to `qwen3.5:9b`. Start with one message or thread, not the entire archive. See [AI summarization](AI_SUMMARIZATION.md).
 7. Verify AI summaries against original records; they are derived text, not evidence. Keep AI disabled if unwanted. Local endpoints are not a guarantee of offline inference; choose a downloaded local model and restrict network access if needed.
 
 ## Optional ecosystem connections

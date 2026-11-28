@@ -1,12 +1,12 @@
-# Configuration center
+# Preferences (configuration reference)
 
-HB Continuum exposes archive-specific preferences through a graphical configuration
-center. No source code editing is required. Open the desktop application
-with `python3 dispatch.py --archive ~/HB_Mail_Archive gui`, then choose
-**Configuration center**. Save changes and restart the workstation to apply
-appearance settings. Source-visibility changes apply to the next search or
-timeline load. Synchronization reads current preferences at the beginning of
-each folder run.
+HB Continuum exposes archive-specific preferences through the desktop
+application's **Preferences** workspace. No source code editing is required.
+The legacy Tk workstation still exposes the older configuration center, but
+the native Tauri shell is the primary interface. Save changes and restart the
+workstation to apply appearance settings. Source-visibility changes apply to
+the next search or timeline load. Synchronization reads current preferences at
+the beginning of each folder run.
 
 | Area | Options |
 |---|---|

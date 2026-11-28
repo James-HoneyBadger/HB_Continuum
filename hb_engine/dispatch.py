@@ -644,24 +644,35 @@ class Archive:
         counted as existing rather than new. Per-file failures are reported
         without aborting the rest of the run.
         """
-        files=[]; errors=[]
+        files=[]; errors=[]; seen=set()
+        def add_file(candidate):
+            key=candidate.resolve()
+            if key not in seen:
+                seen.add(key)
+                files.append(candidate)
         for raw in paths:
             path=Path(raw).expanduser()
             if path.is_symlink():
                 errors.append({'path':str(path),'error':'Unsafe symbolic link'})
                 continue
             if path.is_dir():
-                for candidate in sorted(path.glob('*.eml')):
-                    if candidate.name.startswith('.'):
-                        continue
-                    if candidate.is_symlink():
-                        errors.append({'path':str(candidate),'error':'Unsafe symbolic link'})
-                    elif candidate.is_file():
-                        files.append(candidate)
-                    else:
-                        errors.append({'path':str(candidate),'error':'Not a regular file'})
+                for current, dirnames, filenames in os.walk(path, followlinks=False):
+                    current=Path(current)
+                    dirnames[:]=sorted(
+                        name for name in dirnames
+                        if not name.startswith('.') and not (current/name).is_symlink())
+                    for name in sorted(filenames):
+                        if name.startswith('.') or not name.lower().endswith('.eml'):
+                            continue
+                        candidate=current/name
+                        if candidate.is_symlink():
+                            errors.append({'path':str(candidate),'error':'Unsafe symbolic link'})
+                        elif candidate.is_file():
+                            add_file(candidate)
+                        else:
+                            errors.append({'path':str(candidate),'error':'Not a regular file'})
             elif path.is_file():
-                files.append(path)
+                add_file(path)
             else:
                 errors.append({'path':str(path),'error':'FileNotFoundError: not found'})
         run=self.begin_import_run('eml', ', '.join(str(p) for p in paths)[:200])
@@ -964,6 +975,13 @@ def main(argv=None):
         if result.get('warning'): print(result['warning'],file=sys.stderr)
         return 0
     if a.cmd=='serve' and encryption.is_encrypted_archive(root):
+        from .ipc import IPCServer
+        IPCServer(root).serve()
+        return 0
+    if a.cmd=='serve' and not (root/'archive.sqlite3').is_file():
+        # The desktop asks for archive_status before creating anything. Do not
+        # instantiate Archive here, because that would silently create the
+        # hidden default archive on first launch.
         from .ipc import IPCServer
         IPCServer(root).serve()
         return 0

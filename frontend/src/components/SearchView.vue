@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEngineJob } from "../composables/useEngineJob";
@@ -17,6 +17,7 @@ interface ResultItem {
 }
 
 const query = ref("");
+const queryInput = ref<HTMLInputElement | null>(null);
 const results = ref<ResultItem[]>([]);
 const total = ref(0);
 const searchJob = useEngineJob();
@@ -121,7 +122,9 @@ async function addDetailToCollection() {
   }
 }
 const detail = ref<any>(null);
+const detailPanel = ref<HTMLElement | null>(null);
 const threadView = ref<any[] | null>(null);
+const threadPanel = ref<HTMLElement | null>(null);
 const selected = ref<string[]>([]);
 const tagName = ref("");
 const notice = ref("");
@@ -206,7 +209,10 @@ async function runSearch(target = 1) {
   }
 }
 
-onMounted(loadCollections);
+onMounted(() => {
+  void loadCollections();
+  void nextTick(() => queryInput.value?.focus());
+});
 
 function toggle(id: string) {
   const i = selected.value.indexOf(id);
@@ -219,6 +225,8 @@ async function openMessage(id: string) {
   try {
     detail.value = await invoke("message", { hash: id });
     threadView.value = null;
+    await nextTick();
+    detailPanel.value?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) {
     props.onError(String(e));
   }
@@ -229,6 +237,8 @@ async function openRecord(id: string) {
   try {
     detail.value = await invoke("record", { recordId: id });
     threadView.value = null;
+    await nextTick();
+    detailPanel.value?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) {
     props.onError(String(e));
   }
@@ -240,6 +250,8 @@ async function openThread(id: string) {
     const response = (await invoke("thread", { hash: id })) as { messages: any[] };
     threadView.value = response.messages;
     detail.value = null;
+    await nextTick();
+    threadPanel.value?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) {
     props.onError(String(e));
   }
@@ -299,10 +311,12 @@ async function exportSelected() {
   <section>
     <form class="row" @submit.prevent="runSearch(1)">
       <input
+        ref="queryInput"
         class="grow"
         v-model="query"
         placeholder="Search archived email and Facebook records"
         autocomplete="off"
+        spellcheck="false"
       />
       <label class="range">
         From
@@ -400,7 +414,7 @@ async function exportSelected() {
       </li>
     </ul>
 
-    <section v-if="detail" class="detail">
+    <section v-if="detail" ref="detailPanel" class="detail">
       <h2>{{ detail.subject || detail.source_key }}</h2>
       <p class="meta">{{ detail.sender || detail.actor }} {{ detail.date || detail.occurred_at }}</p>
       <p v-if="detail.updated_at" class="meta">
@@ -462,7 +476,7 @@ async function exportSelected() {
       </details>
     </section>
 
-    <section v-if="threadView" class="detail">
+    <section v-if="threadView" ref="threadPanel" class="detail">
       <h2>Conversation</h2>
       <div v-for="m in threadView" :key="m.hash" class="thread-message">
         <p class="meta">{{ m.sender }} {{ m.date }}</p>

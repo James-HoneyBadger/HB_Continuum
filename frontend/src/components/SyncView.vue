@@ -98,9 +98,10 @@ refresh();
       the engine resolves credentials from the operating system credential store when a sync runs.
     </p>
     <p class="warn">
-      Background scheduling and credential retrieval are currently implemented for macOS (Keychain +
-      launchd). On Linux and Windows, running a profile reports an explicit credential error until the
-      portable scheduler lands. Manual ad-hoc sync with a typed password remains a CLI operation
+      Background scheduling uses launchd and Keychain on macOS, systemd and SecretService on Linux,
+      and Task Scheduler and Credential Manager on Windows. macOS Apple Silicon is the qualified
+      desktop target; the other scheduler paths are exercised by CI but are not packaged-desktop
+      qualified. Manual ad-hoc sync with a typed password remains a CLI operation
       (<code>dispatch sync</code>).
     </p>
     <p v-if="notice" class="notice">{{ notice }}</p>

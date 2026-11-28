@@ -24,6 +24,13 @@ class Tests(unittest.TestCase):
         self.a.ingest(RAW)
         for q in ('a:b','-invoice','"unterminated','OR','*'): self.assertIsInstance(self.a.find(q),list)
         self.assertEqual(len(self.a.find('invoice NOT nonexistent')),1); self.assertEqual(len(self.a.find('invo*')),1)
+    def test_serve_missing_archive_does_not_create_one(self):
+        root = Path(self.tmp.name) / 'missing'
+        with mock.patch('ipc.IPCServer.serve'):
+            self.assertEqual(main(['--archive', str(root), 'serve']), 0)
+        self.assertFalse((root / 'archive.sqlite3').exists())
+        self.assertFalse(root.exists())
+
     def test_sync_missing_uidvalidity(self):
         m=mock.MagicMock(); m.__enter__.return_value=m
         m.select.return_value=('OK',[b'1']); m.response.return_value=('UIDVALIDITY',[None])

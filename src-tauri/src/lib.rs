@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::{json, Value};
+use tauri::menu::{MenuBuilder, SubmenuBuilder};
 use tauri::{Emitter, Manager, State};
 
 type Pending = Arc<Mutex<HashMap<String, Sender<Value>>>>;
@@ -986,8 +987,7 @@ fn encryption_lock(state: State<AppState>) -> Result<Value, String> {
     call(&state, "encryption_lock", json!({}))
 }
 
-#[tauri::command]
-fn set_archive(state: State<AppState>, path: String) -> Result<(), String> {
+fn stop_engine(state: &AppState) {
     let mut guard = state.engine.lock().expect("engine lock");
     if let Some(mut engine) = guard.take() {
         let _ = writeln!(
@@ -997,21 +997,56 @@ fn set_archive(state: State<AppState>, path: String) -> Result<(), String> {
         );
         let _ = engine.child.kill();
     }
+}
+
+#[tauri::command]
+fn archive_status(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "archive_status", json!({}))
+}
+
+#[tauri::command]
+fn create_archive(state: State<AppState>, path: String) -> Result<Value, String> {
+    call(&state, "create_archive", json!({ "path": path }))
+}
+
+#[tauri::command]
+fn set_archive(state: State<AppState>, path: String) -> Result<(), String> {
+    stop_engine(&state);
     *state.archive.lock().expect("archive lock") = path;
     Ok(())
 }
 
 #[tauri::command]
 fn shutdown(state: State<AppState>) -> Result<(), String> {
-    let mut guard = state.engine.lock().expect("engine lock");
-    if let Some(mut engine) = guard.take() {
-        let _ = writeln!(
-            engine.stdin,
-            "{}",
-            json!({"protocol_version": 1, "request_id": "shutdown", "method": "shutdown", "params": {}})
-        );
-        let _ = engine.child.kill();
-    }
+    stop_engine(&state);
+    Ok(())
+}
+
+fn install_native_menu(app: &tauri::App) -> tauri::Result<()> {
+    let application = SubmenuBuilder::new(app, "HB Continuum")
+        .about(None)
+        .separator()
+        .quit()
+        .build()?;
+    let edit = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+    let window = SubmenuBuilder::new(app, "Window")
+        .minimize()
+        .maximize()
+        .separator()
+        .close_window()
+        .build()?;
+    let menu = MenuBuilder::new(app)
+        .items(&[&application, &edit, &window])
+        .build()?;
+    app.set_menu(menu)?;
     Ok(())
 }
 
@@ -1021,6 +1056,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
+            install_native_menu(app)?;
             app.manage(AppState {
                 archive: Mutex::new(default_archive),
                 engine: Mutex::new(None),
@@ -1055,10 +1091,17 @@ pub fn run() {
             export_evidence, schedule_status, schedule_profile_save,
             schedule_profile_enabled, schedule_run,
             encryption_status, encryption_unlock, encryption_lock,
-            set_archive, shutdown
+            archive_status, create_archive, set_archive, shutdown
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    stop_engine(state.inner());
+                }
+            }
+        });
 }
 
 #[cfg(test)]
