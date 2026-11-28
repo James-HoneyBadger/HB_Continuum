@@ -16,6 +16,7 @@ import HealthView from "./components/HealthView.vue";
 import BackupView from "./components/BackupView.vue";
 import TimelineView from "./components/TimelineView.vue";
 import RelationshipsView from "./components/RelationshipsView.vue";
+import IntelligenceView from "./components/IntelligenceView.vue";
 
 interface Stats {
   archive: { messages: number; origins: number };
@@ -24,6 +25,7 @@ interface Stats {
 
 const tabs = [
   "Overview",
+  "Intelligence",
   "Timeline",
   "Relationships",
   "Search",
@@ -116,6 +118,7 @@ onMounted(refreshStats);
       <main class="workspace" :aria-label="tab">
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <OverviewView v-if="tab === 'Overview'" :on-error="reportError" :on-changed="refreshStats" />
+        <IntelligenceView v-else-if="tab === 'Intelligence'" :on-error="reportError" :on-changed="refreshStats" />
         <SearchView v-else-if="tab === 'Search'" :on-error="reportError" :on-changed="refreshStats" />
         <AdvancedSearchView v-else-if="tab === 'Advanced'" :on-error="reportError" :on-changed="refreshStats" />
         <TimelineView v-else-if="tab === 'Timeline'" :on-error="reportError" :on-changed="refreshStats" />

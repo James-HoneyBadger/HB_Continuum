@@ -222,6 +222,23 @@ requires a group root, so a saved query can be loaded back into the graphical
 builder. Saved queries are user annotations in the research overlay; they do
 not contain record contents and do not modify the archive or catalog.
 
+## Research version 6: research conversations
+
+Version 6 adds `research_conversations` and `research_turns`:
+
+- `research_conversations` holds a workspace-scoped title and timestamps.
+  Deleting a workspace cascades to its conversations.
+- `research_turns` stores user questions and assistant answers in order, with
+  the validated request, the full derived answer object (including evidence
+  identifiers and citations), the model name and a timestamp. Deleting a
+  conversation cascades to its turns.
+
+Conversations are derived interpretation stored only in the research
+overlay. They never copy evidence bodies into the overlay, never modify
+`archive.sqlite3` or the catalog, and deleting them never deletes a source
+record. Answers retain the evidence identifiers supplied at inference time so
+a later reader can inspect what supported each claim.
+
 ## Inspecting and migrating
 
 Opening the archive at all (`dispatch`, `dispatch gui`, the desktop shell)

@@ -720,11 +720,14 @@ Scheduler verification status:
   this environment.
 - The desktop shell now has a Source Manager with enable/disable, per-source
   verification and preview-first removal, import history, Collections with
-  report drafts, a Journal, archive reports, the relationship explorer and
-  nested boolean query groups. Unified search streams beyond the former
+  report drafts, a Journal, archive reports, the relationship explorer,
+  nested boolean query groups and an Intelligence workspace with grounded
+  research and validated citations. Unified search streams beyond the former
   candidate ceiling and supports cancellation in the desktop.
-- Disabling a source stops new automatic imports; it does not hide that
-  source's historical records from search or the timeline.
+- Disabling a source stops new automatic imports. The optional
+  `hide_disabled_sources` preference hides its records from default search,
+  timeline and correspondent views; the Sources inventory, dashboard and
+  explicit advanced queries retain them.
 - Import history is best-effort for Facebook imports: a completed import
   reports `history_error` rather than failing when the run cannot be logged.
 
@@ -737,8 +740,10 @@ Scheduler verification status:
 
 1. Run the benchmark harness on Windows and Linux and add a 1M-record run
    before making large-archive claims.
-2. Build the evidence-grounded historical intelligence engine and its
-   desktop workspace on the v0.5 development branch.
+2. Implement Phase IV document ingestion and consistent catalog source
+   registration (plain text, Markdown, PDF and DOCX first).
+3. Exercise intelligence against a live installed Ollama model and perform an
+   interactive desktop acceptance run.
 
 ## Release qualification: v0.4.0-alpha (2026-11-27)
 
@@ -853,3 +858,68 @@ start, so deep pages cost time proportional to the offset (memory stays
 bounded); tag filters still make totals inexact; advanced boolean search
 retains its separate safety bound and paging contract. The next milestone is
 the evidence-grounded historical intelligence engine (Phases II and III).
+
+## v0.5 Intelligence Update — Phases II and III: grounded research (2026-11-28)
+
+- New `hb_engine/intelligence.py` separates request validation, retrieval,
+  context assembly, Ollama transport, citation validation and conversation
+  storage. That module is the only place that talks to a model; archive and catalog writes are never performed by it.
+- Research requests are UI-independent and validated for question length,
+  sources, date bounds, people/actors, topics, workspace, collection scope,
+  retrieval depth (5–200), context budget (2,000–200,000 characters),
+  per-record limit (200–10,000 characters), bounded history, optional model
+  and conversation id.
+- Retrieval builds bounded FTS5 expressions from the natural-language question
+  and topics, searches each selected source, applies participant/date and
+  collection filters before ranking, deduplicates matches across queries, and
+  re-reads each record from its source database. Evidence carries source,
+  record id, kind, title, actor, declared date, source location, retrieval
+  score, full body, excerpt and complete/excerpt status. Retrieval remains
+  useful with AI disabled.
+- Context assembly keeps the highest-ranked evidence within the character
+  budget, assigns stable evidence ids, orders records chronologically for the
+  prompt, and reports omitted records and truncated excerpts instead of
+  presenting a partial context as complete.
+- The model prompt treats evidence as untrusted JSON data and explicitly
+  forbids following instructions found inside it. Output is parsed into
+  structured claims with evidence ids and epistemology labels. Citation ids
+  are validated against the supplied evidence; invented ids and uncited claims
+  are surfaced. Plain-text output is marked unstructured and is not treated as
+  grounded. No model output can trigger tools, shell, filesystem or archive
+  mutation.
+- Ollama is loopback-only, no-redirect, no-proxy, streams NDJSON responses,
+  checks cancellation between chunks, bounds response size, never pulls a
+  model, and degrades to evidence-only results when disabled, unreachable or
+  failing. Model discovery lists already-installed models.
+- Research schema 6 adds `research_conversations` and `research_turns` in the
+  research overlay. Conversations store questions, derived answers, validated
+  citations, model names and timestamps; deletion cascades to derived turns
+  and never affects source records. Export writes a JSON document outside the
+  archive and refuses to overwrite.
+- New IPC surface: `intelligence_status`, `intelligence_models` (job),
+  `intelligence_retrieve`, `intelligence_ask` (cancellable job),
+  `conversation_list`, `conversation_create`, `conversation_get`,
+  `conversation_delete` and `conversation_export`. The Tauri bridge exposes the
+  same commands.
+- New desktop **Intelligence** workspace: conversation list, question input,
+  source/date/people/topic/collection filters, depth/context/per-record and
+  model controls, local AI status and model check, cancellable research,
+  answer and claim display, rejected/uncited citation warnings, contradictions,
+  missing information and limitations, retrieval-query inspection, evidence
+  panel with direct record opening, conversation history, JSON export,
+  conversation deletion, and saving an answer as a journal entry.
+- Tests cover request validation, retrieval and source linkage, bounded context
+  and omissions, accepted and rejected citations, unstructured output,
+  insufficient evidence, disabled/unavailable/failing models, cancellation,
+  prompt-injection handling, collection scope, conversation persistence and
+  export safety, mocked Ollama streaming/model discovery, and the IPC surface.
+- Verified: 313 tests, 311 passed, 2 skipped, zero failures on Python 3.12.0
+  and 3.13.7; `mypy==2.4.1` clean on 24 files; frontend type-check and
+  production build pass; `cargo check` and `cargo test` pass.
+
+Remaining limitations: retrieval is keyword/FTS5 based rather than semantic;
+contradiction and uncertainty labels are model-reported and only citation
+identity is mechanically validated; no live Ollama model was exercised in the
+automated suite; answer display is not token-streamed; no interactive desktop
+acceptance run is claimed. The next milestone is Phase IV document ingestion
+and broader catalog source registration.

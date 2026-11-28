@@ -26,9 +26,10 @@ spawned as `python3 dispatch.py --archive <root> serve`.
   `migrate_status`, `reindex`,
   `recover_orphans`, `backup`, `verify_backup`, `restore`, `import_eml`,
   `facebook_preview`, `facebook_import`, `preferences`, `preferences_set`,
-  the `research_*` overlay methods,
-  `export_evidence`, the `schedule_*` methods, `summarize`, `cancel` and
-  `shutdown`.
+  the `research_*` overlay methods, `intelligence_status`,
+  `intelligence_models`, `intelligence_retrieve`, `intelligence_ask`, the
+  `conversation_*` methods, `export_evidence`, the `schedule_*` methods,
+  `summarize`, `cancel` and `shutdown`.
 - `health` inspects an existing archive through a read-only connection and
   never migrates or writes during the request, returning
   `ARCHIVE_NOT_AVAILABLE` or `ARCHIVE_BUSY` instead. `reindex` and
@@ -56,6 +57,16 @@ spawned as `python3 dispatch.py --archive <root> serve`.
   lower bound returned when a tag filter makes the total unknowable.
   `search_job` is the cancellable background form used by the desktop; the
   `capped` response field is retained for compatibility and is always false.
+- `intelligence_retrieve` returns source-linked evidence, retrieval queries
+  and bounded-context metadata without calling a model. `intelligence_ask` is
+  a cancellable background job that adds local Ollama inference and returns
+  validated claims and citations; invented identifiers and uncited claims are
+  reported rather than accepted. `intelligence_models` is a background job so
+  a slow or unreachable loopback endpoint cannot block request handling.
+  Research requests are validated before a job starts. `conversation_*`
+  methods store only derived research turns in the research overlay; deleting
+  a conversation never touches archived records, and export refuses paths
+  inside the archive or an existing destination.
 - `search_advanced` accepts a validated tree of nested boolean groups and
   rules, evaluates each rule as a set over the selected sources, and returns
   an exact total with one page. Malformed trees or FTS expressions are

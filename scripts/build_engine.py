@@ -82,6 +82,9 @@ def _ipc_smoke(command, archive):
                     'limit': 10}},
         {'protocol_version': 1, 'request_id': 'graph', 'method': 'relationships',
          'params': {}},
+        {'protocol_version': 1, 'request_id': 'intelligence',
+         'method': 'intelligence_retrieve',
+         'params': {'request': {'question': 'smokeword'}}},
         {'protocol_version': 1, 'request_id': 'shutdown', 'method': 'shutdown',
          'params': {}},
     ]
@@ -99,7 +102,7 @@ def _ipc_smoke(command, archive):
             raise SystemExit('engine IPC produced a non-JSON line: ' + line) from None
         if response.get('request_id'):
             responses[response['request_id']] = response
-    for request_id in ('advanced', 'graph'):
+    for request_id in ('advanced', 'graph', 'intelligence'):
         response = responses.get(request_id)
         if response is None:
             raise SystemExit(f'engine IPC returned no {request_id} response')
@@ -109,6 +112,8 @@ def _ipc_smoke(command, archive):
         raise SystemExit('search_advanced did not return both imported messages')
     if not responses['graph']['result']['edges']:
         raise SystemExit('relationships did not link the two message senders')
+    if not responses['intelligence']['result']['evidence']:
+        raise SystemExit('intelligence retrieval returned no evidence')
     return responses
 
 

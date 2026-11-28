@@ -266,6 +266,66 @@ fn search_job(
 }
 
 #[tauri::command]
+fn intelligence_status(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "intelligence_status", json!({}))
+}
+
+#[tauri::command]
+fn intelligence_models(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "intelligence_models", json!({}))
+}
+
+#[tauri::command]
+fn intelligence_retrieve(state: State<AppState>, request: Value) -> Result<Value, String> {
+    call(&state, "intelligence_retrieve", json!({ "request": request }))
+}
+
+#[tauri::command]
+fn intelligence_ask(state: State<AppState>, request: Value) -> Result<Value, String> {
+    call(&state, "intelligence_ask", json!({ "request": request }))
+}
+
+#[tauri::command]
+fn conversation_list(
+    state: State<AppState>,
+    workspace: Option<String>,
+) -> Result<Value, String> {
+    call(&state, "conversation_list", json!({ "workspace": workspace }))
+}
+
+#[tauri::command]
+fn conversation_create(
+    state: State<AppState>,
+    workspace: Option<String>,
+    title: Option<String>,
+) -> Result<Value, String> {
+    call(&state, "conversation_create", json!({
+        "workspace": workspace, "title": title,
+    }))
+}
+
+#[tauri::command]
+fn conversation_get(state: State<AppState>, conversation_id: u32) -> Result<Value, String> {
+    call(&state, "conversation_get", json!({ "conversation_id": conversation_id }))
+}
+
+#[tauri::command]
+fn conversation_delete(state: State<AppState>, conversation_id: u32) -> Result<Value, String> {
+    call(&state, "conversation_delete", json!({ "conversation_id": conversation_id }))
+}
+
+#[tauri::command]
+fn conversation_export(
+    state: State<AppState>,
+    conversation_id: u32,
+    path: Option<String>,
+) -> Result<Value, String> {
+    call(&state, "conversation_export", json!({
+        "conversation_id": conversation_id, "path": path,
+    }))
+}
+
+#[tauri::command]
 fn search_advanced(
     state: State<AppState>,
     query: Value,
@@ -943,6 +1003,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ping, stats, search, search_job, search_advanced, search_validate,
+            intelligence_status, intelligence_models, intelligence_retrieve,
+            intelligence_ask, conversation_list, conversation_create,
+            conversation_get, conversation_delete, conversation_export,
             advanced_queries_list, advanced_query_get, advanced_query_save, advanced_query_delete,
             message, thread, timeline, dashboard,
             correspondents, relationships,

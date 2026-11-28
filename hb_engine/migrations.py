@@ -277,11 +277,28 @@ CATALOG_V5 = (
     'SELECT rowid, body, actor, attachments_text FROM records',
 )
 
+RESEARCH_V6 = (
+    'CREATE TABLE IF NOT EXISTS research_conversations('
+    'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+    'workspace TEXT NOT NULL REFERENCES workspaces(name) ON DELETE CASCADE, '
+    'title TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)',
+    'CREATE TABLE IF NOT EXISTS research_turns('
+    'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+    'conversation_id INTEGER NOT NULL REFERENCES research_conversations(id) ON DELETE CASCADE, '
+    "role TEXT NOT NULL CHECK(role IN ('user','assistant')), "
+    'content TEXT NOT NULL, request_json TEXT, answer_json TEXT, model_name TEXT, '
+    'created_at TEXT NOT NULL)',
+    'CREATE INDEX IF NOT EXISTS research_turns_by_conversation '
+    'ON research_turns(conversation_id, id)',
+    'CREATE INDEX IF NOT EXISTS research_conversations_by_workspace '
+    'ON research_conversations(workspace, updated_at DESC)',
+)
+
 MIGRATIONS = {
     'archive': {1: ARCHIVE_V1, 2: ARCHIVE_V2, 3: ARCHIVE_V3, 4: ARCHIVE_V4,
                 5: ARCHIVE_V5, 6: ARCHIVE_V6},
     'research': {1: RESEARCH_V1, 2: RESEARCH_V2, 3: RESEARCH_V3, 4: RESEARCH_V4,
-                 5: RESEARCH_V5},
+                 5: RESEARCH_V5, 6: RESEARCH_V6},
     'catalog': {1: CATALOG_V1, 2: CATALOG_V2, 3: CATALOG_V3, 4: CATALOG_V4,
                 5: CATALOG_V5},
 }

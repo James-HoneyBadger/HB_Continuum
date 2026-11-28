@@ -10,7 +10,7 @@ HB Continuum is in active real-world use. It has moved beyond a proof of concept
 
 Continuum has grown from an email preservation utility into a private historical research workstation. The v0.4 beta supports email and exported Facebook records, unified and advanced Boolean search, historical timelines, evidence collections, a revision-tracked journal, relationship exploration, reports, and verified archival recovery. Local Ollama message and conversation summarization is optional.
 
-**Next milestone — v0.5, the Intelligence Update (in development):** scalable paged search beyond the former candidate ceiling is implemented on the intelligence development branch. Evidence-grounded conversational research with inspectable source references, additional document ingestion, and optional Honey Badger application interchange remain development objectives, not released capabilities.
+**Next milestone — v0.5, the Intelligence Update (in development):** scalable paged search and evidence-grounded research with validated, inspectable source references are implemented on the intelligence development branch. Additional document ingestion, semantic retrieval and optional Honey Badger application interchange remain development objectives, not released capabilities.
 
 ## Independent and interoperable
 
@@ -111,13 +111,13 @@ Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, rea
 
 ## Engine layout
 
-The engine implementation lives in `hb_engine/`, with the CLI, IPC server, archive, catalog, research overlay, migrations and search modules sharing one package. `dispatch.py` remains the command-line and PyInstaller entry point, and the historical top-level module names are compatibility aliases, so existing scripts and tests keep the same imports.
+The engine implementation lives in `hb_engine/`, with the CLI, IPC server, archive, catalog, research overlay, migrations, search and local intelligence modules sharing one package. `dispatch.py` remains the command-line and PyInstaller entry point, and the historical top-level module names are compatibility aliases, so existing scripts and tests keep the same imports.
 
 The archive uses three SQLite databases: `archive.sqlite3` for email, origins, the email FTS index and import history; `research.sqlite3` for workspaces, tags, metadata, collections, journal entries and reports; and `catalog.sqlite3` for source-independent records, revisions, attachment metadata and the record FTS index. Versioned, transactional migrations upgrade them in place, and opening a database written by a newer build is refused rather than risking damage.
 
 ## Privacy and limitations
 
-Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Verify backup and restore with `dispatch backup`, `dispatch verify-backup` and `dispatch restore`, and diagnose local consistency with `dispatch health` (see [Archive hardening](docs/ARCHIVE_HARDENING.md)). Failed imports may leave unindexed raw files; `dispatch recover-orphans` and `dispatch reindex` repair them from the preserved originals. Failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS, Gmail and iCloud Mail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search indexes plain-text bodies, HTML reduced to offline text, and attachment names, types and bounded text; PDF, Office and image contents are not converted. Facebook exports are read in place and never modified; the catalog preserves original record JSON, revision identity and attachment metadata, not attachment bytes. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Continuum as the sole evidence archive.
+Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Verify backup and restore with `dispatch backup`, `dispatch verify-backup` and `dispatch restore`, and diagnose local consistency with `dispatch health` (see [Archive hardening](docs/ARCHIVE_HARDENING.md)). Failed imports may leave unindexed raw files; `dispatch recover-orphans` and `dispatch reindex` repair them from the preserved originals. Failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS, Gmail and iCloud Mail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search indexes plain-text bodies, HTML reduced to offline text, and attachment names, types and bounded text; PDF, Office and image contents are not converted. Facebook exports are read in place and never modified; the catalog preserves original record JSON, revision identity and attachment metadata, not attachment bytes. Optional local AI summaries and research answers are derived text: historical evidence is treated as untrusted data, and model output cannot modify the archive. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Continuum as the sole evidence archive.
 
 ## Scheduled synchronization
 
@@ -142,6 +142,10 @@ Each account or catalog source can be verified independently: email checks are s
 Sources can be disabled — stopping new automatic imports while every historical record stays searchable — and re-enabled. Removal is preview-first: HB Continuum counts the unique messages, shared duplicates and raw bytes involved and explains what will be kept before anything is deleted. Messages shared with another account, and messages imported from `.eml` files, are never removed by an account removal. Removing a catalog source deletes its catalog records, not the original export files. See [Migration and compatibility](docs/MIGRATION.md) for the schemas and audit log.
 
 A research preference can hide records from disabled sources in unified search, the timeline and correspondent counts without deleting or re-enabling anything. Messages shared with an enabled account, `.eml`-only messages and explicit advanced queries are unaffected.
+
+## Intelligence workspace
+
+Ask natural-language questions about your documented history and inspect the records behind each answer. Retrieval works without any model: the engine builds bounded local queries, applies source, date, participant and collection filters, and returns source-linked evidence with stable identifiers, excerpts and explicit omission/truncation notices. With a local Ollama instance enabled, answers must return structured claims with evidence identifiers; citations that were not actually supplied are rejected and uncited claims are flagged. Contradictions, missing information and uncertainty are shown separately, and every cited record opens in the reader. Conversations live only in the research overlay and can be exported or deleted without touching evidence. AI remains disabled by default. See [Intelligence](docs/INTELLIGENCE.md).
 
 ## Evidence collections
 
@@ -211,6 +215,7 @@ Python engine over the versioned IPC protocol. Workspaces include an Overview
 dashboard (unique records, mailbox origins, undated counts, coverage, storage,
 records by year); a paged timeline with oldest/newest ordering, sender filter
 and date range; unified search with deep paging, date range and cancellation;
+grounded research in the Intelligence workspace;
 a nested boolean
 query builder; Sources; a
 background Import Center with preview, progress, cancellation and history;

@@ -1111,6 +1111,135 @@ class IPCServer:
 
         return self._start_job(work)
 
+    def _research_spec(self, params):
+        from .intelligence import ConversationStore, normalize_request
+        request = params.get('request', params)
+        spec = normalize_request(request)
+        if spec['conversation_id'] is not None:
+            store = ConversationStore(self.root)
+            try:
+                store.get(spec['conversation_id'])
+                if not spec['history']:
+                    spec['history'] = store.history(spec['conversation_id'])
+            finally:
+                store.close()
+        return spec
+
+    def _intelligence_status(self):
+        from .preferences import load as load_prefs
+        prefs = load_prefs(self.root)
+        return {'enabled': bool(prefs['ai_enabled']) and prefs['ai_backend'] == 'ollama',
+                'endpoint': prefs['ai_endpoint'], 'model': prefs['ai_model'],
+                'timeout': prefs['ai_timeout'],
+                'max_input_chars': prefs['ai_max_input_chars']}
+
+    def _intelligence_retrieve(self, params):
+        from .intelligence import Intelligence
+        return Intelligence(self.root).retrieve(self._research_spec(params))
+
+    def _start_intelligence_models(self):
+        from .intelligence import OllamaClient
+
+        def work(job_id, cancel_event):
+            return OllamaClient(self.root).status()
+
+        return self._start_job(work)
+
+    def _start_intelligence_ask(self, params):
+        from .intelligence import ConversationStore, Intelligence
+        spec = self._research_spec(params)
+
+        def work(job_id, cancel_event):
+            def progress(stage):
+                self._write(_event('progress', job_id=job_id, done=0, total=0,
+                                   hash='', status=stage))
+
+            result = Intelligence(self.root).ask(spec, cancel_event, progress)
+            conversation_id = spec['conversation_id']
+            if conversation_id is not None and not result.get('cancelled'):
+                store = ConversationStore(self.root)
+                try:
+                    store.append(
+                        conversation_id, 'user', spec['question'],
+                        request={key: value for key, value in spec.items()
+                                 if key != 'history'})
+                    if result.get('answer'):
+                        store.append(
+                            conversation_id, 'assistant', result['answer'],
+                            answer=result, model=result['model']['name'])
+                finally:
+                    store.close()
+            return result
+
+        return self._start_job(work)
+
+    def _conversation_list(self, params):
+        from .intelligence import ConversationStore
+        workspace = params.get('workspace')
+        if workspace is not None and (not isinstance(workspace, str) or not workspace.strip()):
+            raise IPCError('INVALID_PARAMS', 'workspace must be a non-empty string')
+        store = ConversationStore(self.root)
+        try:
+            return {'conversations': store.list(workspace)}
+        finally:
+            store.close()
+
+    def _conversation_create(self, params):
+        from .intelligence import ConversationStore
+        store = ConversationStore(self.root)
+        try:
+            return store.create(params.get('workspace', 'General'),
+                                params.get('title', 'Untitled research'))
+        finally:
+            store.close()
+
+    def _conversation_get(self, params):
+        from .intelligence import ConversationStore
+        store = ConversationStore(self.root)
+        try:
+            return store.get(params.get('conversation_id'))
+        finally:
+            store.close()
+
+    def _conversation_delete(self, params):
+        from .intelligence import ConversationStore
+        store = ConversationStore(self.root)
+        try:
+            return store.delete(params.get('conversation_id'))
+        finally:
+            store.close()
+
+    def _conversation_export(self, params):
+        from .intelligence import ConversationStore
+        store = ConversationStore(self.root)
+        try:
+            data = store.export(params.get('conversation_id'))
+        finally:
+            store.close()
+        destination = params.get('path')
+        if destination is None:
+            return {'conversation': data}
+        if not isinstance(destination, str) or not destination.strip():
+            raise IPCError('INVALID_PARAMS', 'path must be a non-empty string')
+        path = Path(destination).expanduser()
+        root = Path(self.root).resolve()
+        try:
+            path.resolve().relative_to(root)
+        except ValueError:
+            pass
+        else:
+            raise IPCError('INVALID_PARAMS', 'Export destination must be outside the archive')
+        if path.exists():
+            raise IPCError('INVALID_PARAMS', 'Export destination already exists')
+        if not path.parent.is_dir():
+            raise IPCError('INVALID_PARAMS', 'Export directory does not exist')
+        try:
+            path.write_text(json.dumps({'version': 1, 'conversation': data},
+                                       indent=2, ensure_ascii=False), encoding='utf-8')
+        except OSError as exc:
+            raise IPCError('EXPORT_FAILED', str(exc)) from None
+        return {'path': str(path), 'turns': len(data['turns'])}
+
     def _advanced_search(self, params):
         from .advanced_search import search_advanced
         if 'query' not in params:
@@ -1432,6 +1561,24 @@ class IPCServer:
                 return _result(request_id, self._search(params))
             if method == 'search_job':
                 return _result(request_id, self._start_search(params))
+            if method == 'intelligence_status':
+                return _result(request_id, self._intelligence_status())
+            if method == 'intelligence_models':
+                return _result(request_id, self._start_intelligence_models())
+            if method == 'intelligence_retrieve':
+                return _result(request_id, self._intelligence_retrieve(params))
+            if method == 'intelligence_ask':
+                return _result(request_id, self._start_intelligence_ask(params))
+            if method == 'conversation_list':
+                return _result(request_id, self._conversation_list(params))
+            if method == 'conversation_create':
+                return _result(request_id, self._conversation_create(params))
+            if method == 'conversation_get':
+                return _result(request_id, self._conversation_get(params))
+            if method == 'conversation_delete':
+                return _result(request_id, self._conversation_delete(params))
+            if method == 'conversation_export':
+                return _result(request_id, self._conversation_export(params))
             if method == 'search_advanced':
                 return _result(request_id, self._advanced_search(params))
             if method == 'advanced_queries_list':
