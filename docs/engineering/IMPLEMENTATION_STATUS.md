@@ -752,6 +752,13 @@ Verified locally on Python 3.12.0 and 3.13.7:
   passed CLI, search, health and IPC checks and reported `0.4.0-alpha`.
 - `python3 dispatch.py --version`: `dispatch.py 0.4.0-alpha`.
 
+The first hosted run exposed a test-only defect: the catalog health test left a
+SQLite connection open through the transaction context manager, which blocked
+temporary-directory cleanup on Windows. The test now closes it deterministically.
+GitHub Actions `CI` run 46107292217 then passed all 12 jobs on commit `ef78643`:
+Python 3.12 and 3.13 tests on Ubuntu, Python 3.13 on macOS and Windows, mypy,
+frontend build, three engine smoke builds and three scheduler smoke runs.
+
 No release tag or hosted release was created by this qualification; that
 decision remains with the repository owner. Unified search still materializes
 at most 5000 candidate results per query, and no 1,000,000-record run is
