@@ -888,14 +888,15 @@ class Archive:
         prefs=load(self.root)
         with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(),
                                timeout=prefs['network_timeout']) as m:
-            m.login(user,password)
+            m.login(user,normalize_password(host,password))
             status,lines=m.list()
             if status!='OK': raise RuntimeError('List failed')
         return parse_mailbox_list(lines)
 
     def sync_mailboxes(self, host, user, password, folders=None):
         """Synchronize several mailboxes in one run, reporting per-folder results."""
-        targets=list(folders) if folders else self.mailboxes(host,user,password)
+        targets=(list(folders) if folders is not None
+                 else self.mailboxes(host,user,password))
         if not targets: raise ValueError('No selectable mailboxes were found')
         result={'folders':{},'imported':0,'failed':0}
         for folder in targets:
@@ -927,8 +928,7 @@ class Archive:
         if not folder or any(c in folder for c in '\r\n\x00'):
             raise ValueError('Invalid mailbox name')
         quoted='"'+folder.replace('\\','\\\\').replace('"','\\"')+'"'
-        if host.lower()=='imap.gmail.com':
-            password=''.join(password.split())
+        password=normalize_password(host,password)
         from .preferences import load
         prefs=load(self.root)
         with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(), timeout=prefs['network_timeout']) as m:
@@ -967,6 +967,33 @@ MAX_IMAP_UID = 4294967295
 LIST_RE = None
 
 
+def normalize_password(host, password):
+    """Gmail app passwords are shown with spaces that must not be sent."""
+    if host.lower() == 'imap.gmail.com':
+        return ''.join(password.split())
+    return password
+
+
+def _unquote(value):
+    """Decode an IMAP quoted string, handling \\ and \" escapes."""
+    if isinstance(value, bytes):
+        value = value.decode('utf-8', 'replace')
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        inner = value[1:-1]
+        out = []
+        index = 0
+        while index < len(inner):
+            char = inner[index]
+            if char == '\\' and index + 1 < len(inner):
+                index += 1
+                out.append(inner[index])
+            else:
+                out.append(char)
+            index += 1
+        return ''.join(out)
+    return value
+
+
 def parse_mailbox_list(lines):
     """Names of selectable mailboxes from an IMAP LIST response."""
     global LIST_RE
@@ -976,14 +1003,19 @@ def parse_mailbox_list(lines):
     names=[]
     for raw in lines:
         if raw is None: continue
-        match=LIST_RE.match(raw if isinstance(raw,bytes) else str(raw).encode())
-        if not match: continue
+        if isinstance(raw, tuple):
+            header, literal = raw
+            match=LIST_RE.match(header if isinstance(header,bytes)
+                                else str(header).encode())
+            if not match: continue
+            name=literal.decode('utf-8','replace') if isinstance(literal,bytes) else str(literal)
+        else:
+            match=LIST_RE.match(raw if isinstance(raw,bytes) else str(raw).encode())
+            if not match: continue
+            name=_unquote(match.group('name').strip())
         flags=match.group('flags').decode('utf-8','replace').lower()
         if '\\noselect' in flags or '\\nonexistent' in flags:
             continue
-        name=match.group('name').strip().decode('utf-8','replace')
-        if name.startswith('"') and name.endswith('"'):
-            name=name[1:-1].replace('\\"','"')
         if not name: continue
         names.append(name)
     return names
