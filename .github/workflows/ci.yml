@@ -29,6 +29,17 @@ jobs:
       - name: Tests
         run: python -m unittest discover -s tests -v
 
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Documentation fidelity
+        run: python3 scripts/check_doc_fidelity.py
+
   scheduler:
     name: scheduler (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
