@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (c) 2026 Honey Badger Universe
 import io, json, os, sqlite3, subprocess, sys, tempfile, time, unittest
+from contextlib import closing
 from pathlib import Path
 from unittest import mock
 from dispatch import Archive
@@ -600,8 +601,9 @@ class IPCServerTests(unittest.TestCase):
         self.assertTrue(clean['available'])
         self.assertTrue(clean['consistent'])
         self.assertEqual((clean['records'],clean['index_rows']),(1,1))
-        with sqlite3.connect(self.root/'catalog.sqlite3') as conn:
-            conn.execute('DELETE FROM record_search')
+        with closing(sqlite3.connect(self.root/'catalog.sqlite3')) as conn:
+            with conn:
+                conn.execute('DELETE FROM record_search')
         broken=self.server.handle(request('health'))['result']['catalog']
         self.assertFalse(broken['consistent'])
         self.assertEqual(broken['index_missing_rows'],1)
