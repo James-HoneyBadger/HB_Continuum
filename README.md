@@ -171,6 +171,7 @@ guaranteed to be installed.
 - [Archive hardening](docs/ARCHIVE_HARDENING.md) and [migration](docs/MIGRATION.md)
 - [Benchmarks](docs/BENCHMARKS.md) and [implementation status](docs/engineering/IMPLEMENTATION_STATUS.md)
 - [Roadmap and known gaps](docs/ROADMAP.md)
+- [Platform qualification](PLATFORM_QUALIFICATION.md) and [security policy](SECURITY.md)
 
 ## Development principles
 
