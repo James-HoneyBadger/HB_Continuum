@@ -14,6 +14,34 @@ SYNC_MAX_ATTEMPTS = 3
 _HTML_BLOCK_TAGS = frozenset({'br','p','div','tr','li','hr','h1','h2','h3','h4','h5','h6','blockquote','pre'})
 _HTML_SKIP_TAGS = frozenset({'script','style','head','title'})
 
+def _sent_ts(date_header):
+    """UTC epoch seconds for a Date header, or None when it cannot be parsed."""
+    from datetime import timezone
+    from email.utils import parsedate_to_datetime
+    try:
+        moment=parsedate_to_datetime(str(date_header))
+    except (TypeError,ValueError,OverflowError):
+        return None
+    if moment is None: return None
+    if moment.tzinfo is None: moment=moment.replace(tzinfo=timezone.utc)
+    try:
+        return int(moment.timestamp())
+    except (OverflowError,OSError,ValueError):
+        return None
+
+def _timestamp(value, end_of_day=False):
+    """Epoch seconds for an ISO date, ISO datetime or epoch number."""
+    from datetime import datetime, timezone
+    if isinstance(value,(int,float)): return int(value)
+    text=str(value).strip(); date_only=len(text)==10
+    try:
+        moment=datetime.fromisoformat(text+('T00:00:00' if date_only else ''))
+    except ValueError:
+        raise ValueError(f'Invalid date: {value}') from None
+    if moment.tzinfo is None: moment=moment.replace(tzinfo=timezone.utc)
+    seconds=int(moment.timestamp())
+    return seconds+86399 if date_only and end_of_day else seconds
+
 class _HTMLText(HTMLParser):
     """Collect visible text from HTML markup, dropping scripts, styles and tags."""
     def __init__(self):
@@ -58,6 +86,9 @@ class Archive:
         CREATE TABLE IF NOT EXISTS attachments(message TEXT NOT NULL REFERENCES messages(hash), filename TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL, PRIMARY KEY(message,filename,sha256));
         CREATE INDEX IF NOT EXISTS attachments_sha256 ON attachments(sha256);
         CREATE TABLE IF NOT EXISTS sync_state(account TEXT NOT NULL, folder TEXT NOT NULL, validity TEXT NOT NULL, last_uid INTEGER NOT NULL DEFAULT 0, updated TEXT NOT NULL, PRIMARY KEY(account,folder,validity));''')
+        if 'sent_ts' not in {row[1] for row in self.db.execute('PRAGMA table_info(messages)')}:
+            self.db.execute('ALTER TABLE messages ADD COLUMN sent_ts INTEGER')
+        self.db.execute('CREATE INDEX IF NOT EXISTS messages_sent_ts ON messages(sent_ts)')
     @staticmethod
     def _part_text(part):
         """Extract decoded text from a MIME part; never raises on hostile charsets."""
@@ -132,7 +163,7 @@ class Archive:
                      for name,ctype,payload in self._attachment_parts(msg)]
         fields=[str(msg.get(k,'')) for k in ('Subject','From','Date','Message-ID','In-Reply-To')]
         with self.db:
-            cur=self.db.execute('INSERT OR IGNORE INTO messages VALUES(?,?,?,?,?,?,?)',(digest,*fields,body))
+            cur=self.db.execute('INSERT OR IGNORE INTO messages(hash,subject,sender,date,message_id,reply_to,body,sent_ts) VALUES(?,?,?,?,?,?,?,?)',(digest,*fields,body,_sent_ts(fields[2])))
             if cur.rowcount: self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(digest,fields[0],fields[1],body))
             for filename,content_type,size,sha256 in attachments:
                 self.db.execute('INSERT OR IGNORE INTO attachments VALUES(?,?,?,?,?)',(digest,filename,content_type,size,sha256))
@@ -140,22 +171,39 @@ class Archive:
                 self.db.execute('INSERT OR IGNORE INTO origins VALUES(?,?,?,?,?)',(*origin,digest))
                 if self.db.execute('SELECT hash FROM origins WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone()[0]!=digest: raise ValueError('Origin conflict')
         return digest
-    def find(self, query, limit=100):
+    def find(self, query, limit=100, sender=None, after=None, before=None):
+        """Full-text search with optional sender and date-range filters.
+
+        A sender match is a case-insensitive substring of the From header. Dates
+        accept ISO dates, ISO datetimes or epoch seconds; a date-only bound covers
+        the whole day. Messages with unparseable dates are excluded by date filters.
+        """
         limit=max(1,min(int(limit),5000))
-        try:
-            return self.db.execute('SELECT hash,subject,sender FROM search WHERE search MATCH ? LIMIT ?', (query,limit)).fetchall()
-        except sqlite3.OperationalError:
-            phrase='"'+query.replace('"','""')+'"'
+        sql=('SELECT m.hash,m.subject,m.sender FROM messages m WHERE m.hash IN'
+             ' (SELECT hash FROM search WHERE search MATCH ?)')
+        params=[]
+        if sender:
+            escaped=sender.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
+            sql+=" AND m.sender LIKE ? ESCAPE '\\'"; params.append(f'%{escaped}%')
+        if after is not None:
+            sql+=' AND m.sent_ts IS NOT NULL AND m.sent_ts>=?'; params.append(_timestamp(after))
+        if before is not None:
+            sql+=' AND m.sent_ts IS NOT NULL AND m.sent_ts<=?'; params.append(_timestamp(before,end_of_day=True))
+        sql+=' ORDER BY m.rowid DESC LIMIT ?'
+        for term in (query,'"'+query.replace('"','""')+'"'):
             try:
-                return self.db.execute('SELECT hash,subject,sender FROM search WHERE search MATCH ? LIMIT ?', (phrase,limit)).fetchall()
+                return self.db.execute(sql,(term,*params,limit)).fetchall()
             except sqlite3.OperationalError:
-                return []
+                continue
+        return []
     def reindex(self):
-        """Rebuild message metadata and the search index from the stored raw files.
+        """Rebuild metadata, search and attachments, and adopt orphaned raw files.
 
         Safe and idempotent: raw mail is only read, never rewritten, and an
         interrupted run can simply be restarted. Repairs archives written by older
-        versions (for example HTML-only mail that previously stored an empty body).
+        versions (for example HTML-only mail that previously stored an empty body)
+        and recovers messages left behind as unindexed files by an interrupted
+        import. Returns the number of messages rebuilt or recovered.
         """
         rebuilt=0
         for (digest,) in self.db.execute('SELECT hash FROM messages').fetchall():
@@ -169,13 +217,20 @@ class Archive:
                          for name,ctype,payload in self._attachment_parts(msg)]
             fields=[str(msg.get(k,'')) for k in ('Subject','From','Date','Message-ID','In-Reply-To')]
             with self.db:
-                self.db.execute('UPDATE messages SET subject=?,sender=?,date=?,message_id=?,reply_to=?,body=? WHERE hash=?',(*fields,body,digest))
+                self.db.execute('UPDATE messages SET subject=?,sender=?,date=?,message_id=?,reply_to=?,body=?,sent_ts=? WHERE hash=?',(*fields,body,_sent_ts(fields[2]),digest))
                 self.db.execute('DELETE FROM search WHERE hash=?',(digest,))
                 self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(digest,fields[0],fields[1],body))
                 self.db.execute('DELETE FROM attachments WHERE message=?',(digest,))
                 for filename,content_type,size,sha256 in attachments:
                     self.db.execute('INSERT OR IGNORE INTO attachments VALUES(?,?,?,?,?)',(digest,filename,content_type,size,sha256))
             rebuilt+=1
+        for path in sorted(self.raw.glob('*.eml')):
+            digest=path.stem
+            if len(digest)!=64 or any(c not in '0123456789abcdef' for c in digest): continue
+            if self.db.execute('SELECT 1 FROM messages WHERE hash=?',(digest,)).fetchone(): continue
+            raw=path.read_bytes()
+            if hashlib.sha256(raw).hexdigest()!=digest: continue
+            self.ingest(raw); rebuilt+=1
         return rebuilt
     def attachments(self, digest):
         """Attachment metadata for one message, ordered by filename."""
@@ -350,11 +405,11 @@ class Archive:
 def main():
     import getpass
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); q.add_argument('--sender'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
     a=p.parse_args(); ar=Archive(a.archive)
     if a.cmd=='import':
         for f in a.files: print(ar.ingest(Path(f).read_bytes()))
-    elif a.cmd=='search': print(json.dumps(ar.find(a.query),indent=2))
+    elif a.cmd=='search': print(json.dumps(ar.find(a.query,a.limit,a.sender,a.after,a.before),indent=2))
     elif a.cmd=='verify':
         bad=ar.verify(); print(json.dumps(bad)); return int(bool(bad))
     elif a.cmd=='reindex': print(ar.reindex())

@@ -235,6 +235,45 @@ class Tests(unittest.TestCase):
             self.assertEqual(self.a.sync('host','user','pw'),1)
         self.assertEqual(m.uid.call_args_list[2].args,('search',None,'ALL'))
         self.assertEqual(self.a.stats()['origins'],2)
+    def test_search_filters_by_sender_and_date(self):
+        def message(mid,sender,date):
+            return (f'From: {sender}\r\nDate: {date}\r\nMessage-ID: <{mid}>\r\nSubject: Statement\r\n\r\nledger note\r\n').encode()
+        self.a.ingest(message('a@example.invalid','Alice <alice@example.invalid>','Mon, 1 Jan 2024 12:00:00 +0000'))
+        self.a.ingest(message('b@example.invalid','bob@example.invalid','Tue, 2 Jan 2024 23:30:00 -0800'))
+        self.a.ingest(message('c@example.invalid','CAROL@example.invalid','not a date'))
+        self.assertEqual(len(self.a.find('ledger')),3)
+        self.assertEqual([r[2] for r in self.a.find('ledger',sender='alice')],['Alice <alice@example.invalid>'])
+        self.assertEqual([r[2] for r in self.a.find('ledger',after='2024-01-02')],['bob@example.invalid'])
+        self.assertEqual([r[2] for r in self.a.find('ledger',before='2024-01-01')],['Alice <alice@example.invalid>'])
+        self.assertEqual([r[2] for r in self.a.find('ledger',after='2024-01-01',before='2024-01-01')],['Alice <alice@example.invalid>'])
+        self.assertEqual(self.a.find('ledger',sender='alice',after='2024-01-02'),[])
+        self.assertEqual(self.a.find('ledger',sender='%'),[])
+        self.assertRaises(ValueError,self.a.find,'ledger',100,None,'not-a-date')
+    def test_reindex_backfills_dates_for_legacy_archive(self):
+        dated=self.a.ingest(b'Date: Mon, 1 Jan 2024 12:00:00 +0000\r\nMessage-ID: <d@example.invalid>\r\n\r\ndated\r\n')
+        undated=self.a.ingest(RAW)
+        with self.a.db:
+            self.a.db.execute('UPDATE messages SET sent_ts=NULL')
+            self.a.db.execute('DELETE FROM search')
+        self.assertEqual(self.a.reindex(),2)
+        stamp=lambda h: self.a.db.execute('SELECT sent_ts FROM messages WHERE hash=?',(h,)).fetchone()[0]
+        self.assertEqual(stamp(dated),1704110400)
+        self.assertIsNone(stamp(undated))
+        self.assertEqual(len(self.a.find('dated')),1)
+    def test_reindex_adopts_orphaned_raw_file(self):
+        import hashlib as hashlib_module
+        raw=b'Subject: Orphaned\r\nMessage-ID: <orphan@example.invalid>\r\n\r\norphaned body\r\n'
+        digest=hashlib_module.sha256(raw).hexdigest()
+        (self.a.raw/(digest+'.eml')).write_bytes(raw)
+        self.assertEqual(self.a.find('orphaned'),[])
+        self.assertEqual(self.a.reindex(),1)
+        self.assertEqual(len(self.a.find('orphaned')),1)
+        self.assertEqual(self.a.verify(),[])
+        self.assertEqual(self.a.reindex(),1)
+    def test_reindex_ignores_misnamed_raw_file(self):
+        (self.a.raw/('0'*64+'.eml')).write_bytes(b'Subject: Fake\r\n\r\nnot matching its name\r\n')
+        self.assertEqual(self.a.reindex(),0)
+        self.assertEqual(self.a.find('fake'),[])
     def test_version_flag(self):
         out=io.StringIO()
         with mock.patch('sys.argv',['dispatch.py','--version']), contextlib.redirect_stdout(out):

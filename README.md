@@ -57,7 +57,7 @@ Python 3.12+ with SQLite FTS5 and optional Tkinter.
 ```sh
 python3 dispatch.py --version
 python3 dispatch.py import sample.eml
-python3 dispatch.py search invoice
+python3 dispatch.py search invoice --sender alice@example.invalid --after 2024-01-01 --before 2024-12-31
 python3 dispatch.py verify
 python3 dispatch.py reindex
 python3 dispatch.py failures
@@ -74,7 +74,7 @@ Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, rea
 
 ## Privacy and limitations
 
-Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is never rendered; HTML-only messages contribute their visible text to search. `reindex` rebuilds message metadata and the search index from the preserved raw files, which repairs archives written by older versions and can be restarted safely if interrupted. Use an encrypted disk and keep all real mail and credentials outside the repository. Back up the entire archive with the app closed. Failed imports may leave unindexed raw files; failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS and Gmail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Attachments are extracted from each message and stored once by SHA-256, so identical files shared across messages and accounts consume a single blob; `attachments`, `attachment` and `verify-attachments` list, restore and check them. Search indexes message body text plus the text of text-like attachments, not binary attachments or rendered HTML markup. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Dispatch as the sole evidence archive.
+Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is never rendered; HTML-only messages contribute their visible text to search. `reindex` rebuilds message metadata, the search index and attachment records from the preserved raw files, adopts raw files left unindexed by an interrupted import, repairs archives written by older versions and can be restarted safely if interrupted. Use an encrypted disk and keep all real mail and credentials outside the repository. Back up the entire archive with the app closed. Failed imports may leave unindexed raw files; failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS and Gmail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Attachments are extracted from each message and stored once by SHA-256, so identical files shared across messages and accounts consume a single blob; `attachments`, `attachment` and `verify-attachments` list, restore and check them. Search indexes message body text plus the text of text-like attachments, not binary attachments or rendered HTML markup. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Dispatch as the sole evidence archive.
 
 ## Scheduled synchronization (macOS)
 

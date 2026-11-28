@@ -72,10 +72,11 @@ python3 dispatch.py --archive ~/dispatch-practice search '"paid in full"'
 python3 dispatch.py --archive ~/dispatch-practice search 'invoice AND payment'
 python3 dispatch.py --archive ~/dispatch-practice search 'subject:invoice'
 python3 dispatch.py --archive ~/dispatch-practice search 'sender:accounts'
+python3 dispatch.py --archive ~/dispatch-practice search invoice --sender accounts@example.invalid --after 2024-01-01 --before 2024-12-31
 python3 dispatch.py --archive ~/dispatch-practice gui
 ```
 
-Search uses SQLite FTS5 over subject, sender and plain-text body. Search returns up to 100 matches; it is not an exhaustive report. HTML-only messages may lack searchable body text; attachment contents and all headers are not indexed. The GUI lets you import EML files, search and select messages to read their plain-text content. It does not execute HTML or open attachments.
+Search uses SQLite FTS5 over subject, sender and message body. Bodies come from `text/plain`, fall back to visible text in HTML-only mail, and use the text of attached files only when a message has no ordinary body. `--sender` filters on a case-insensitive substring of the From header; `--after` and `--before` filter on the message Date and accept ISO dates, ISO datetimes or epoch seconds, where a date-only bound covers the whole day. Search returns up to 100 matches unless `--limit` is given; it is not an exhaustive report. Binary attachments and headers other than those indexed are not searchable. The GUI lets you import EML files, search and select messages to read their plain-text content. It does not execute HTML or open attachments.
 
 ## 4. Connect a real mailbox, cautiously
 
