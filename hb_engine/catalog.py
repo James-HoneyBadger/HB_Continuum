@@ -4,6 +4,7 @@
 import json, sqlite3
 from pathlib import Path
 
+from .db import connect as db_connect
 from .migrations import (MIGRATIONS as _MIGRATIONS, apply as migrate,
                          attachment_search_text, target_version)
 
@@ -23,7 +24,7 @@ def catalog_health(root):
     if not database.is_file():
         return {'available': False}
     try:
-        conn = sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True, timeout=30)
+        conn = db_connect(database.resolve().as_uri() + '?mode=ro', uri=True, timeout=30)
     except sqlite3.Error:
         return {'available': False}
     try:
@@ -104,7 +105,7 @@ class Catalog:
     def __init__(self, root):
         self.root = Path(root).expanduser()
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        self.db = sqlite3.connect(self.root / 'catalog.sqlite3', timeout=30)
+        self.db = db_connect(self.root / 'catalog.sqlite3', timeout=30)
         self.db.execute('PRAGMA foreign_keys=ON')
         self._migrate()
 

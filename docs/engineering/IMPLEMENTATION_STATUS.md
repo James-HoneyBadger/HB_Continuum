@@ -1032,3 +1032,32 @@ interchange (Phase V).
 - Recommendation: **GO** for a source-only v0.5.0-beta publication by the
   owner, subject to those documented limitations. This is not a security
   certification or a claim of comprehensive platform support.
+
+## Encryption foundation feasibility (2026-11-28)
+
+- Production database connections now route through `hb_engine/db.py`.
+  Without a key the service delegates to standard-library SQLite, preserving
+  current archives and tests. With a raw 32-byte key it requires the optional
+  `sqlcipher3` binding and never falls back to plaintext.
+- SQLCipher 4.20.0 community was evaluated through `sqlcipher3` 0.6.5.
+  Licensing is BSD-3-Clause plus Zlib, compatible with GPL-3.0-only. FTS5,
+  migrations 1–6, read-only enforcement and the native backup API worked on
+  synthetic encrypted databases.
+- The ARM64 macOS wheel was packaged with PyInstaller using
+  `--collect-all sqlcipher3`; the packaged executable created and reopened an
+  encrypted FTS5 database. A packaged `hb-engine` built with the binding
+  present passed the existing engine smoke test.
+- Correct credentials opened the prototype; a wrong key, a missing key and
+  plaintext SQLite all failed. No plaintext fallback occurred.
+- Verification: 332 tests on Python 3.12.0 and 3.13.7. Without the optional
+  binding, 328 passed and 4 skipped; with `sqlcipher3` installed in a temporary
+  Python 3.13 environment, 330 passed and 2 skipped. `mypy==2.4.1` was clean on
+  26 files. The packaged engine smoke test passed with and without the binding
+  installed.
+- Not implemented: archive encryption or migration, key generation/storage,
+  OS keychain integration, key rotation, recovery, keyed backup/restore and
+  migration workflows, a shared exception abstraction for SQLCipher's distinct
+  DB-API exceptions, or any production encryption claim. Existing archives
+  remain plaintext.
+- Decision: SQLCipher is technically viable for a later encryption milestone.
+  See [ADR-004](ADR-004-encrypted-databases.md).

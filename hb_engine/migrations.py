@@ -13,8 +13,9 @@ database header and updates inside the same transaction as the DDL. Opening
 a database written by a newer build raises instead of proceeding, so an older
 binary cannot silently damage a newer archive.
 """
-import json, sqlite3
+import json
 from pathlib import Path
+from .db import connect as db_connect
 
 from .timestamps import parse_timestamp
 
@@ -323,7 +324,7 @@ def has_schema(db):
 
 def snapshot(db, path):
     """Copy the database through SQLite's backup API before migrating."""
-    destination = sqlite3.connect(str(path))
+    destination = db_connect(str(path))
     try:
         db.backup(destination)
     finally:
@@ -372,7 +373,7 @@ def report(root, dry_run=False, snapshot_=True):
         if not path.is_file():
             result[name] = {'present': False, 'target': target_version(name)}
             continue
-        conn = sqlite3.connect(str(path), timeout=30)
+        conn = db_connect(str(path), timeout=30)
         try:
             version = current_version(conn)
             if dry_run:

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
+from .db import connect as db_connect
 from .migrations import apply as migrate
 from .preferences import load as load_prefs
 from .unified import RRF_K, search_unified_page
@@ -102,7 +103,7 @@ def _utcnow():
 def _ro_connect(path):
     if not Path(path).is_file():
         return None
-    conn = sqlite3.connect(str(path), timeout=30)
+    conn = db_connect(str(path), timeout=30)
     conn.execute('PRAGMA query_only=ON')
     return conn
 
@@ -800,7 +801,7 @@ class ConversationStore:
 
     def __init__(self, root):
         self.root = Path(root).expanduser()
-        self.db = sqlite3.connect(self.root / 'research.sqlite3', timeout=30)
+        self.db = db_connect(self.root / 'research.sqlite3', timeout=30)
         self.db.execute('PRAGMA foreign_keys=ON')
         migrate(self.db, 'research')
         self.db.execute(

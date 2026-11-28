@@ -15,6 +15,7 @@ import tempfile
 from contextlib import closing
 from pathlib import Path
 
+from . import db as db_service
 from .migrations import DATABASES as _DATABASES
 from .sync_lock import sync_lock
 
@@ -30,10 +31,10 @@ def digest(path):
 
 def connect(path):
     """Open a database read-only through a file URI, so validation cannot write."""
-    return sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
+    return db_service.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
 
 def copydb(source, target):
-    with closing(connect(source)) as src, closing(sqlite3.connect(target)) as dst:
+    with closing(connect(source)) as src, closing(db_service.connect(target)) as dst:
         src.backup(dst)
         if dst.execute('PRAGMA journal_mode=DELETE').fetchone()[0].lower() != 'delete':
             raise ValueError('Cannot normalize snapshot journal mode')

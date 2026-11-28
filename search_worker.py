@@ -3,9 +3,10 @@
 """Background search for the Tk workstation. No widgets are touched off-thread."""
 import queue, sqlite3, threading
 from pathlib import Path
+from hb_engine.db import connect as db_connect
 
 def open_readonly(root):
-    conn = sqlite3.connect(str(Path(root) / 'archive.sqlite3'), timeout=30)
+    conn = db_connect(str(Path(root) / 'archive.sqlite3'), timeout=30)
     conn.execute('PRAGMA query_only=ON')
     return conn
 

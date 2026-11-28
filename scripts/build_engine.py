@@ -26,7 +26,8 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OPTIONAL_MODULES = ('keyring', 'cryptography', 'tkinter', 'pypdf', 'docx')
+OPTIONAL_MODULES = ('keyring', 'cryptography', 'tkinter', 'pypdf', 'docx',
+                    'sqlcipher3')
 VERSION_PATTERN = re.compile(r'''^__version__ = ['"]([^'"]+)['"]''', re.MULTILINE)
 
 
@@ -69,7 +70,12 @@ def pyinstaller_command():
                '--specpath', str(ROOT / 'build')]
     for module in OPTIONAL_MODULES:
         if importlib.util.find_spec(module) is not None:
-            command += ['--hidden-import', module]
+            if module == 'sqlcipher3':
+                # The service imports the binding dynamically, so collect its
+                # extension and bundled SQLCipher runtime explicitly.
+                command += ['--collect-all', 'sqlcipher3']
+            else:
+                command += ['--hidden-import', module]
     command.append(str(ROOT / 'dispatch.py'))
     return command
 

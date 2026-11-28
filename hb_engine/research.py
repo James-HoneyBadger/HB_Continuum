@@ -5,6 +5,7 @@ import csv, json, sqlite3, os
 from contextlib import closing
 from pathlib import Path
 from datetime import datetime, timezone
+from .db import connect as db_connect
 
 COLUMNS=('subject','sender','date','message_id','reply_to','hash')
 GROUPS=('sender','year','tag')
@@ -62,7 +63,7 @@ def journal_date(value):
 class Research:
     def __init__(self,archive):
         self.archive=archive
-        self.db=sqlite3.connect(archive.root/'research.sqlite3',timeout=30)
+        self.db=db_connect(archive.root/'research.sqlite3',timeout=30)
         self.db.execute('PRAGMA foreign_keys=ON')
         from .migrations import apply as migrate
         migrate(self.db, 'research')
@@ -372,7 +373,7 @@ class Research:
                     if catalog is None:
                         path=self.archive.root/'catalog.sqlite3'
                         if path.is_file():
-                            catalog=sqlite3.connect(str(path),timeout=30)
+                            catalog=db_connect(str(path),timeout=30)
                             catalog.execute('PRAGMA query_only=ON')
                     if catalog is not None:
                         found=catalog.execute(
@@ -403,7 +404,7 @@ class Research:
         if item_type=='catalog':
             path=self.archive.root/'catalog.sqlite3'
             if not path.is_file(): raise ValueError('Unknown catalog record')
-            with closing(sqlite3.connect(str(path),timeout=30)) as conn:
+            with closing(db_connect(str(path),timeout=30)) as conn:
                 conn.execute('PRAGMA query_only=ON')
                 if not conn.execute('SELECT 1 FROM records WHERE record_id=?',(item_id,)).fetchone():
                     raise ValueError('Unknown catalog record')

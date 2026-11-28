@@ -6,10 +6,11 @@ Summaries are derived, replaceable information. They are never written to
 archive.sqlite3 and never modify raw EML. Every request passes the opt-in
 gate first: ai.enabled must be true and ai.backend must be 'ollama'.
 """
-import hashlib, json, sqlite3, threading, urllib.request, urllib.parse, urllib.error
+import hashlib, json, threading, urllib.request, urllib.parse, urllib.error
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
+from .db import connect as db_connect
 from .preferences import load as load_prefs
 
 MAX_RESPONSE = 1_000_000
@@ -34,7 +35,7 @@ def _digest(text):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 def _ro_connect(root):
-    conn = sqlite3.connect(str(Path(root) / 'archive.sqlite3'), timeout=30)
+    conn = db_connect(str(Path(root) / 'archive.sqlite3'), timeout=30)
     conn.execute('PRAGMA query_only=ON')
     return conn
 
@@ -74,7 +75,7 @@ class Summarizer:
     def __init__(self, root, prefs=None):
         self.root = Path(root).expanduser()
         self.prefs = prefs if prefs is not None else load_prefs(self.root)
-        self.db = sqlite3.connect(self.root / 'research.sqlite3', timeout=30)
+        self.db = db_connect(self.root / 'research.sqlite3', timeout=30)
         self.db.execute('PRAGMA foreign_keys=ON')
         from .migrations import apply as migrate
         migrate(self.db, 'research')

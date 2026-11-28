@@ -8,6 +8,7 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from dispatch import Archive
 
@@ -33,6 +34,15 @@ class BuildEngineSmokeTests(unittest.TestCase):
                       if entry['name'] == 'hb-continuum')
         self.assertEqual({package['version'], tauri['version'],
                           cargo['package']['version'], locked}, {__version__})
+
+    def test_packaging_collects_optional_sqlcipher_binding(self):
+        build_engine = load_build_engine()
+        with mock.patch.object(build_engine.importlib.util, 'find_spec',
+                               side_effect=lambda name: object()
+                               if name == 'sqlcipher3' else None):
+            command = build_engine.pyinstaller_command()
+        self.assertIn('--collect-all', command)
+        self.assertIn('sqlcipher3', command)
 
     def test_build_smoke_expects_the_engine_version(self):
         from hb_engine.dispatch import __version__

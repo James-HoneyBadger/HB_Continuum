@@ -4,6 +4,7 @@
 import shutil, argparse, hashlib, imaplib, sqlite3, ssl, json, os, tempfile
 from contextlib import closing
 from datetime import datetime, timezone
+from .db import connect as db_connect
 from pathlib import Path
 
 __version__ = '0.5.0-beta'
@@ -224,7 +225,7 @@ def relationship_graph(conn, root, limit_nodes=30, max_edges=200, after=None, be
         if before is not None:
             clauses.append('occurred_at<?')
             params.append(datetime.fromtimestamp(before, timezone.utc).isoformat())
-        with closing(sqlite3.connect(str(catalog_path), timeout=30)) as conn:
+        with closing(db_connect(str(catalog_path), timeout=30)) as conn:
             conn.execute('PRAGMA query_only=ON')
             catalog_rows = conn.execute(
                 'SELECT source_type,source_key,actor,record_id,occurred_at '
@@ -309,7 +310,7 @@ class Archive:
         self.raw = self.root / 'raw'
         if self.raw.is_symlink() or (self.root / 'archive.sqlite3').is_symlink(): raise ValueError('Unsafe archive path')
         self.raw.mkdir(mode=0o700, exist_ok=True)
-        self.db = sqlite3.connect(self.root / 'archive.sqlite3', timeout=30)
+        self.db = db_connect(self.root / 'archive.sqlite3', timeout=30)
         self.db.execute('PRAGMA foreign_keys=ON')
         self.db.execute('PRAGMA busy_timeout=30000')
         try:
@@ -488,7 +489,7 @@ class Archive:
             else: raise ValueError('Unknown catalog source')
         files=records=size=0
         if catalog_path is not None:
-            with closing(sqlite3.connect(str(catalog_path),timeout=30)) as conn:
+            with closing(db_connect(str(catalog_path),timeout=30)) as conn:
                 conn.execute('PRAGMA query_only=ON')
                 files,size=conn.execute(
                     'SELECT count(*),coalesce(sum(size),0) FROM source_files WHERE source_type=?',
@@ -552,7 +553,7 @@ class Archive:
                 return {'source':source,'source_key':source_key,'checked':0,'ok':0,
                         'bad':[],'missing':[],'cancelled':False}
             raise ValueError('Unknown catalog source')
-        with closing(sqlite3.connect(str(catalog_path),timeout=30)) as conn:
+        with closing(db_connect(str(catalog_path),timeout=30)) as conn:
             conn.execute('PRAGMA query_only=ON')
             rows=conn.execute(
                 'SELECT file_hash,path FROM source_files WHERE source_type=? ORDER BY path',

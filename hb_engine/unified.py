@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from .catalog import Catalog
+from .db import connect as db_connect
 
 SNIPPET_LEN = 200
 RRF_K = 60
@@ -57,7 +58,7 @@ def _tagged_hashes(root, tags):
     path = Path(root) / 'research.sqlite3'
     if not path.is_file():
         return set()
-    conn = sqlite3.connect(str(path), timeout=30)
+    conn = db_connect(str(path), timeout=30)
     conn.execute('PRAGMA query_only=ON')
     try:
         values = list(dict.fromkeys(tags))
@@ -97,7 +98,7 @@ def _disabled_sources(root):
     path = Path(root) / 'archive.sqlite3'
     if not path.is_file():
         return set(), set()
-    conn = sqlite3.connect(str(path), timeout=30)
+    conn = db_connect(str(path), timeout=30)
     conn.execute('PRAGMA query_only=ON')
     try:
         rows = conn.execute(
@@ -112,7 +113,7 @@ def _disabled_sources(root):
 
 def _email_count(root, query, senders=None, after=None, before=None,
                  disabled_accounts=None):
-    conn = sqlite3.connect(str(Path(root) / 'archive.sqlite3'), timeout=30)
+    conn = db_connect(str(Path(root) / 'archive.sqlite3'), timeout=30)
     try:
         extra, params = _email_where(senders, after, before, disabled_accounts)
         sql = ('SELECT count(*) FROM search JOIN messages m ON m.hash = search.hash '
@@ -220,7 +221,7 @@ def _email_stream(root, query, senders, kinds, tagged, after, before,
     path = Path(root) / 'archive.sqlite3'
     if not path.is_file():
         return None
-    conn = sqlite3.connect(str(path), timeout=30)
+    conn = db_connect(str(path), timeout=30)
     conn.execute('PRAGMA query_only=ON')
     extra, params = _email_where(senders, after, before, disabled_accounts)
     sql = ("SELECT search.hash, m.subject, m.sender, m.date, "
@@ -247,7 +248,7 @@ def _catalog_stream(root, query, senders, kinds, after, before, sources, cancel)
     path = Path(root) / 'catalog.sqlite3'
     if not path.is_file() or not sources:
         return None
-    conn = sqlite3.connect(str(path), timeout=30)
+    conn = db_connect(str(path), timeout=30)
     conn.execute('PRAGMA query_only=ON')
     source_clause = ','.join('?' for _ in sources)
     clauses = [f'r.source_type IN ({source_clause})', 'record_search MATCH ?']
@@ -431,7 +432,7 @@ def validate_query(root, query):
         return {'valid': False, 'message': 'This archive has no searchable index.'}
     for filename, sql in attempts:
         tried += 1
-        conn = sqlite3.connect(str(root / filename), timeout=30)
+        conn = db_connect(str(root / filename), timeout=30)
         conn.execute('PRAGMA query_only=ON')
         try:
             conn.execute(sql, (query,)).fetchone()

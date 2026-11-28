@@ -8,6 +8,7 @@ request_id with either result or error. Long-running jobs emit progress
 events and a terminal job_complete or job_error event.
 """
 import hashlib, json, sqlite3, sys, threading, uuid
+from .db import connect as db_connect
 from pathlib import Path
 
 PROTOCOL_VERSION = 1
@@ -26,7 +27,7 @@ def _archive_stats(root):
     path = Path(root) / 'archive.sqlite3'
     if not path.is_file():
         raise IPCError('ARCHIVE_NOT_AVAILABLE', 'The selected archive has no archive.sqlite3')
-    conn = sqlite3.connect(str(path), timeout=30)
+    conn = db_connect(str(path), timeout=30)
     conn.execute('PRAGMA query_only=ON')
     try:
         messages = conn.execute('SELECT count(*) FROM messages').fetchone()[0]
@@ -39,7 +40,7 @@ def _valid_hash(value):
     return isinstance(value, str) and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
 
 def _ro_connect(path):
-    conn = sqlite3.connect(str(path), timeout=30)
+    conn = db_connect(str(path), timeout=30)
     conn.execute('PRAGMA query_only=ON')
     return conn
 

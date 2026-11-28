@@ -16,6 +16,7 @@ import sqlite3
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
+from .db import connect as db_connect
 
 MAX_DEPTH = 6
 MAX_NODES = 100
@@ -152,7 +153,7 @@ def normalize_query(tree):
 
 
 def _connect(path):
-    conn = sqlite3.connect(str(path), timeout=30)
+    conn = db_connect(str(path), timeout=30)
     conn.execute('PRAGMA query_only=ON')
     return conn
 
