@@ -146,6 +146,28 @@ def _extract_docx(raw):
     return '\n'.join(parts), [], 'python-docx'
 
 
+def extract_attachment_text(filename, raw, mime_type=None):
+    """Best-effort text from an email attachment; returns '' when unavailable.
+
+    Only PDF and DOCX need this path: text attachments are decoded directly by
+    the MIME indexer. Failures are contained so one malformed attachment can
+    never reject an otherwise valid message.
+    """
+    extension = Path(str(filename or '')).suffix.lower()
+    kinds = {str(mime_type or '').lower()}
+    is_pdf = extension == '.pdf' or 'application/pdf' in kinds
+    is_docx = extension == '.docx' or any('wordprocessingml' in kind for kind in kinds)
+    if not (is_pdf or is_docx):
+        return ''
+    if not isinstance(raw, bytes) or len(raw) > MAX_FILE_BYTES:
+        return ''
+    try:
+        text = _extract_pdf(raw)[0] if is_pdf else _extract_docx(raw)[0]
+    except DocumentError:
+        return ''
+    return text[:MAX_TEXT_CHARS]
+
+
 def extract_document(path):
     """Extract text and page references; never executes document content."""
     path = Path(path)

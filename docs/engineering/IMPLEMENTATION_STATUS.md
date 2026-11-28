@@ -712,8 +712,10 @@ Scheduler verification status:
 ## Known limitations
 
 - No encryption at rest; no OAuth. HTML is reduced to offline text but never
-  rendered. PDF, Office and image attachment contents are not converted, so
-  only attachment names, MIME types and text payloads are searchable.
+  rendered. PDF and DOCX email attachments are converted only when the
+  optional local extractors are installed; image and legacy Office contents
+  are not converted, so those attachments expose names, MIME types and any
+  text payloads rather than their visual content.
 - Cross-platform scheduling verified on all three operating systems via CI.
 - Archive locking is implemented for POSIX and Windows and tested with real
   processes on macOS; the Windows code path has not yet run on Windows in
@@ -960,9 +962,23 @@ and broader catalog source registration.
   and 3.13.7; `mypy==2.4.1` clean on 25 files; frontend type-check and
   production build pass; `cargo check` and `cargo test` pass.
 
+## v0.5 Intelligence Update — Phase IV: email attachment text (2026-11-28)
+
+- Email ingestion now sends PDF and DOCX attachments through the same local
+  extractors used for standalone documents. Extracted attachment text joins
+  the existing FTS body, so searches and grounded research can cite terms
+  that occur only inside an attachment.
+- Extraction is best-effort: a missing optional package, malformed file or
+  encrypted PDF leaves the attachment metadata searchable and never rejects
+  the surrounding message. The extractor version advances to 3, so the next
+  `dispatch reindex` also retries older messages once.
+- Attachment text remains bounded by the existing per-attachment and total
+  limits; no attachment is written to a new location or executed.
+- Tests cover PDF/DOCX text plumbing with mocked extractors, graceful
+  unavailability, and reindex upgrade of an older extraction version.
+
 Remaining limitations: PDF/DOCX extraction depends on optional local packages
 and was not exercised against a live package in automated tests; OCR, page
 navigation, document timeline inclusion, layout/image preservation and
-semantic deduplication remain unimplemented. Next: email-attachment content
-extraction (Phase 20), source-registration interfaces, and Honey Badger
-interchange (Phase V).
+semantic deduplication remain unimplemented. Next: source-registration
+interfaces and Honey Badger interchange (Phase V).

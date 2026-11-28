@@ -3,7 +3,9 @@
 import hashlib, json, os, tempfile, unittest
 from email.message import EmailMessage
 from pathlib import Path
+from unittest.mock import patch
 from dispatch import Archive
+from documents import ExtractionUnavailable
 from mime_index import html_text
 from backup import backup, restore, validate_snapshot
 
@@ -38,6 +40,38 @@ class HardeningTests(unittest.TestCase):
         self.assertEqual([row[:2] for row in self.a.attachments(h)],
                          [('statement.txt','text/plain'),('invoice.pdf','application/pdf')])
         self.assertEqual(self.a.verify(),[])
+
+    def test_binary_email_attachments_are_text_indexed(self):
+        m=EmailMessage(); m['Subject']='Documents'; m.set_content('body')
+        m.add_attachment(b'%PDF fake',maintype='application',subtype='pdf',filename='invoice.pdf')
+        m.add_attachment(b'PK fake',maintype='application',subtype='octet-stream',filename='report.docx')
+        with patch('documents._extract_pdf',return_value=('pdftransaction note',[],'pypdf')), \
+             patch('documents._extract_docx',return_value=('docxtransaction note',[],'python-docx')):
+            h=self.a.ingest(m.as_bytes())
+        self.assertEqual(self.a.find('pdftransaction')[0][0],h)
+        self.assertEqual(self.a.find('docxtransaction')[0][0],h)
+        self.assertEqual(self.a.verify(),[])
+
+    def test_unavailable_binary_attachment_extractor_does_not_reject_message(self):
+        m=EmailMessage(); m['Subject']='Scanned'; m.set_content('body')
+        m.add_attachment(b'%PDF fake',maintype='application',subtype='pdf',filename='scan.pdf')
+        with patch('documents._extract_pdf',side_effect=ExtractionUnavailable('missing pypdf')):
+            h=self.a.ingest(m.as_bytes())
+        self.assertEqual(self.a.find('scan')[0][0],h)
+        self.assertEqual(self.a.verify(),[])
+
+    def test_reindex_retries_older_binary_attachment_extraction(self):
+        m=EmailMessage(); m['Subject']='Invoice'; m.set_content('body')
+        m.add_attachment(b'%PDF fake',maintype='application',subtype='pdf',filename='invoice.pdf')
+        with patch('documents._extract_pdf',return_value=('upgradedtransaction',[],'pypdf')):
+            h=self.a.ingest(m.as_bytes())
+        with self.a.db:
+            self.a.db.execute('UPDATE extraction_versions SET version=2 WHERE hash=?',(h,))
+            self.a.db.execute('UPDATE search SET body=replace(body,?,?)',('upgradedtransaction',''))
+        self.assertEqual(self.a.find('upgradedtransaction'),[])
+        with patch('documents._extract_pdf',return_value=('upgradedtransaction',[],'pypdf')):
+            self.assertEqual(self.a.reindex(),1)
+        self.assertEqual(self.a.find('upgradedtransaction')[0][0],h)
 
     def test_reindex_upgrades_existing_messages(self):
         h=self.a.ingest(b'Content-Type: text/html\r\n\r\n<p>historicword</p>')

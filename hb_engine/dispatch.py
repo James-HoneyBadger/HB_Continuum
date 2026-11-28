@@ -360,7 +360,7 @@ class Archive:
             finally:
                 if tmp is not None: tmp.unlink(missing_ok=True)
         if hashlib.sha256(target.read_bytes()).hexdigest()!=digest: raise ValueError('Raw integrity mismatch')
-        from .mime_index import extract, index_text
+        from .mime_index import EXTRACTION_VERSION, extract, index_text
         from .timestamps import parse_timestamp
         msg,body,attachments=extract(raw)
         fields=[str(msg.get(k,'')) for k in ('Subject','From','Date','Message-ID','In-Reply-To')]
@@ -373,7 +373,8 @@ class Archive:
             if cur.rowcount:
                 self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(digest,fields[0],fields[1],index_text(body,attachments)))
                 self.db.executemany('INSERT INTO attachment_index VALUES(?,?,?,?,?)',[(digest,*a) for a in attachments])
-                self.db.execute('INSERT INTO extraction_versions VALUES(?,2)',(digest,))
+                self.db.execute('INSERT INTO extraction_versions VALUES(?,?)',
+                                (digest, EXTRACTION_VERSION))
             if origin:
                 self.db.execute('INSERT OR IGNORE INTO origins VALUES(?,?,?,?,?)',(*origin,digest))
                 if self.db.execute('SELECT hash FROM origins WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone()[0]!=digest: raise ValueError('Origin conflict')
@@ -696,15 +697,16 @@ class Archive:
         message is verified against its raw original and re-indexed in its own
         transaction, so an interrupted or cancelled run keeps its progress.
         """
-        from .mime_index import extract, index_text
+        from .mime_index import EXTRACTION_VERSION, extract, index_text
         from .sync_lock import sync_lock
         count=0
         with sync_lock(self.root):
             pending=self.db.execute(
                 'SELECT hash,subject,sender,date FROM messages '
-                'WHERE hash NOT IN (SELECT hash FROM extraction_versions WHERE version=2) '
+                'WHERE hash NOT IN (SELECT hash FROM extraction_versions WHERE version=?) '
                 'OR hash NOT IN (SELECT hash FROM search) '
-                'OR hash IN (SELECT hash FROM search GROUP BY hash HAVING count(*)>1)').fetchall()
+                'OR hash IN (SELECT hash FROM search GROUP BY hash HAVING count(*)>1)',
+                (EXTRACTION_VERSION,)).fetchall()
             total=len(pending)
             rowids={}
             for rowid,h in self.db.execute('SELECT rowid,hash FROM search'):
@@ -726,7 +728,8 @@ class Archive:
                     self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(h,subject,sender,index_text(body,attachments)))
                     self.db.execute('DELETE FROM attachment_index WHERE hash=?',(h,))
                     self.db.executemany('INSERT INTO attachment_index VALUES(?,?,?,?,?)',[(h,*a) for a in attachments])
-                    self.db.execute('INSERT OR REPLACE INTO extraction_versions VALUES(?,2)',(h,))
+                    self.db.execute('INSERT OR REPLACE INTO extraction_versions VALUES(?,?)',
+                                    (h, EXTRACTION_VERSION))
                 count+=1
                 if progress is not None: progress(done,total,h,'reindexed')
         return count

@@ -9,6 +9,15 @@ file's SHA-256, path, size, modification time and extracted text. Verification
 re-hashes the recorded path; if the file has moved or changed, the source is
 reported as missing or altered rather than silently trusted.
 
+## Email attachments
+
+PDF and DOCX attachments on imported email messages use the same local
+extractors as standalone documents. Their text is added to the message search
+index without copying the attachment. If the optional package is absent or the
+file cannot be read, the message still imports and the attachment's name and
+MIME type remain searchable. Run `dispatch reindex` after installing an
+optional extractor to retry messages imported by an earlier build.
+
 ## Supported formats
 
 | Format | Extractor | Notes |

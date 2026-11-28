@@ -14,7 +14,11 @@ from pathlib import Path
 TEXT_LIMIT = 2_000_000
 ATTACHMENT_LIMIT = 2_000_000
 PART_LIMIT = 1000
+EXTRACTION_VERSION = 3
 TEXT_EXT = {'.txt', '.csv', '.tsv', '.md', '.json', '.xml', '.log', '.ics', '.vcf'}
+BINARY_EXT = {'.pdf', '.docx'}
+BINARY_MIME = {'application/pdf',
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}
 BLOCK_TAGS = ('p', 'br', 'div', 'li', 'tr', 'td', 'h1', 'h2', 'h3', 'blockquote')
 HIDDEN_TAGS = ('script', 'style', 'head', 'template')
 
@@ -117,6 +121,11 @@ def extract(raw):
                 content = html_text(part_text(part, remaining))[:remaining]
             elif kind.startswith('text/') or Path(filename).suffix.lower() in TEXT_EXT:
                 content = part_text(part, remaining)
+            elif Path(filename).suffix.lower() in BINARY_EXT or kind in BINARY_MIME:
+                from .documents import extract_attachment_text
+                payload = part.get_payload(decode=True)
+                if isinstance(payload, bytes):
+                    content = extract_attachment_text(filename, payload, kind)[:remaining]
         remaining -= len(content)
         attachments.append((i, filename, kind, content))
     return msg, body, attachments
