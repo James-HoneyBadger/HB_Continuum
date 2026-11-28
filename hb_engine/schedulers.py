@@ -6,7 +6,7 @@ Generated unit files and task definitions contain only the synchronization
 command line. Passwords are never written to them; they are resolved from
 the operating system credential store when a job runs.
 """
-import hashlib, json, os, subprocess, sys
+import hashlib, json, os, subprocess, sys, time
 from pathlib import Path
 
 class SchedulerError(RuntimeError):
@@ -80,6 +80,11 @@ class LaunchdScheduler:
         path = self.path(root)
         if self.status(root) == 'Loaded':
             _run(['/bin/launchctl', 'bootout', 'gui/' + str(os.getuid()) + '/' + self.label(root)])
+            # bootout returns before launchd's registry is guaranteed to drop
+            # the label; poll briefly so a following status does not race it.
+            deadline = time.monotonic() + 5
+            while self.status(root) == 'Loaded' and time.monotonic() < deadline:
+                time.sleep(0.05)
         path.unlink(missing_ok=True)
 
     def status(self, root, account=None):

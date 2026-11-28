@@ -176,6 +176,19 @@ class LaunchdTests(unittest.TestCase):
                 self.s.install(FAKE_ROOT)
         self.assertFalse(self.s.path(FAKE_ROOT).exists())
 
+    def test_uninstall_waits_for_launchd_to_drop_the_agent(self):
+        with mock.patch('schedulers._run'):
+            self.s.install(FAKE_ROOT)
+        with mock.patch.object(self.s,'status',
+                               side_effect=['Loaded','Loaded','Not installed']) as status:
+            with mock.patch('schedulers.time.sleep') as sleep:
+                with mock.patch('schedulers._run') as run:
+                    self.s.uninstall(FAKE_ROOT)
+        self.assertIn('bootout',run.call_args.args[0])
+        self.assertGreaterEqual(status.call_count,3)
+        sleep.assert_called()
+        self.assertFalse(self.s.path(FAKE_ROOT).exists())
+
 class SchtasksTests(unittest.TestCase):
     def setUp(self):
         self.s=SchtasksScheduler()
