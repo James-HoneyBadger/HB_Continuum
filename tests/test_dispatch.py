@@ -242,6 +242,29 @@ class MailboxDiscoveryTests(unittest.TestCase):
                 self.a.sync_mailboxes('host','user','pw')
 
 
+class _StubDatabase:
+    def close(self):
+        return None
+
+
+class StubArchive:
+    """Stands in for Archive in CLI tests so no database handle is opened."""
+    report = None
+
+    def __init__(self, report):
+        StubArchive.report = report
+
+    def __call__(self, root):
+        return self
+
+    @property
+    def db(self):
+        return _StubDatabase()
+
+    def sync_mailboxes(self, host, user, password):
+        return StubArchive.report
+
+
 class DiscoveryQuotingTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
@@ -270,8 +293,8 @@ class DiscoveryQuotingTests(unittest.TestCase):
     def test_all_folders_returns_a_failure_exit_when_any_folder_failed(self):
         from hb_engine import dispatch as dispatch_module
         report={'folders':{'INBOX':{'error':'boom'}},'imported':0,'failed':1}
-        with mock.patch.object(dispatch_module.Archive,'sync_mailboxes',
-                               return_value=report), \
+        stub=StubArchive(report)
+        with mock.patch.object(dispatch_module,'Archive',stub), \
              mock.patch('getpass.getpass',return_value='pw'):
             code=dispatch_module.main(['--archive',str(self.a.root),'sync','host',
                                        'user','--all-folders'])
@@ -280,8 +303,8 @@ class DiscoveryQuotingTests(unittest.TestCase):
     def test_all_folders_returns_success_when_every_folder_succeeded(self):
         from hb_engine import dispatch as dispatch_module
         report={'folders':{'INBOX':{'imported':2}},'imported':2,'failed':0}
-        with mock.patch.object(dispatch_module.Archive,'sync_mailboxes',
-                               return_value=report), \
+        stub=StubArchive(report)
+        with mock.patch.object(dispatch_module,'Archive',stub), \
              mock.patch('getpass.getpass',return_value='pw'):
             code=dispatch_module.main(['--archive',str(self.a.root),'sync','host',
                                        'user','--all-folders'])
