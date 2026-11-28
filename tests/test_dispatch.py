@@ -249,6 +249,9 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.a.find('ledger',sender='alice',after='2024-01-02'),[])
         self.assertEqual(self.a.find('ledger',sender='%'),[])
         self.assertRaises(ValueError,self.a.find,'ledger',100,None,'not-a-date')
+        self.assertEqual([r[2] for r in self.a.find('',sender='alice')],['Alice <alice@example.invalid>'])
+        self.assertEqual([r[2] for r in self.a.find('',after='2024-01-02')],['bob@example.invalid'])
+        self.assertEqual(self.a.find('',after='2025-01-01'),[])
     def test_reindex_backfills_dates_for_legacy_archive(self):
         dated=self.a.ingest(b'Date: Mon, 1 Jan 2024 12:00:00 +0000\r\nMessage-ID: <d@example.invalid>\r\n\r\ndated\r\n')
         undated=self.a.ingest(RAW)

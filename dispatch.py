@@ -174,25 +174,27 @@ class Archive:
     def find(self, query, limit=100, sender=None, after=None, before=None):
         """Full-text search with optional sender and date-range filters.
 
-        A sender match is a case-insensitive substring of the From header. Dates
-        accept ISO dates, ISO datetimes or epoch seconds; a date-only bound covers
-        the whole day. Messages with unparseable dates are excluded by date filters.
+        An empty query lists messages that match the filters, newest first. A sender
+        match is a case-insensitive substring of the From header. Dates accept ISO
+        dates, ISO datetimes or epoch seconds; a date-only bound covers the whole
+        day. Messages with unparseable dates are excluded by date filters.
         """
         limit=max(1,min(int(limit),5000))
-        sql=('SELECT m.hash,m.subject,m.sender FROM messages m WHERE m.hash IN'
-             ' (SELECT hash FROM search WHERE search MATCH ?)')
-        params=[]
+        filters=''; params=[]
         if sender:
             escaped=sender.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
-            sql+=" AND m.sender LIKE ? ESCAPE '\\'"; params.append(f'%{escaped}%')
+            filters+=" AND m.sender LIKE ? ESCAPE '\\'"; params.append(f'%{escaped}%')
         if after is not None:
-            sql+=' AND m.sent_ts IS NOT NULL AND m.sent_ts>=?'; params.append(_timestamp(after))
+            filters+=' AND m.sent_ts IS NOT NULL AND m.sent_ts>=?'; params.append(_timestamp(after))
         if before is not None:
-            sql+=' AND m.sent_ts IS NOT NULL AND m.sent_ts<=?'; params.append(_timestamp(before,end_of_day=True))
-        sql+=' ORDER BY m.rowid DESC LIMIT ?'
+            filters+=' AND m.sent_ts IS NOT NULL AND m.sent_ts<=?'; params.append(_timestamp(before,end_of_day=True))
+        base='SELECT m.hash,m.subject,m.sender FROM messages m WHERE 1=1'+filters
+        if not query:
+            return self.db.execute(base+' ORDER BY m.rowid DESC LIMIT ?',(*params,limit)).fetchall()
+        sql=base+' AND m.hash IN (SELECT hash FROM search WHERE search MATCH ?) ORDER BY m.rowid DESC LIMIT ?'
         for term in (query,'"'+query.replace('"','""')+'"'):
             try:
-                return self.db.execute(sql,(term,*params,limit)).fetchall()
+                return self.db.execute(sql,(*params,term,limit)).fetchall()
             except sqlite3.OperationalError:
                 continue
         return []
@@ -405,7 +407,7 @@ class Archive:
 def main():
     import getpass
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); q.add_argument('--sender'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
     a=p.parse_args(); ar=Archive(a.archive)
     if a.cmd=='import':
         for f in a.files: print(ar.ingest(Path(f).read_bytes()))

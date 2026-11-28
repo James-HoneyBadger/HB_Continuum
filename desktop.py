@@ -23,6 +23,19 @@ def launch(archive):
     toolbar.pack(fill='x')
     query=ttk.Entry(toolbar)
     query.pack(side='left',fill='x',expand=True)
+    filters=ttk.Frame(root,padding=(10,0))
+    filters.pack(fill='x')
+    ttk.Label(filters,text='Sender').pack(side='left')
+    sender_filter=ttk.Entry(filters,width=24); sender_filter.pack(side='left',padx=(3,10))
+    ttk.Label(filters,text='From').pack(side='left')
+    after_filter=ttk.Entry(filters,width=11); after_filter.pack(side='left',padx=(3,10))
+    ttk.Label(filters,text='To').pack(side='left')
+    before_filter=ttk.Entry(filters,width=11); before_filter.pack(side='left',padx=(3,10))
+    ttk.Label(filters,text='Dates are ISO, for example 2024-01-31').pack(side='left')
+    def filter_values():
+        return (sender_filter.get().strip() or None,
+                after_filter.get().strip() or None,
+                before_filter.get().strip() or None)
     status=tk.StringVar()
     pane=ttk.Panedwindow(root,orient=prefs['layout'])
     pane.pack(fill='both',expand=True,padx=10,pady=5)
@@ -56,12 +69,14 @@ def launch(archive):
         try:
             term=query.get().strip()
             if term and prefs['search_mode']=='Exact phrase': term='"'+term.replace('"','""')+'"'
-            hits=archive.find(term,prefs['search_limit']) if term else archive.recent(prefs['recent_limit'])
+            sender,after,before=filter_values()
+            hits=(archive.find(term,prefs['search_limit'],sender,after,before) if term or sender or after or before
+                  else archive.recent(prefs['recent_limit']))
             rows.delete(*rows.get_children())
             display('')
             for h,s,f in hits: rows.insert('', 'end',iid=h,values=(s,f))
             stats=archive.stats()
-            status.set(f"{len(hits)} shown  |  {stats['messages']} archived messages  |  {stats['origins']} mailbox origins")
+            status.set(f"{len(hits)} shown  |  {stats['messages']} archived messages  |  {stats['origins']} mailbox origins  |  {stats['attachments']} attachments")
         except Exception as e: messagebox.showerror('Search',str(e))
     def select(*_):
         selection=rows.selection()
@@ -71,7 +86,9 @@ def launch(archive):
             data=archive.details(h)
             keys=('subject','sender','date','message_id','reply_to') if prefs['show_message_ids'] else ('subject','sender','date')
             header='\n'.join(f"{k}: {data[k]}" for k in keys)
-            display(header+('\nSHA-256: '+h if prefs['show_hash'] else '')+'\n\n'+data['body'])
+            files=archive.attachments(h)
+            listing=('\n\nAttachments:\n'+'\n'.join(f"  {name}  ({ctype}, {size} bytes)\n  SHA-256: {sha}" for name,ctype,size,sha in files)) if files else ''
+            display(header+('\nSHA-256: '+h if prefs['show_hash'] else '')+listing+'\n\n'+data['body'])
         except Exception as e: messagebox.showerror('Message',str(e))
     def show_thread():
         selected=rows.selection()
@@ -102,10 +119,44 @@ def launch(archive):
         except Exception as e: messagebox.showerror('Import',str(e))
     def verify():
         try:
-            bad=archive.verify()
-            if bad: messagebox.showwarning('Integrity check',f'{len(bad)} messages failed verification.\n'+'\n'.join(bad[:10]))
-            else: messagebox.showinfo('Integrity check','All indexed original messages match their stored hashes.')
+            bad=archive.verify(); bad_files=archive.verify_attachments()
+            if bad or bad_files:
+                messagebox.showwarning('Integrity check',
+                    f'{len(bad)} messages and {len(bad_files)} attachment files failed verification.\n'
+                    +'\n'.join(bad[:10]+bad_files[:10]))
+            else: messagebox.showinfo('Integrity check','All indexed originals and attachment files match their stored hashes.')
         except Exception as e: messagebox.showerror('Integrity check',str(e))
+    def repair():
+        if not messagebox.askyesno('Repair archive','Rebuild metadata, search and attachment records from the preserved raw files? Original messages are not modified.'): return
+        try:
+            rebuilt=archive.reindex(); search()
+            messagebox.showinfo('Repair complete',f'{rebuilt} messages rebuilt from stored raw files.')
+        except Exception as e: messagebox.showerror('Repair archive',str(e))
+    def sync_failures():
+        try:
+            failed=archive.failures()
+            if not failed: return messagebox.showinfo('Synchronization failures','No messages have failed to archive.')
+            display('\n\n'.join(f"{account} / {folder} / UID {uid}\nattempts: {attempts}  last seen: {last_seen}\n{error}"
+                                for account,folder,validity,uid,attempts,error,last_seen in failed))
+            status.set(f'{len(failed)} mailbox messages could not be archived; they remain on the server.')
+        except Exception as e: messagebox.showerror('Synchronization failures',str(e))
+    def save_attachments():
+        selected=rows.selection()
+        if not selected: return messagebox.showinfo('Attachments','Select one or more messages first.')
+        parent=filedialog.askdirectory(initialdir=prefs['export_directory'] or None,title='Choose a folder for attachment copies')
+        if not parent: return
+        import os
+        saved=skipped=0
+        try:
+            for h in selected:
+                for name,ctype,size,sha in archive.attachments(h):
+                    target=Path(parent)/(Path(name).name or 'attachment')
+                    if target.exists(): skipped+=1; continue
+                    with os.fdopen(os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'wb') as output:
+                        output.write(archive.attachment_bytes(sha))
+                    saved+=1
+            messagebox.showinfo('Attachments',f'{saved} files saved, {skipped} skipped because a file of that name already exists.')
+        except Exception as e: messagebox.showerror('Attachments',str(e))
     def export():
         selected=rows.selection()
         if not selected: return messagebox.showinfo('Export','Select one or more messages first.')
@@ -117,11 +168,13 @@ def launch(archive):
             archive.export(selected,dest)
             messagebox.showinfo('Export complete',str(dest))
         except Exception as e: messagebox.showerror('Export',str(e))
-    for label,fn in [('Search',search),('Import EML',import_files),('Verify',verify),('Export selected',export)]:
+    for label,fn in [('Search',search),('Import EML',import_files),('Verify',verify),('Repair archive',repair),
+                     ('Save attachments',save_attachments),('Export selected',export)]:
         ttk.Button(toolbar,text=label,command=fn).pack(side='left',padx=3)
     analysis_bar=ttk.Frame(root,padding=(10,0))
     analysis_bar.pack(fill='x',before=pane)
-    for label,fn in [('Conversation',show_thread),('Timeline',show_timeline),('Correspondents',show_correspondents)]:
+    for label,fn in [('Conversation',show_thread),('Timeline',show_timeline),('Correspondents',show_correspondents),
+                     ('Sync failures',sync_failures)]:
         ttk.Button(analysis_bar,text=label,command=fn).pack(side='left',padx=3)
     def scheduling():
         from schedule_ui import launch as launch_schedule

@@ -58,6 +58,7 @@ Python 3.12+ with SQLite FTS5 and optional Tkinter.
 python3 dispatch.py --version
 python3 dispatch.py import sample.eml
 python3 dispatch.py search invoice --sender alice@example.invalid --after 2024-01-01 --before 2024-12-31
+python3 dispatch.py search --sender accounts@example.invalid --after 2024-01-01
 python3 dispatch.py verify
 python3 dispatch.py reindex
 python3 dispatch.py failures
