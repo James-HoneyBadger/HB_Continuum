@@ -2,10 +2,13 @@
 # Copyright (c) 2026 Honey Badger Universe
 """Packaging smoke helper: packaged-module IPC checks against the source CLI."""
 import importlib.util
+import json
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
+
 from dispatch import Archive
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,6 +23,21 @@ def load_build_engine():
 
 
 class BuildEngineSmokeTests(unittest.TestCase):
+    def test_packaging_manifests_match_the_engine_version(self):
+        from hb_engine.dispatch import __version__
+        package = json.loads((ROOT / 'frontend' / 'package.json').read_text(encoding='utf-8'))
+        tauri = json.loads((ROOT / 'src-tauri' / 'tauri.conf.json').read_text(encoding='utf-8'))
+        cargo = tomllib.loads((ROOT / 'src-tauri' / 'Cargo.toml').read_text(encoding='utf-8'))
+        lock = tomllib.loads((ROOT / 'src-tauri' / 'Cargo.lock').read_text(encoding='utf-8'))
+        locked = next(entry['version'] for entry in lock['package']
+                      if entry['name'] == 'hb-continuum')
+        self.assertEqual({package['version'], tauri['version'],
+                          cargo['package']['version'], locked}, {__version__})
+
+    def test_build_smoke_expects_the_engine_version(self):
+        from hb_engine.dispatch import __version__
+        self.assertEqual(load_build_engine().ENGINE_VERSION, __version__)
+
     def test_ipc_smoke_finds_advanced_results_and_relationship_edge(self):
         build_engine = load_build_engine()
         with tempfile.TemporaryDirectory() as tmp:

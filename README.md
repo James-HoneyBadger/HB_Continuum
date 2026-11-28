@@ -41,7 +41,7 @@ Practical investigations have included:
 
 These are actual research outcomes, not hypothetical feature claims. Some investigations used authorized external analysis of the local archive; HB Continuum itself supplies the searchable evidence foundation, not an automated financial or legal adviser. Private correspondence and underlying records are not published.
 
-**Status:** the core archive is operational and published as the [v0.3.0 release](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.3.0), which adds local scheduled synchronization, a configuration center and a research workbench to the archival core. The release is a milestone tag, not a claim of comprehensive security certification.
+**Status:** the archival core is operational. The **v0.4.0-alpha** milestone builds on the [v0.3.0 release](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.3.0) with a source-independent record catalog for exported social archives, unified and nested boolean search across email and catalog records, a relationship explorer, collections, journal and report workflows, a Tauri 2 + Vue desktop shell, and verified backup and restore across all three databases. It is an alpha milestone tag, not a claim of comprehensive security certification.
 
 ## Your mail. Your archive. Your choice.
 

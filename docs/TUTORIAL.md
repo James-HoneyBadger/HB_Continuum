@@ -35,7 +35,7 @@ python3 dispatch.py --version
 python3 -m unittest discover -s tests -v
 ```
 
-Examples below use a POSIX shell (Linux/macOS); on Windows use your Python launcher and equivalent paths. Main is the public beta and the source of the [v0.3.0 release](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.3.0); anything on a public development branch beyond that tag is an alpha experiment that is not part of it.
+Examples below use a POSIX shell (Linux/macOS); on Windows use your Python launcher and equivalent paths. `main` is the public beta and the source of the [v0.3.0 release](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.3.0). The v0.4.0-alpha milestone is prepared on `develop/continuum-integration`; development branches beyond a published tag are alpha work and are not part of that release.
 
 Create a synthetic email outside the repository using a plain-text editor, saving it as `~/dispatch-practice.eml` (not .txt):
 

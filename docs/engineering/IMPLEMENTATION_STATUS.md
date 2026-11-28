@@ -723,3 +723,36 @@ Scheduler verification status:
    optional "hide disabled sources from default views" preference.
 3. Run the benchmark harness on Windows and Linux and add a 1M-record run
    before making large-archive claims.
+
+## Release qualification: v0.4.0-alpha (2026-11-27)
+
+Feature freeze applies to this milestone. The following are deliberately
+deferred: full conversational historical intelligence, semantic and hybrid
+retrieval, expanded document ingestion, extensive Honey Badger ecosystem
+interoperability, major architectural refactoring, and replacement of the
+unified search pagination architecture.
+
+Version metadata is aligned to `0.4.0-alpha` in the engine
+(`hb_engine/dispatch.py`), frontend manifest and lockfile, Tauri configuration
+and Cargo manifest and lockfile. The engine packaging smoke test now reads the
+expected version from the engine source instead of a hardcoded string, and a
+regression test fails if those manifests drift.
+
+Verified locally on Python 3.12.0 and 3.13.7:
+
+- `compileall` of the engine, tests, scripts and entry points: pass.
+- `python -m unittest discover -s tests`: 280 tests, 278 passed, 2 skipped,
+  zero failures on both versions.
+- `mypy==2.4.1`: no issues in 23 source files.
+- `npm run build` (Vue TypeScript check plus Vite production build): pass.
+- `cargo check` and `cargo test` in `src-tauri`: pass, 3 unit tests.
+- `scripts/scheduler_smoke.py`: installed, inspected and removed a real
+  launchd entry; OK.
+- `scripts/build_engine.py --no-copy --smoke`: PyInstaller one-file build
+  passed CLI, search, health and IPC checks and reported `0.4.0-alpha`.
+- `python3 dispatch.py --version`: `dispatch.py 0.4.0-alpha`.
+
+No release tag or hosted release was created by this qualification; that
+decision remains with the repository owner. Unified search still materializes
+at most 5000 candidate results per query, and no 1,000,000-record run is
+claimed.

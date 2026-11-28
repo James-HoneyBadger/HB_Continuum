@@ -18,6 +18,7 @@ architecture for macOS universal builds) before packaging the app.
 import argparse
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -26,6 +27,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OPTIONAL_MODULES = ('keyring', 'cryptography', 'tkinter')
+VERSION_PATTERN = re.compile(r'''^__version__ = ['"]([^'"]+)['"]''', re.MULTILINE)
+
+
+def engine_version(path=ROOT / 'hb_engine' / 'dispatch.py'):
+    """Read the engine version so packaging checks follow one source of truth."""
+    match = VERSION_PATTERN.search(Path(path).read_text(encoding='utf-8'))
+    if match is None:
+        raise SystemExit(f'no __version__ found in {path}')
+    return match.group(1)
+
+
+ENGINE_VERSION = engine_version()
 
 
 def engine_name(platform=None):
@@ -104,7 +117,7 @@ def smoke(binary):
     command = [str(binary)]
     version = subprocess.run([*command, '--version'], capture_output=True,
                              text=True, check=True)
-    if '0.3.0' not in version.stdout:
+    if ENGINE_VERSION not in version.stdout:
         raise SystemExit(f'unexpected --version output: {version.stdout!r}')
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
