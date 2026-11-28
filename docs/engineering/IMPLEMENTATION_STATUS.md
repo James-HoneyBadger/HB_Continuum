@@ -766,3 +766,33 @@ The `v0.4.0-alpha` tag and GitHub prerelease were published afterwards, on
 The release is source-only; no signed binaries are attached. Unified search
 still materializes at most 5000 candidate results per query, and no
 1,000,000-record run is claimed.
+
+## Release qualification: v0.4.0-beta (2026-11-28)
+
+Promotes the v0.4.0-alpha qualification to beta. There are no functional
+changes beyond version metadata. The feature freeze and deferred capabilities
+listed in the alpha qualification remain in force.
+
+Version metadata is now `0.4.0-beta` in the engine, frontend manifest and
+lockfile, Tauri configuration, and Cargo manifest and lockfile. The existing
+drift test verifies all five sources remain equal.
+
+Re-verified for the beta on the qualification commit:
+
+- Python 3.12.0 and 3.13.7: `compileall` passed; 280 tests, 278 passed,
+  2 skipped, zero failures on both.
+- `mypy==2.4.1`: no issues in 23 source files.
+- `npm run build` (Vue TypeScript check plus Vite production build): pass.
+- `cargo check` and `cargo test` in `src-tauri`: pass, 3 unit tests.
+- PyInstaller engine build and smoke test: CLI, search, health and IPC passed;
+  `hb-engine --version` reports `0.4.0-beta`.
+- Tauri debug build with the engine sidecar: pass, sidecar reports
+  `0.4.0-beta`.
+- `scripts/scheduler_smoke.py`: installed, inspected and removed a real
+  launchd entry; OK.
+- `python3 dispatch.py --version`: `dispatch.py 0.4.0-beta`.
+
+Hosted CI re-ran the full 12-job matrix after the version bump. The
+`v0.4.0-beta` tag and GitHub beta release supersede the alpha as the current
+milestone; the alpha remains flagged as a prerelease. The beta release is
+source-only and includes no signed binaries.

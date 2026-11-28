@@ -6,7 +6,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
-__version__ = '0.4.0-alpha'
+__version__ = '0.4.0-beta'
 
 def valid_hash(value):
     return isinstance(value,str) and len(value)==64 and all(c in '0123456789abcdef' for c in value)
