@@ -882,6 +882,18 @@ class Archive:
             self.finish_import_run(run,'ok',records_seen=count,records_new=count,
                                    records_existing=0,records_failed=0)
             return count
+    def _sync_watermark(self, account, folder, quoted, validity):
+        """Highest UID already stored for this account, folder and UIDVALIDITY.
+
+        A new UIDVALIDITY means the server renumbered the mailbox, so the
+        watermark is dropped and the next run searches everything again.
+        """
+        row=self.db.execute(
+            'SELECT MAX(CAST(uid AS INTEGER)) FROM origins '
+            'WHERE account=? AND folder IN (?,?) AND validity=?',
+            (account,folder,quoted,validity)).fetchone()
+        return row[0] if row and row[0] is not None else None
+
     def _sync(self, host, user, password, folder):
         if folder.startswith('"') and folder.endswith('"'):
             folder=folder[1:-1]
@@ -898,10 +910,20 @@ class Archive:
             resp=m.response('UIDVALIDITY')[1]
             if not resp or resp[0] is None or not resp[0].decode().isdigit(): raise RuntimeError('Missing UIDVALIDITY')
             validity=resp[0].decode()
-            status,data=m.uid('search',None,'ALL')
+            watermark=self._sync_watermark(host+'|'+user,folder,quoted,validity)
+            # IMAP sequence numbers are unsigned 32-bit; clamp the lower bound so
+            # the highest possible UID cannot produce an invalid range.
+            criteria=('ALL' if watermark is None
+                      else f'UID {min(watermark+1, MAX_IMAP_UID)}:*')
+            status,data=m.uid('search',None,criteria)
             if status!='OK': raise RuntimeError('Search failed')
             count=0
             for uid in data[0].split():
+                if watermark is not None:
+                    try:
+                        if int(uid)<=watermark: continue
+                    except ValueError:
+                        pass
                 origin=(host+'|'+user,folder,validity,uid.decode())
                 if self.db.execute('SELECT 1 FROM origins WHERE account=? AND folder IN (?,?) AND validity=? AND uid=?',(origin[0],folder,quoted,validity,uid.decode())).fetchone(): continue
                 status,parts=m.uid('fetch',uid,'(BODY.PEEK[])')
@@ -911,6 +933,9 @@ class Archive:
                 self._ingest(payload[0],origin); count+=1
                 if prefs['batch_limit'] and count>=prefs['batch_limit']: break
             return count
+
+MAX_IMAP_UID = 4294967295
+
 
 def capabilities():
     """Report optional capabilities so packaging omissions are visible.

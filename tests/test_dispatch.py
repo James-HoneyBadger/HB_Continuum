@@ -114,3 +114,71 @@ class CapabilityReportTests(unittest.TestCase):
         self.assertIsInstance(report['encryption'], bool)
         self.assertIsInstance(report['document_extraction'], bool)
         self.assertIsInstance(report['os_credential_store'], bool)
+
+
+class IncrementalSyncTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.a=Archive(Path(self.tmp.name)/'archive')
+    def tearDown(self):
+        self.a.db.close()
+
+    def server(self, uids, validity=b'1'):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.select.return_value=('OK',[b'1'])
+        m.response.return_value=('UIDVALIDITY',[validity])
+        m.uid.side_effect=uids
+        return m
+
+    def test_second_run_asks_the_server_for_newer_uids_only(self):
+        m=self.server([('OK',[b'1 2']),
+                       ('OK',[(b'1',RAW)]),('OK',[(b'2',RAW+b'Two')]),
+                       ('OK',[b'3']),
+                       ('OK',[(b'3',RAW+b'Three')])])
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.assertEqual(self.a.sync('host','user','pw'),2)
+            self.assertEqual(self.a.sync('host','user','pw'),1)
+        searches=[call.args[2] for call in m.uid.call_args_list
+                  if call.args[:2]==('search',None)]
+        self.assertEqual(searches,['ALL','UID 3:*'])
+        self.assertEqual(self.a.stats()['messages'],3)
+
+    def test_uidvalidity_change_forces_a_full_search(self):
+        m=self.server([('OK',[b'1']),('OK',[(b'1',RAW)]),
+                       ('OK',[b'1']),('OK',[(b'1',RAW+b'Rewritten')])],
+                      validity=b'9')
+        m.response.side_effect=[('UIDVALIDITY',[b'1']),('UIDVALIDITY',[b'9'])]
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.a.sync('host','user','pw')
+            self.a.sync('host','user','pw')
+        searches=[call.args[2] for call in m.uid.call_args_list
+                  if call.args[:2]==('search',None)]
+        self.assertEqual(searches,['ALL','ALL'])
+        self.assertEqual(self.a.stats()['messages'],2)
+
+    def test_a_uid_at_or_below_the_watermark_is_ignored(self):
+        m=self.server([('OK',[b'1 2']),('OK',[(b'1',RAW)]),('OK',[(b'2',RAW+b'Two')]),
+                       ('OK',[b'1 2'])])
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.a.sync('host','user','pw')
+            self.assertEqual(self.a.sync('host','user','pw'),0)
+        self.assertEqual(self.a.stats()['messages'],2)
+        self.assertEqual(m.uid.call_count,4)
+
+
+class SyncWatermarkBoundaryTests(unittest.TestCase):
+    def test_highest_possible_uid_is_not_incremented_past_the_range(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ar=Archive(Path(tmp)/'archive')
+            try:
+                ar.ingest(RAW,('host|user','INBOX','1','4294967295'))
+                m=mock.MagicMock(); m.__enter__.return_value=m
+                m.select.return_value=('OK',[b'1'])
+                m.response.return_value=('UIDVALIDITY',[b'1'])
+                m.uid.return_value=('OK',[b'4294967295'])
+                with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+                    self.assertEqual(ar.sync('host','user','pw'),0)
+                m.uid.assert_called_once_with('search',None,'UID 4294967295:*')
+            finally:
+                ar.db.close()
