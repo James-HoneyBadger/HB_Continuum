@@ -16,9 +16,9 @@ Each application works independently; optional integrations remain under user co
 
 Part of the Honey Badger Universe, HB Continuum is designed around a broader vision than email archiving: preserve and explore historical information across otherwise disconnected sources, on infrastructure you control.
 
-The existing email ingestion engine retains the name **Dispatch**. Future source adapters may support social media exports (including Facebook posts, comments and Messenger history), journals, documents, photographs and metadata, software development histories, and other structured or unstructured records.
+The email ingestion engine retains the name **Dispatch**. Email and user-obtained Facebook JSON exports are implemented sources today: the source-independent catalog stores Facebook posts, comments, messages, events, media and reactions with provenance, revision history and searchable attachment metadata, and unified search spans email and catalog records. Future adapters may add documents, photographs, journals, software development histories and other structured or unstructured records.
 
-The intended architecture preserves original source material and provenance, with source-specific ingestion and a unified searchable index. Cross-source timelines, genealogy, personal and organizational archives, historical research and evidence organization are potential applications. These additional importers and unified indexing are development goals, not implemented capabilities today.
+The architecture preserves original source material and provenance, with source-specific ingestion and a unified searchable index. Cross-source timelines, genealogy, personal and organizational archives and broader evidence organization remain development goals rather than implemented capabilities.
 
 ### Second Me
 
@@ -41,7 +41,7 @@ Practical investigations have included:
 
 These are actual research outcomes, not hypothetical feature claims. Some investigations used authorized external analysis of the local archive; HB Continuum itself supplies the searchable evidence foundation, not an automated financial or legal adviser. Private correspondence and underlying records are not published.
 
-**Status:** the archival core is operational and published as the [v0.4.0-beta release](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.4.0-beta), which builds on the [v0.3.0 release](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.3.0) with a source-independent record catalog for exported social archives, unified and nested boolean search across email and catalog records, a relationship explorer, collections, journal and report workflows, a Tauri 2 + Vue desktop shell, and verified backup and restore across all three databases. The earlier v0.4.0-alpha tag remains available as a prerelease. The current tag is a beta milestone, not a claim of comprehensive security certification.
+**Status:** the archival core is operational and published as the [v0.4.0-beta release](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.4.0-beta), which builds on the [v0.3.0 release](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.3.0) with a source-independent record catalog for exported social archives, unified and nested boolean search across email and catalog records, a relationship explorer, collections, journal and report workflows, a Tauri 2 + Vue desktop shell, and verified backup and restore across all three databases. The earlier v0.4.0-alpha tag remains available as a prerelease. The current tag is a beta milestone, not a claim of comprehensive security certification. Verified test counts, build matrix and known limitations are recorded in [Implementation status](docs/engineering/IMPLEMENTATION_STATUS.md).
 
 ## Your mail. Your archive. Your choice.
 
@@ -70,7 +70,7 @@ HB Continuum is free and open-source software, licensed under the [GNU General P
 
 ## Quick start
 
-Python 3.12+ with SQLite FTS5 and optional Tkinter.
+Python 3.12+ with SQLite FTS5 and optional Tkinter for the legacy workstation. Building the Tauri desktop shell additionally requires Node.js 22+ and Rust.
 
 ```sh
 python3 dispatch.py --version
@@ -88,17 +88,28 @@ python3 dispatch.py export evidence HASH
 python3 -m unittest discover -s tests -v
 ```
 
+Source-independent imports and unified search use the same CLI:
+
+```sh
+python3 dispatch.py facebook preview ~/facebook-export
+python3 dispatch.py facebook import ~/facebook-export
+python3 dispatch.py facebook search "receipt"
+python3 dispatch.py search-all "receipt"
+```
+
 For mailbox names containing spaces, use normal shell quoting, e.g. `--folder "Sent Items"` or `--folder "Sent Messages"`. HB Continuum quotes the IMAP mailbox internally and recognizes origins recorded by older versions with literal surrounding quotes.
 
 Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, read-only mailbox selection and BODY.PEEK. Passwords are prompted for, never stored by the application. Provider-specific authentication may be required. Gmail OAuth and a native MCP integration remain future work. Manual synchronization prompts for passwords; scheduled synchronization supports platform-specific schedulers and credential stores.
 
 ## Engine layout
 
-The engine implementation lives in `hb_engine/`, with the CLI, IPC server, archive, catalog, research overlay, migrations and search modules sharing one package. `dispatch.py` remains the command-line and PyInstaller entry point, and the historical top-level module names are compatibility aliases, so existing scripts and tests keep the same imports. The archive layout, IPC protocol and sidecar contract are unchanged.
+The engine implementation lives in `hb_engine/`, with the CLI, IPC server, archive, catalog, research overlay, migrations and search modules sharing one package. `dispatch.py` remains the command-line and PyInstaller entry point, and the historical top-level module names are compatibility aliases, so existing scripts and tests keep the same imports.
+
+The archive uses three SQLite databases: `archive.sqlite3` for email, origins, the email FTS index and import history; `research.sqlite3` for workspaces, tags, metadata, collections, journal entries and reports; and `catalog.sqlite3` for source-independent records, revisions, attachment metadata and the record FTS index. Versioned, transactional migrations upgrade them in place, and opening a database written by a newer build is refused rather than risking damage.
 
 ## Privacy and limitations
 
-Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Verify backup and restore with `dispatch backup`, `dispatch verify-backup` and `dispatch restore`, and diagnose local consistency with `dispatch health` (see [Archive hardening](docs/ARCHIVE_HARDENING.md)). Failed imports may leave unindexed raw files; `dispatch recover-orphans` and `dispatch reindex` repair them from the preserved originals. Failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS, Gmail and iCloud Mail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search indexes plain-text bodies, HTML reduced to offline text, and attachment names, types and bounded text; PDF, Office and image contents are not converted. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Continuum as the sole evidence archive.
+Original EML files are preserved by SHA-256 with SQLite search and mailbox provenance. Hashes detect changes, not authenticity or certified chain of custody. No telemetry or sending. HTML is not rendered. Use an encrypted disk and keep all real mail and credentials outside the repository. Verify backup and restore with `dispatch backup`, `dispatch verify-backup` and `dispatch restore`, and diagnose local consistency with `dispatch health` (see [Archive hardening](docs/ARCHIVE_HARDENING.md)). Failed imports may leave unindexed raw files; `dispatch recover-orphans` and `dispatch reindex` repair them from the preserved originals. Failed exports may be partial. Live IMAP retrieval has been demonstrated with IONOS, Gmail and iCloud Mail; comprehensive GUI, provider compatibility, hostile-MIME and restoration testing remain ongoing. Search indexes plain-text bodies, HTML reduced to offline text, and attachment names, types and bounded text; PDF, Office and image contents are not converted. Facebook exports are read in place and never modified; the catalog preserves original record JSON, revision identity and attachment metadata, not attachment bytes. Exact-byte deduplication does not guarantee semantic deduplication across providers. Do not use HB Continuum as the sole evidence archive.
 
 ## Scheduled synchronization
 
@@ -142,9 +153,9 @@ The Reports workspace writes a self-contained Markdown, JSON or standalone HTML 
 
 `scripts/benchmark.py` builds deterministic synthetic archives and measures ingest, search, timeline paging, dashboard and peak memory. Current baselines and reproduction steps are in [Benchmarks](docs/BENCHMARKS.md). The harness never touches a real archive and refuses a non-empty work directory.
 
-## Beyond email (new)
+## Source-independent records and research
 
-HB Continuum is growing from an email archive into a source-independent historical record. These capabilities are opt-in and still evolving.
+Beyond email, the following capabilities are implemented. Facebook ingestion is opt-in; local AI is disabled by default.
 
 **Facebook import** — import posts, comments, group posts, messages, events, photos/videos, and reactions from a user-obtained Facebook JSON export. Post/comment update timestamps and revision versions are preserved, and message/post attachment metadata is stored and searchable without copying media files. Original exports are never uploaded or modified. See [Facebook import](docs/FACEBOOK_IMPORT.md).
 
@@ -189,9 +200,11 @@ records by year); a paged timeline with oldest/newest ordering, sender filter
 and date range; unified search with paging and date range; a nested boolean
 query builder; Sources; a
 background Import Center with preview, progress, cancellation and history;
-Research; Journal with revision history; archive Reports; synchronization;
-Health with resumable repair jobs; Backup with schema status and validated
-backup, verification and restore; and Preferences. From a checkout:
+Research; Collections, including adding the open message from the Timeline or
+the open record from the Search reader; Journal with revision history; archive
+Reports; Relationships; synchronization; Health with resumable repair jobs;
+Backup with schema status and validated backup, verification and restore; and
+Preferences. From a checkout:
 
 ```sh
 cd frontend && npm install
@@ -210,8 +223,7 @@ The shell prefers a bundled `hb-engine` binary, falls back to
 `python3 dispatch.py` during development, and accepts `HB_ENGINE` /
 `HB_ENGINE_SCRIPT` overrides. See [Packaging](docs/PACKAGING.md).
 
-The Tkinter workstation (`dispatch gui`) remains the stable fallback until
-the new shell reaches functional parity.
+The Tkinter workstation (`dispatch gui`) remains available as a fallback for environments without the packaged shell.
 
 ## License and community
 
