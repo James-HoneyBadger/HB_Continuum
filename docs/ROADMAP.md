@@ -18,9 +18,8 @@ and verified backups. The qualification record and remaining limitations are in
 Roughly ordered by practical usefulness. Each is a known gap rather than a
 new ambition.
 
-1. **MBOX import and verified MBOX export.** Currently unsupported; the
-   [tutorial](TUTORIAL.md) says so explicitly. Useful for provider-independent
-   migration and for reading Takeout-style exports.
+1. **MBOX interoperability.** Import, preview and export now work
+   ([tutorial](TUTORIAL.md)); round-trip fidelity is normalised, not byte-identical.
 2. **Incremental, resumable IMAP synchronization** using a UID watermark, with
    discovery of several mailboxes per run. Synchronization currently walks the
    folder on each run.
