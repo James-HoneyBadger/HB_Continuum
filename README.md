@@ -100,6 +100,12 @@ Create a new encrypted archive from the command line:
 python3 dispatch.py --archive ~/EncryptedArchive init-encrypted
 ```
 
+Check which optional capabilities a given installation actually has:
+
+```sh
+python3 dispatch.py capabilities
+```
+
 Existing encrypted archives can be opened and unlocked in the desktop
 application. Migrate an existing plaintext archive only after reading
 [Encrypted archive migration](docs/ENCRYPTION_MIGRATION.md) and verifying an

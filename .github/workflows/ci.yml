@@ -29,6 +29,41 @@ jobs:
       - name: Tests
         run: python -m unittest discover -s tests -v
 
+  encryption:
+    name: encryption (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install SQLCipher
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y libsqlcipher-dev pkg-config
+          else
+            brew install sqlcipher pkg-config
+          fi
+      - name: Install the Python binding
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            python -m pip install sqlcipher3
+          else
+            export PKG_CONFIG_PATH="$(brew --prefix sqlcipher)/lib/pkgconfig"
+            python -m pip install sqlcipher3
+          fi
+      - name: Prove encryption is active
+        run: python -c "import sqlcipher3; print('sqlcipher', sqlcipher3.sqlite_version)"
+      - name: Tests with encryption enabled
+        run: python -m unittest discover -s tests -v
+      - name: Security review vectors
+        run: ./scripts/security_review_vectors.sh
+
   docs:
     name: docs
     runs-on: ubuntu-latest

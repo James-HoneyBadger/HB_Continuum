@@ -1,0 +1,2 @@
+# The engine uses only the Python standard library (3.12+).
+# Nothing is required to import hb_engine or run the CLI.

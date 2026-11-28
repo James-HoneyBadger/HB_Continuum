@@ -101,3 +101,16 @@ class Tests(unittest.TestCase):
         self.assertEqual(exit.exception.code,0)
         self.assertEqual(out.getvalue().strip(),f'dispatch.py {__version__}')
 if __name__=='__main__': unittest.main()
+
+
+class CapabilityReportTests(unittest.TestCase):
+    def test_capabilities_reports_each_optional_dependency(self):
+        from hb_engine.dispatch import capabilities
+        report = capabilities()
+        for name in ('sqlcipher3', 'pypdf', 'docx', 'keyring', 'cryptography'):
+            entry = report['optional_dependencies'][name]
+            self.assertIn('available', entry)
+            self.assertIn('version', entry)
+        self.assertIsInstance(report['encryption'], bool)
+        self.assertIsInstance(report['document_extraction'], bool)
+        self.assertIsInstance(report['os_credential_store'], bool)
