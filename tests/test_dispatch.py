@@ -165,3 +165,20 @@ class IncrementalSyncTests(unittest.TestCase):
             self.assertEqual(self.a.sync('host','user','pw'),0)
         self.assertEqual(self.a.stats()['messages'],2)
         self.assertEqual(m.uid.call_count,4)
+
+
+class SyncWatermarkBoundaryTests(unittest.TestCase):
+    def test_highest_possible_uid_is_not_incremented_past_the_range(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ar=Archive(Path(tmp)/'archive')
+            try:
+                ar.ingest(RAW,('host|user','INBOX','1','4294967295'))
+                m=mock.MagicMock(); m.__enter__.return_value=m
+                m.select.return_value=('OK',[b'1'])
+                m.response.return_value=('UIDVALIDITY',[b'1'])
+                m.uid.return_value=('OK',[b'4294967295'])
+                with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+                    self.assertEqual(ar.sync('host','user','pw'),0)
+                m.uid.assert_called_once_with('search',None,'UID 4294967295:*')
+            finally:
+                ar.db.close()

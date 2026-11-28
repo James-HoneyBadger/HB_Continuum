@@ -911,7 +911,10 @@ class Archive:
             if not resp or resp[0] is None or not resp[0].decode().isdigit(): raise RuntimeError('Missing UIDVALIDITY')
             validity=resp[0].decode()
             watermark=self._sync_watermark(host+'|'+user,folder,quoted,validity)
-            criteria=f'UID {watermark+1}:*' if watermark is not None else 'ALL'
+            # IMAP sequence numbers are unsigned 32-bit; clamp the lower bound so
+            # the highest possible UID cannot produce an invalid range.
+            criteria=('ALL' if watermark is None
+                      else f'UID {min(watermark+1, MAX_IMAP_UID)}:*')
             status,data=m.uid('search',None,criteria)
             if status!='OK': raise RuntimeError('Search failed')
             count=0
@@ -930,6 +933,9 @@ class Archive:
                 self._ingest(payload[0],origin); count+=1
                 if prefs['batch_limit'] and count>=prefs['batch_limit']: break
             return count
+
+MAX_IMAP_UID = 4294967295
+
 
 def capabilities():
     """Report optional capabilities so packaging omissions are visible.
