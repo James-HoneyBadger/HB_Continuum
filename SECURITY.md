@@ -93,6 +93,13 @@ available it refuses to store a password unless
 password with a key kept beside it in the archive directory, so it defends
 against casual inspection and accidental copying only.
 
+## Preparing a review
+
+If you are carrying out an independent review, the
+[security review checklist](SECURITY_REVIEW_CHECKLIST.md) names the files in
+scope, the questions to answer and a reproducible vector script with a
+disposable archive and a synthetic fixture.
+
 ## No audit has occurred
 
 This project has not been independently audited or penetration tested. Do not

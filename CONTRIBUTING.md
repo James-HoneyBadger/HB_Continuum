@@ -13,7 +13,18 @@ Use focused branches and review changes before merging. Respect applicable licen
 Do not open a public issue, pull request or discussion for a suspected
 vulnerability. Follow [SECURITY.md](SECURITY.md) and use GitHub's private
 vulnerability reporting. Security-sensitive changes should be discussed
-privately before any public pull request is opened. Run `mypy` locally with the checked-in `mypy.ini`, and note that `check_untyped_defs` is off while the codebase remains unannotated.
+privately before any public pull request is opened.
+
+## Security review
+
+If you are reviewing encryption, key handling or credential storage, start with
+[SECURITY_REVIEW_CHECKLIST.md](SECURITY_REVIEW_CHECKLIST.md). It lists the exact
+files in scope for pass one and a reproducible vector script:
+
+```sh
+./scripts/security_review_vectors.sh
+PYTHON=/path/to/python-with-sqlcipher3 ./scripts/security_review_vectors.sh
+``` Run `mypy` locally with the checked-in `mypy.ini`, and note that `check_untyped_defs` is off while the codebase remains unannotated.
 
 ## Development environment
 
