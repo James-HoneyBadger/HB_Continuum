@@ -779,9 +779,10 @@ No release tag or hosted release was created during the qualification pass itsel
 The `v0.4.0-alpha` tag and GitHub prerelease were published afterwards, on
 2026-11-28, from commit `10a8086`:
 [releases/tag/v0.4.0-alpha](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.4.0-alpha).
-The release is source-only; no signed binaries are attached. Unified search
-still materializes at most 5000 candidate results per query, and no
-1,000,000-record run is claimed.
+The release is source-only; no signed binaries are attached. At that tag,
+unified search still materialized at most 5000 candidate results per query
+(superseded on the v0.5 development branch), and no 1,000,000-record run is
+claimed.
 
 ## Release qualification: v0.4.0-beta (2026-11-28)
 
