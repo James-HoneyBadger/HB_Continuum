@@ -759,7 +759,10 @@ GitHub Actions `CI` run 46107292217 then passed all 12 jobs on commit `ef78643`:
 Python 3.12 and 3.13 tests on Ubuntu, Python 3.13 on macOS and Windows, mypy,
 frontend build, three engine smoke builds and three scheduler smoke runs.
 
-No release tag or hosted release was created by this qualification; that
-decision remains with the repository owner. Unified search still materializes
-at most 5000 candidate results per query, and no 1,000,000-record run is
-claimed.
+No release tag or hosted release was created during the qualification pass itself.
+The `v0.4.0-alpha` tag and GitHub prerelease were published afterwards, on
+2026-11-28, from commit `10a8086`:
+[releases/tag/v0.4.0-alpha](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.4.0-alpha).
+The release is source-only; no signed binaries are attached. Unified search
+still materializes at most 5000 candidate results per query, and no
+1,000,000-record run is claimed.
