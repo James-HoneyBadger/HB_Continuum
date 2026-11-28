@@ -52,7 +52,9 @@ the release was qualified, not what it contains.
 | PDF and DOCX text extraction | `pdf-docx-extraction` | Experimental (flag-gated) | Requires optional `pypdf` / `python-docx`; `tests/test_documents.py` skips without them |
 | OS credential store for scheduler passwords | `keyring-credentials` | Experimental (flag-gated) | Requires optional `keyring`; `tests/test_schedulers.py`; otherwise an encrypted-file store is used |
 | Live model output from Ollama | `live-ollama` | Experimental (flag-gated) | Requires `ai.enabled` and a loopback server; not exercised in CI |
-| MBOX import and verified export | `mbox-io` | Not yet committed | No code in the tag |
+| MBOX import with reconstruction provenance | `mbox-import` | Implemented | `tests/test_mbox.py` |
+| MBOX preview: counts, date range, duplicates, problems | `mbox-preview` | Implemented | `tests/test_mbox.py` |
+| MBOX export | `mbox-export` | Not yet committed | No code in the tag |
 | Resumable IMAP synchronization via UID watermark | `resumable-sync` | Not yet committed | No code in the tag |
 | Attachment-name and attachment-type search filters | `attachment-filters` | Not yet committed | No code in the tag |
 | Recipient-header indexing and duplicate report | `recipient-index` | Not yet committed | No code in the tag |
