@@ -1,0 +1,91 @@
+name: Bug report
+description: Report a defect in the engine, CLI or desktop application
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use **synthetic data only**. Do not paste real email, real exports or
+        personal archive content. For security issues use the private reporting
+        link instead of an issue.
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      description: Output of `python3 --version`
+      placeholder: "3.12.8"
+    validations:
+      required: true
+  - type: dropdown
+    id: sqlcipher
+    attributes:
+      label: SQLCipher in use?
+      description: Whether the archive is encrypted and `sqlcipher3` is installed
+      options:
+        - "No - plaintext archive"
+        - "Yes - encrypted archive"
+        - "Not installed"
+    validations:
+      required: true
+  - type: dropdown
+    id: shell
+    attributes:
+      label: Interface
+      options:
+        - Tauri desktop shell
+        - Legacy Tk workstation
+        - Command line only
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `python3 dispatch.py --version` and `git describe --tags`
+      placeholder: "0.5.0-beta / v0.5.0-beta"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use a disposable archive and fictional records.
+      placeholder: |
+        1. python3 dispatch.py --archive /tmp/demo import fixtures/sample.eml
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include the error text. Remove paths that identify you.
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I used synthetic data only and have not included real personal records.
+          required: true
+        - label: I checked the documentation and known limitations before filing.
+          required: true

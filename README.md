@@ -1,5 +1,7 @@
 # HB Continuum
 
+[![Security policy](https://img.shields.io/badge/security-policy-informational.svg)](SECURITY.md)
+
 **A local-first personal archive and historical research application.**
 
 HB Continuum is an independent, open-source hobby project developed as part of
@@ -35,6 +37,9 @@ git clone https://github.com/James-HoneyBadger/HB_Continuum.git
 cd HB_Continuum
 python3 dispatch.py --version
 ```
+
+Security reports go through [SECURITY.md](SECURITY.md); do not open a public
+issue for a suspected vulnerability.
 
 ## What it does
 
