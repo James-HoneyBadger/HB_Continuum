@@ -116,7 +116,7 @@ def _copy_runtime_files(source, staging):
 
 
 def _export_database(source_db, destination_db, key):
-    import sqlcipher3  # type: ignore[import-not-found]
+    import sqlcipher3
     source = sqlcipher3.connect(source_db.resolve().as_uri() + '?mode=ro',
                                 uri=True)
     try:
