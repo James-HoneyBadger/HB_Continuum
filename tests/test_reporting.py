@@ -59,6 +59,21 @@ class ReportTests(unittest.TestCase):
         self.assertIn('imap.example\\|me',text)
         self.assertIn('| 2023 | 5 |',text)
 
+    def test_catalog_health_feeds_report_consistency(self):
+        catalog={'available':True,'sqlite_ok':True,'foreign_key_errors':0,'records':8,
+                 'source_files':2,'index_rows':8,'index_missing_rows':0,
+                 'index_extra_rows':0,'index_duplicate_rows':0,
+                 'dangling_file_references':0,'invalid_attachments':0}
+        health=dict(HEALTH, raw_invalid=[], catalog=catalog)
+        report=build_archive_report(SOURCES,DASHBOARD,health,HISTORY)
+        self.assertTrue(report['health']['consistent'])
+        self.assertTrue(report['health']['catalog']['consistent'])
+        health['catalog']=dict(catalog, index_missing_rows=1)
+        report=build_archive_report(SOURCES,DASHBOARD,health,HISTORY)
+        self.assertFalse(report['health']['consistent'])
+        self.assertFalse(report['health']['catalog']['consistent'])
+        self.assertIn('Missing index rows', render_markdown(report))
+
     def test_json_round_trips(self):
         payload=json.loads(render(self.report,'json'))
         self.assertEqual(payload['summary']['messages'],12)

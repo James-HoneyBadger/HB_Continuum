@@ -5,6 +5,30 @@ import { useEngineJob } from "../composables/useEngineJob";
 
 const props = defineProps<{ onError: (message: string) => void; onChanged: () => void }>();
 
+interface CatalogSource {
+  source_type: string;
+  files: number;
+  records: number;
+}
+
+interface CatalogDiagnosis {
+  available: boolean;
+  schema_version?: number;
+  schema_current?: boolean;
+  sqlite_ok?: boolean;
+  foreign_key_errors?: number;
+  records?: number;
+  source_files?: number;
+  index_rows?: number;
+  index_missing_rows?: number;
+  index_extra_rows?: number;
+  index_duplicate_rows?: number;
+  dangling_file_references?: number;
+  invalid_attachments?: number | null;
+  sources?: CatalogSource[];
+  consistent?: boolean;
+}
+
 interface Diagnosis {
   sqlite_ok: boolean;
   foreign_key_errors: number;
@@ -16,11 +40,26 @@ interface Diagnosis {
   raw_unindexed: string[];
   raw_invalid: string[];
   undated: number | null;
+  catalog?: CatalogDiagnosis;
 }
 
 const diagnosis = ref<Diagnosis | null>(null);
 const checked = ref("");
 const { busy, progress, start } = useEngineJob();
+
+function catalogProblemCount(c: CatalogDiagnosis | undefined) {
+  if (!c || !c.available) return 0;
+  return (
+    (c.sqlite_ok === false ? 1 : 0) +
+    (c.schema_current === false ? 1 : 0) +
+    (c.foreign_key_errors || 0) +
+    (c.index_missing_rows || 0) +
+    (c.index_extra_rows || 0) +
+    (c.index_duplicate_rows || 0) +
+    (c.dangling_file_references || 0) +
+    (c.invalid_attachments || 0)
+  );
+}
 
 function problemCount(d: Diagnosis) {
   return (
@@ -30,7 +69,8 @@ function problemCount(d: Diagnosis) {
     d.index_duplicate_rows +
     d.raw_missing.length +
     d.raw_unindexed.length +
-    d.raw_invalid.length
+    d.raw_invalid.length +
+    catalogProblemCount(d.catalog)
   );
 }
 
@@ -43,7 +83,7 @@ async function refresh() {
   }
 }
 
-async function startRepair(kind: "reindex" | "recover_orphans") {
+async function startRepair(kind: "reindex" | "recover_orphans" | "catalog_reindex") {
   try {
     const outcome = await start(kind);
     if (outcome.event === "job_error") {
@@ -51,8 +91,9 @@ async function startRepair(kind: "reindex" | "recover_orphans") {
       return;
     }
     const result = outcome.result || {};
-    const count = result.reindexed ?? result.recovered?.length ?? 0;
-    progress.value = `${result.action === "recover" ? "Recovered" : "Reindexed"} ${count}` +
+    const count = result.reindexed ?? result.records_reindexed ?? result.recovered?.length ?? 0;
+    progress.value = `${result.action === "recover" ? "Recovered" :
+      result.action === "catalog_reindex" ? "Reindexed catalog" : "Reindexed"} ${count}` +
       (result.cancelled ? " (cancelled, progress kept)" : "");
     await refresh();
     props.onChanged();
@@ -69,6 +110,7 @@ onMounted(refresh);
     <div class="row">
       <button :disabled="busy" @click="refresh">Re-check</button>
       <button :disabled="busy" @click="startRepair('reindex')">Reindex derived data</button>
+      <button :disabled="busy" @click="startRepair('catalog_reindex')">Reindex catalog</button>
       <button :disabled="busy" @click="startRepair('recover_orphans')">Recover orphaned files</button>
       <span v-if="checked" class="meta">checked {{ checked }}</span>
     </div>
@@ -96,6 +138,29 @@ onMounted(refresh);
           Records without a normalized date: {{ diagnosis.undated }} (sorted last in the timeline)
         </li>
       </ul>
+      <template v-if="diagnosis.catalog?.available">
+        <p class="section-title">Catalog</p>
+        <ul class="counts">
+          <li>
+            Schema: v{{ diagnosis.catalog.schema_version }}
+            ({{ diagnosis.catalog.schema_current === false ? "needs migration" : "current" }})
+          </li>
+          <li>SQLite quick check: {{ diagnosis.catalog.sqlite_ok ? "ok" : "failed" }}</li>
+          <li>Foreign key errors: {{ diagnosis.catalog.foreign_key_errors }}</li>
+          <li>
+            Records: {{ diagnosis.catalog.records }}
+            · Source files: {{ diagnosis.catalog.source_files }}
+            · Index rows: {{ diagnosis.catalog.index_rows }}
+          </li>
+          <li>Missing index rows: {{ diagnosis.catalog.index_missing_rows }}</li>
+          <li>Index rows without a record: {{ diagnosis.catalog.index_extra_rows }}</li>
+          <li>Duplicate index rows: {{ diagnosis.catalog.index_duplicate_rows }}</li>
+          <li>Records without a source file: {{ diagnosis.catalog.dangling_file_references }}</li>
+          <li v-if="diagnosis.catalog.invalid_attachments !== null">
+            Unreadable attachment metadata: {{ diagnosis.catalog.invalid_attachments }}
+          </li>
+        </ul>
+      </template>
       <details>
         <summary>Full report</summary>
         <pre class="json">{{ JSON.stringify(diagnosis, null, 2) }}</pre>
@@ -127,6 +192,11 @@ button {
 }
 .headline.bad {
   color: var(--hb-error-text);
+}
+.section-title {
+  margin: 14px 0 4px;
+  font-size: 14px;
+  font-weight: 600;
 }
 .counts {
   font-size: 13px;

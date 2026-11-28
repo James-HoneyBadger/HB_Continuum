@@ -192,6 +192,7 @@ def _verify(root):
 def _health(root):
     """Read-only consistency report; never migrates or writes to the archive."""
     from .dispatch import diagnose
+    from .catalog import catalog_health
     from .sync_lock import sync_lock, SyncBusy
     base = Path(root)
     path = base / 'archive.sqlite3'
@@ -200,7 +201,9 @@ def _health(root):
     conn = _ro_connect(path)
     try:
         with sync_lock(base):
-            return diagnose(conn, base / 'raw')
+            report = diagnose(conn, base / 'raw')
+            report['catalog'] = catalog_health(base)
+            return report
     except SyncBusy:
         raise IPCError('ARCHIVE_BUSY', 'another archive operation is running') from None
     finally:
@@ -1180,6 +1183,15 @@ class IPCServer:
                         count = archive.reindex(progress=progress, cancel_event=cancel_event)
                         return {'action': action, 'reindexed': count,
                                 'cancelled': cancel_event.is_set()}
+                    if action == 'catalog_reindex':
+                        from .catalog import Catalog
+                        catalog = Catalog(self.root)
+                        try:
+                            indexed = catalog.reindex()
+                        finally:
+                            catalog.close()
+                        return {'action': action, 'records_reindexed': indexed,
+                                'cancelled': cancel_event.is_set()}
                     recovered = archive.recover_orphans(progress=progress, cancel_event=cancel_event)
                     return {'action': action, 'recovered': recovered,
                             'cancelled': cancel_event.is_set()}
@@ -1421,6 +1433,8 @@ class IPCServer:
                 return _result(request_id, _migration_report(self.root))
             if method == 'reindex':
                 return _result(request_id, self._start_repair('reindex'))
+            if method == 'catalog_reindex':
+                return _result(request_id, self._start_repair('catalog_reindex'))
             if method == 'recover_orphans':
                 return _result(request_id, self._start_repair('recover'))
             if method == 'backup':

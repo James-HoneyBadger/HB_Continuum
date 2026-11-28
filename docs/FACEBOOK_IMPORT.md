@@ -59,11 +59,14 @@ python3 dispatch.py --archive ~/HB_Continuum facebook preview ~/facebook-export
 python3 dispatch.py --archive ~/HB_Continuum facebook import ~/facebook-export
 python3 dispatch.py --archive ~/HB_Continuum facebook search "receipt"
 python3 dispatch.py --archive ~/HB_Continuum facebook list --kind event --limit 50
+python3 dispatch.py --archive ~/HB_Continuum facebook verify
+python3 dispatch.py --archive ~/HB_Continuum facebook reindex
 ```
 
 The desktop **Import** tab offers the same preview and import, choosing
 either individual JSON files or the export folder; the import runs as a
-background job with per-file progress.
+background job with per-file progress. The **Health** tab reports catalog
+consistency alongside the email archive and offers **Reindex catalog**.
 
 `preview` reports files discovered, recognized categories, estimated record
 counts, and unsupported files. `import` is idempotent: re-running it skips
@@ -71,6 +74,19 @@ files already imported (matched by SHA-256), so interrupted imports resume
 safely and overlapping exports are deduplicated per record. `search` runs a
 full-text query over imported record text; `list` browses records filtered
 by `--kind` and `--actor`.
+
+## Consistency and repair
+
+`verify` is a read-only report on `catalog.sqlite3`: SQLite's quick check,
+foreign-key errors, record and source-file counts, disagreement between the
+stored records and the FTS index, duplicate index rows, records whose source
+file is missing, and unreadable attachment metadata. It exits non-zero when
+a problem is found, and does not migrate or write to the catalog.
+
+`reindex` rebuilds the record FTS index from the stored `records` rows. The
+migration triggers normally keep the index in step, so this is a repair path
+for a drifted or partly rebuilt index. Search text is derived from stored
+data, so rebuilding does not alter records or provenance.
 
 ## Counting semantics
 

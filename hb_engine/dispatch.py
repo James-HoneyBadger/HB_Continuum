@@ -707,7 +707,10 @@ class Archive:
         with sync_lock(self.root):
             return self._health()
     def _health(self):
-        return diagnose(self.db,self.raw)
+        from .catalog import catalog_health
+        report = diagnose(self.db, self.raw)
+        report['catalog'] = catalog_health(self.root)
+        return report
     def recover_orphans(self, progress=None, cancel_event=None):
         """Re-ingest valid raw originals left behind by an interrupted ingest.
 
@@ -851,7 +854,7 @@ class Archive:
 def main(argv=None):
     import getpass, sys
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version'); q=sub.add_parser('search-all'); q.add_argument('query'); q.add_argument('--limit',type=int,default=100); q.add_argument('--sources',default='email,facebook'); sub.add_parser('serve'); sub.add_parser('health'); sub.add_parser('reindex'); sub.add_parser('recover-orphans'); q=sub.add_parser('import-history'); q.add_argument('--limit',type=int,default=50); q=sub.add_parser('backup'); q.add_argument('destination'); q=sub.add_parser('verify-backup'); q.add_argument('snapshot'); q=sub.add_parser('restore'); q.add_argument('snapshot'); q=sub.add_parser('schedule'); q.add_argument('args',nargs=argparse.REMAINDER); q=sub.add_parser('migrate'); q.add_argument('--dry-run',action='store_true'); q.add_argument('--no-snapshot',action='store_true')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); fb.add_parser('verify'); fb.add_parser('reindex'); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version'); q=sub.add_parser('search-all'); q.add_argument('query'); q.add_argument('--limit',type=int,default=100); q.add_argument('--sources',default='email,facebook'); sub.add_parser('serve'); sub.add_parser('health'); sub.add_parser('reindex'); sub.add_parser('recover-orphans'); q=sub.add_parser('import-history'); q.add_argument('--limit',type=int,default=50); q=sub.add_parser('backup'); q.add_argument('destination'); q=sub.add_parser('verify-backup'); q.add_argument('snapshot'); q=sub.add_parser('restore'); q.add_argument('snapshot'); q=sub.add_parser('schedule'); q.add_argument('args',nargs=argparse.REMAINDER); q=sub.add_parser('migrate'); q.add_argument('--dry-run',action='store_true'); q.add_argument('--no-snapshot',action='store_true')
     a=p.parse_args(argv)
     if a.cmd=='migrate':
         from .migrations import report
@@ -881,7 +884,8 @@ def main(argv=None):
     elif a.cmd=='recover-orphans': print(json.dumps(ar.recover_orphans()))
     elif a.cmd=='health':
         diagnosis=ar.health(); print(json.dumps(diagnosis,indent=2))
-        return int(not diagnosis['sqlite_ok'] or any(diagnosis[k] for k in ('foreign_key_errors','index_missing','index_extra','index_duplicate_rows','raw_missing','raw_unindexed','raw_invalid')))
+        catalog=diagnosis.get('catalog') or {}
+        return int(not diagnosis['sqlite_ok'] or any(diagnosis[k] for k in ('foreign_key_errors','index_missing','index_extra','index_duplicate_rows','raw_missing','raw_unindexed','raw_invalid')) or (catalog.get('available') and not catalog['consistent']))
     elif a.cmd=='search': print(json.dumps(ar.find(a.query),indent=2))
     elif a.cmd=='search-all':
         from .unified import search_unified
@@ -893,6 +897,16 @@ def main(argv=None):
         from .facebook import preview, import_files
         if a.fcmd=='preview': print(json.dumps(preview(a.paths,ar.root),indent=2))
         elif a.fcmd=='import': print(json.dumps(import_files(a.paths,ar.root),indent=2))
+        elif a.fcmd=='verify':
+            from .catalog import catalog_health
+            report=catalog_health(ar.root); print(json.dumps(report,indent=2))
+            return int(report.get('available') and not report['consistent'])
+        elif a.fcmd=='reindex':
+            from .catalog import Catalog
+            c=Catalog(ar.root)
+            try: indexed=c.reindex()
+            finally: c.close()
+            print(json.dumps({'records_reindexed':indexed}))
         else:
             from .catalog import Catalog
             c=Catalog(ar.root)

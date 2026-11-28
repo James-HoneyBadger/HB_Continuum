@@ -368,6 +368,11 @@ fn reindex(state: State<AppState>) -> Result<Value, String> {
 }
 
 #[tauri::command]
+fn catalog_reindex(state: State<AppState>) -> Result<Value, String> {
+    call(&state, "catalog_reindex", json!({}))
+}
+
+#[tauri::command]
 fn recover_orphans(state: State<AppState>) -> Result<Value, String> {
     call(&state, "recover_orphans", json!({}))
 }
@@ -896,6 +901,7 @@ pub fn run() {
             correspondents, relationships,
             record, verify, health,
             reindex, recover_orphans, migrate_status, backup, verify_backup, restore,
+            catalog_reindex,
             facebook_preview, facebook_import,
             import_eml, import_history, sources, report_archive, cancel,
             source_set_enabled, source_removal_preview, source_remove, source_events,

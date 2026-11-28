@@ -9,6 +9,80 @@ from .migrations import MIGRATIONS as _MIGRATIONS, apply as migrate, target_vers
 VERSION = target_version('catalog')
 MIGRATIONS = _MIGRATIONS['catalog']
 
+def catalog_health(root):
+    """Read-only consistency report for catalog.sqlite3.
+
+    Never migrates or writes, so it is safe against an older catalog or one
+    being imported concurrently. A missing or pre-schema catalog is reported
+    as unavailable rather than treated as an error; an older schema is
+    reported as not current and is never migrated here.
+    """
+    path = Path(root).expanduser()
+    database = path / 'catalog.sqlite3'
+    if not database.is_file():
+        return {'available': False}
+    try:
+        conn = sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True, timeout=30)
+    except sqlite3.Error:
+        return {'available': False}
+    try:
+        conn.execute('PRAGMA query_only=ON')
+        tables = {name for name, in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {'records', 'record_search'} <= tables:
+            return {'available': False}
+        version = conn.execute('PRAGMA user_version').fetchone()[0]
+        checks = conn.execute('PRAGMA quick_check').fetchall()
+        foreign = conn.execute('PRAGMA foreign_key_check').fetchall()
+        records = conn.execute('SELECT count(*) FROM records').fetchone()[0]
+        files = conn.execute('SELECT count(*) FROM source_files').fetchone()[0]
+        indexed = conn.execute('SELECT count(*) FROM record_search').fetchone()[0]
+        distinct = conn.execute('SELECT count(DISTINCT rowid) FROM record_search').fetchone()[0]
+        missing = conn.execute(
+            'SELECT count(*) FROM records r '
+            'WHERE r.rowid NOT IN (SELECT rowid FROM record_search)').fetchone()[0]
+        extra = conn.execute(
+            'SELECT count(*) FROM record_search s '
+            'WHERE s.rowid NOT IN (SELECT rowid FROM records)').fetchone()[0]
+        dangling = conn.execute(
+            'SELECT count(*) FROM records r '
+            'WHERE r.file_hash NOT IN (SELECT file_hash FROM source_files)').fetchone()[0]
+        try:
+            invalid = conn.execute(
+                'SELECT count(*) FROM records WHERE json_valid(attachments_json)=0'
+            ).fetchone()[0]
+        except sqlite3.OperationalError:
+            invalid = None
+        by_source = []
+        types = [row[0] for row in conn.execute(
+            'SELECT source_type FROM source_files UNION '
+            'SELECT source_type FROM records ORDER BY 1')]
+        for source_type in types:
+            by_source.append({
+                'source_type': source_type,
+                'files': conn.execute(
+                    'SELECT count(*) FROM source_files WHERE source_type=?',
+                    (source_type,)).fetchone()[0],
+                'records': conn.execute(
+                    'SELECT count(*) FROM records WHERE source_type=?',
+                    (source_type,)).fetchone()[0]})
+    except sqlite3.Error:
+        return {'available': False}
+    finally:
+        conn.close()
+    duplicate_rows = indexed - distinct
+    current = version >= VERSION
+    consistent = (current and checks == [('ok',)] and not foreign and not missing
+                  and not extra and not duplicate_rows and not dangling and not invalid)
+    return {'available': True, 'schema_version': version, 'schema_current': current,
+            'sqlite_ok': checks == [('ok',)],
+            'foreign_key_errors': len(foreign), 'records': records,
+            'source_files': files, 'index_rows': indexed,
+            'index_missing_rows': missing, 'index_extra_rows': extra,
+            'index_duplicate_rows': duplicate_rows,
+            'dangling_file_references': dangling, 'invalid_attachments': invalid,
+            'sources': by_source, 'consistent': consistent}
+
 class Catalog:
     """Source-independent record catalog alongside the email archive.
 
@@ -27,6 +101,19 @@ class Catalog:
 
     def close(self):
         self.db.close()
+
+    def reindex(self):
+        """Rebuild the record full-text index from the stored records.
+
+        The triggers keep record_search in step during normal writes, so this
+        is a repair path for a drifted, truncated or partly rebuilt index.
+        """
+        with self.db:
+            self.db.execute('DELETE FROM record_search')
+            self.db.execute(
+                'INSERT INTO record_search(rowid, body, actor, attachments_text) '
+                'SELECT rowid, body, actor, attachments_text FROM records')
+        return self.db.execute('SELECT count(*) FROM record_search').fetchone()[0]
 
     def has_file(self, file_hash):
         return self.db.execute('SELECT 1 FROM source_files WHERE file_hash=?', (file_hash,)).fetchone() is not None

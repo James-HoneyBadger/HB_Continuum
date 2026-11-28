@@ -30,6 +30,31 @@ LIMITATIONS = (
 def _now():
     return datetime.now(timezone.utc).isoformat(timespec='seconds')
 
+def _catalog_health_summary(catalog):
+    if not isinstance(catalog, dict) or not catalog.get('available'):
+        return {'available': False}
+    summary = {
+        'available': True,
+        'schema_version': catalog.get('schema_version'),
+        'schema_current': bool(catalog.get('schema_current', True)),
+        'sqlite_ok': bool(catalog.get('sqlite_ok')),
+        'foreign_key_errors': catalog.get('foreign_key_errors', 0),
+        'records': catalog.get('records', 0),
+        'source_files': catalog.get('source_files', 0),
+        'index_rows': catalog.get('index_rows', 0),
+        'index_missing_rows': catalog.get('index_missing_rows', 0),
+        'index_extra_rows': catalog.get('index_extra_rows', 0),
+        'index_duplicate_rows': catalog.get('index_duplicate_rows', 0),
+        'dangling_file_references': catalog.get('dangling_file_references', 0),
+        'invalid_attachments': catalog.get('invalid_attachments') or 0,
+    }
+    summary['consistent'] = (summary['sqlite_ok'] and summary['schema_current']
+                             and not any(summary[key] for key in (
+                                 'foreign_key_errors', 'index_missing_rows',
+                                 'index_extra_rows', 'index_duplicate_rows',
+                                 'dangling_file_references', 'invalid_attachments')))
+    return summary
+
 def _health_summary(health):
     if not isinstance(health, dict):
         return {'available': False}
@@ -46,11 +71,14 @@ def _health_summary(health):
         'raw_unindexed': len(health.get('raw_unindexed') or []),
         'raw_invalid': len(health.get('raw_invalid') or []),
     }
+    summary['catalog'] = _catalog_health_summary(health.get('catalog'))
     summary['consistent'] = (summary['sqlite_ok']
                              and not any(summary[key] for key in (
                                  'foreign_key_errors', 'index_missing', 'index_extra',
                                  'index_duplicate_rows', 'raw_missing',
-                                 'raw_unindexed', 'raw_invalid')))
+                                 'raw_unindexed', 'raw_invalid'))
+                             and (not summary['catalog'].get('available')
+                                  or summary['catalog']['consistent']))
     return summary
 
 def build_archive_report(sources, dashboard, health, history, title=None):
@@ -145,6 +173,21 @@ def render_markdown(report):
              ('Unindexed originals', health.get('raw_unindexed')),
              ('Altered or unsafe originals', health.get('raw_invalid')),
              ('Records without a normalized date', health.get('undated'))]) + ['']
+        catalog = health.get('catalog') or {}
+        if catalog.get('available'):
+            lines += _markdown_table(
+                ('Catalog check', 'Result'),
+                [('Schema', f"v{catalog.get('schema_version')}"
+                   + ('' if catalog.get('schema_current') else ' (needs migration)')),
+                 ('SQLite quick check', 'ok' if catalog.get('sqlite_ok') else 'failed'),
+                 ('Records', catalog.get('records')),
+                 ('Source files', catalog.get('source_files')),
+                 ('Index rows', catalog.get('index_rows')),
+                 ('Missing index rows', catalog.get('index_missing_rows')),
+                 ('Index rows without a record', catalog.get('index_extra_rows')),
+                 ('Duplicate index rows', catalog.get('index_duplicate_rows')),
+                 ('Records without a source file', catalog.get('dangling_file_references')),
+                 ('Unreadable attachment metadata', catalog.get('invalid_attachments'))]) + ['']
     else:
         lines += ['Consistency data was unavailable.', '']
 
@@ -219,6 +262,20 @@ def render_html(report):
             ('Unindexed originals', health.get('raw_unindexed')),
             ('Altered or unsafe originals', health.get('raw_invalid')),
             ('Records without a normalized date', health.get('undated'))]))
+        catalog = health.get('catalog') or {}
+        if catalog.get('available'):
+            body.append(_html_table(('Catalog check', 'Result'), [
+                ('Schema', f"v{catalog.get('schema_version')}"
+                 + ('' if catalog.get('schema_current') else ' (needs migration)')),
+                ('SQLite quick check', 'ok' if catalog.get('sqlite_ok') else 'failed'),
+                ('Records', catalog.get('records')),
+                ('Source files', catalog.get('source_files')),
+                ('Index rows', catalog.get('index_rows')),
+                ('Missing index rows', catalog.get('index_missing_rows')),
+                ('Index rows without a record', catalog.get('index_extra_rows')),
+                ('Duplicate index rows', catalog.get('index_duplicate_rows')),
+                ('Records without a source file', catalog.get('dangling_file_references')),
+                ('Unreadable attachment metadata', catalog.get('invalid_attachments'))]))
     else:
         body.append('<p class="meta">Consistency data was unavailable.</p>')
     imports = report.get('imports') or []

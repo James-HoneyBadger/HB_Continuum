@@ -3,7 +3,7 @@
 import json, tempfile, unittest
 from pathlib import Path
 from facebook import preview, import_files, _expand, _extract_items, _normalize
-from catalog import Catalog, target_version
+from catalog import Catalog, catalog_health, target_version
 
 class FacebookImportTests(unittest.TestCase):
     def setUp(self):
@@ -168,6 +168,88 @@ class FacebookImportTests(unittest.TestCase):
             self.assertEqual(catalog.list_records('facebook', record_kind='message'),[])
         finally:
             catalog.close()
+
+    def test_catalog_health_detects_and_repairs_index_drift(self):
+        import sqlite3
+        path=self.write('your_posts_1.json',{'your_posts':[
+            {'timestamp': 1700000000, 'data': [{'post': 'Bullion receipt'}]},
+        ]})
+        import_files([str(path)], self.root)
+        health=catalog_health(self.root)
+        self.assertTrue(health['available'])
+        self.assertTrue(health['consistent'])
+        self.assertEqual((health['records'],health['index_rows']),(1,1))
+        self.assertEqual(health['sources'],
+                         [{'source_type':'facebook','files':1,'records':1}])
+        conn=sqlite3.connect(self.root/'catalog.sqlite3')
+        try:
+            conn.execute('DELETE FROM record_search')
+            conn.execute("INSERT INTO record_search(rowid,body,actor,attachments_text) "
+                         "VALUES(99,'ghost','','')")
+            conn.commit()
+        finally:
+            conn.close()
+        drifted=catalog_health(self.root)
+        self.assertFalse(drifted['consistent'])
+        self.assertEqual(drifted['index_missing_rows'],1)
+        self.assertEqual(drifted['index_extra_rows'],1)
+        catalog=Catalog(self.root)
+        try:
+            self.assertEqual(catalog.reindex(),1)
+            self.assertEqual(len(catalog.search_records('bullion')),1)
+            self.assertEqual(catalog.search_records('ghost'),[])
+        finally:
+            catalog.close()
+        self.assertTrue(catalog_health(self.root)['consistent'])
+
+    def test_catalog_health_does_not_migrate_an_old_catalog(self):
+        import sqlite3
+        from catalog import MIGRATIONS
+        conn=sqlite3.connect(self.root/'catalog.sqlite3')
+        try:
+            for statement in MIGRATIONS[1]:
+                conn.execute(statement)
+            conn.execute('PRAGMA user_version=1')
+            conn.commit()
+        finally:
+            conn.close()
+        self.assertFalse(catalog_health(self.root)['available'])
+        conn=sqlite3.connect(self.root/'catalog.sqlite3')
+        try:
+            self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0],1)
+        finally:
+            conn.close()
+
+    def test_catalog_health_flags_an_outdated_schema_without_migrating(self):
+        import sqlite3
+        from catalog import MIGRATIONS
+        conn=sqlite3.connect(self.root/'catalog.sqlite3')
+        try:
+            for statement in MIGRATIONS[1]:
+                conn.execute(statement)
+            conn.execute("INSERT INTO source_files VALUES('h','facebook','posts','p',1,'now')")
+            conn.execute("INSERT INTO records VALUES('r','facebook','posts','post',NULL,"
+                         "NULL,'second','hello',NULL,'h','now')")
+            for version in (2,3,4):
+                for statement in MIGRATIONS[version]:
+                    conn.execute(statement)
+            conn.execute('PRAGMA user_version=4')
+            conn.commit()
+        finally:
+            conn.close()
+        health=catalog_health(self.root)
+        self.assertTrue(health['available'])
+        self.assertEqual(health['schema_version'],4)
+        self.assertFalse(health['schema_current'])
+        self.assertFalse(health['consistent'])
+        catalog=Catalog(self.root)
+        try:
+            self.assertEqual(catalog.reindex(),1)
+        finally:
+            catalog.close()
+        repaired=catalog_health(self.root)
+        self.assertTrue(repaired['schema_current'])
+        self.assertTrue(repaired['consistent'])
 
     def test_post_revisions_preserve_versions_and_update_time(self):
         first=self.write('posts_a.json',{'your_posts':[

@@ -34,7 +34,10 @@ landed (Overview dashboard, design tokens, timeline pagination).
   with import preview, SHA-256 provenance, per-record original JSON
   preservation, idempotent resumable import, duplicate detection,
   post/comment revision metadata, attachment metadata, and `facebook
-  search`/`facebook list` surfaces.
+  search`/`facebook list` surfaces. Read-only catalog consistency checks
+  (`facebook verify`, included in `health`) detect FTS drift, duplicate
+  index rows, dangling source-file references and unreadable attachment
+  metadata; `facebook reindex` rebuilds the record index.
 - Opt-in local AI summarization (`summarize.py`): loopback-only Ollama
   backend, strict `ai.enabled`/`ai.backend` gate, message and thread
   summaries with prompt versioning, input-digest staleness detection,

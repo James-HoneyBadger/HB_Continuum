@@ -589,6 +589,29 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(terminal['result'],{'action':'reindex','reindexed':1,'cancelled':False})
         self.assertEqual(self.server.handle(request('health'))['result']['index_missing'],[])
 
+    def test_health_includes_catalog_and_catalog_reindex_job(self):
+        export=self.root/'posts.json'
+        export.write_text(json.dumps({'your_posts':[
+            {'timestamp':1700000000,'data':[{'post':'Bullion note'}]},
+        ]}))
+        started=self.server.handle(request('facebook_import',paths=[str(export)]))
+        self.finish_job(started['result']['job_id'])
+        clean=self.server.handle(request('health'))['result']['catalog']
+        self.assertTrue(clean['available'])
+        self.assertTrue(clean['consistent'])
+        self.assertEqual((clean['records'],clean['index_rows']),(1,1))
+        with sqlite3.connect(self.root/'catalog.sqlite3') as conn:
+            conn.execute('DELETE FROM record_search')
+        broken=self.server.handle(request('health'))['result']['catalog']
+        self.assertFalse(broken['consistent'])
+        self.assertEqual(broken['index_missing_rows'],1)
+        repaired=self.server.handle(request('catalog_reindex'))
+        terminal=self.finish_job(repaired['result']['job_id'])
+        self.assertEqual(terminal['event'],'job_complete')
+        self.assertEqual(terminal['result'],{'action':'catalog_reindex',
+                                             'records_reindexed':1,'cancelled':False})
+        self.assertTrue(self.server.handle(request('health'))['result']['catalog']['consistent'])
+
     def test_recover_orphans_job_reports_recovered_hashes(self):
         import hashlib
         raw=b'From: orphan@example.invalid\r\nSubject: Orphan\r\n\r\nrecovered body'
