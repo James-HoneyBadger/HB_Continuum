@@ -4,6 +4,12 @@
 
 HB Dispatch is in active real-world use. It has moved beyond a proof of concept: live mailbox retrieval, searchable local preservation and source-backed historical research have been demonstrated with more than 20,000 unique archived messages across two mail providers. Development continues, but the core archival workflow is working software today.
 
+## Independent and interoperable
+
+**Independent by design. Interoperable by choice. Intelligent when desired.**
+
+Each application works independently; optional integrations remain under user control. AI is never mandatory. See the [integration tutorial](docs/CONTINUUM_INTEGRATION.md).
+
 ## Demonstrated in real-world use
 
 As of November 26, 2026, a live deployment had indexed 20,185 unique messages, with a second mailbox import still underway. The SQLite message count and full-text index count reconciled at that snapshot. An earlier completed 12,798-message import also passed SQLite integrity checks and reconciled against its original EML file count.
