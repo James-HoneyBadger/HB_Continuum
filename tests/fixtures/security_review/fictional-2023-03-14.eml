@@ -1,0 +1,15 @@
+From: Ada Example <ada.example@example.invalid>
+To: Grace Example <grace.example@example.invalid>
+Cc: Nobody <nobody@example.invalid>
+Subject: Totally fictional invoice QS-1042
+Date: Tue, 14 Mar 2023 09:15:00 +0000
+Message-ID: <security-review-fixture-0001@example.invalid>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+This message is fictional. Ada Example, Grace Example and QS-1042 do not
+exist. The contents exist only to give the security review a deterministic
+record with a known hash.
+
+Reference: QS-1042, signed on a made-up planet, for a project that was never
+funded.
