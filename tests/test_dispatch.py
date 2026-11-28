@@ -365,6 +365,69 @@ class Tests(unittest.TestCase):
         with mock.patch('dispatch.SYNC_LOG_LIMIT',2):
             for _ in range(5): self.a._log_sync('h|u','INBOX','2024-01-01 00:00:00',0,None)
         self.assertEqual(self.a.db.execute('SELECT count(*) FROM sync_log').fetchone()[0],2)
+    def test_recipients_are_preserved_and_searchable(self):
+        raw=(b'From: Alice <alice@example.invalid>\r\nTo: Bob <bob@example.invalid>, carol@example.invalid\r\n'
+             b'Cc: Dave <dave@example.invalid>\r\nBcc: hidden@example.invalid\r\n'
+             b'Subject: Quarterly\r\nMessage-ID: <q@example.invalid>\r\n\r\nbody text\r\n')
+        h=self.a.ingest(raw)
+        data=self.a.details(h)
+        self.assertEqual(data['recipient'],'Bob <bob@example.invalid>, carol@example.invalid')
+        self.assertEqual(data['cc'],'Dave <dave@example.invalid>')
+        self.assertEqual(data['bcc'],'hidden@example.invalid')
+        self.assertEqual(len(self.a.find('recipient:carol')),1)
+        self.assertEqual(len(self.a.find('cc:dave')),1)
+        self.assertEqual(len(self.a.find('bcc:hidden')),1)
+        self.assertEqual(len(self.a.find('carol')),1)
+        self.assertEqual([r[0] for r in self.a.find('',recipient='hidden')],[h])
+        self.assertEqual([r[0] for r in self.a.find('',recipient='dave')],[h])
+        self.assertEqual(self.a.find('',recipient='nobody'),[])
+    def test_legacy_archive_gains_recipient_index(self):
+        root=Path(self.tmp.name)/'legacy'; raw=root/'raw'; raw.mkdir(parents=True)
+        message=(b'From: old@example.invalid\r\nTo: keeper@example.invalid\r\nSubject: Legacy letter\r\n'
+                 b'Message-ID: <legacy-headers@example.invalid>\r\n\r\nlegacy body\r\n')
+        digest=__import__('hashlib').sha256(message).hexdigest()
+        (raw/(digest+'.eml')).write_bytes(message)
+        legacy=sqlite3.connect(root/'archive.sqlite3')
+        legacy.executescript("""CREATE TABLE messages(hash TEXT PRIMARY KEY, subject TEXT, sender TEXT, date TEXT,
+            message_id TEXT, reply_to TEXT, body TEXT);
+            CREATE VIRTUAL TABLE search USING fts5(hash UNINDEXED, subject, sender, body);
+            CREATE TABLE origins(account TEXT, folder TEXT, validity TEXT, uid TEXT, hash TEXT NOT NULL REFERENCES messages(hash), PRIMARY KEY(account,folder,validity,uid));""")
+        legacy.execute('INSERT INTO messages VALUES(?,?,?,?,?,?,?)',(digest,'Legacy letter','old@example.invalid','','<legacy-headers@example.invalid>','','legacy body'))
+        legacy.execute('INSERT INTO search VALUES(?,?,?,?)',(digest,'Legacy letter','old@example.invalid','legacy body'))
+        legacy.commit(); legacy.close()
+        archive=Archive(root)
+        try:
+            self.assertEqual(len(archive.find('legacy body')),1)
+            self.assertEqual([r[0] for r in archive.find('',recipient='keeper')],[digest])
+            self.assertEqual(archive.details(digest)['recipient'],'keeper@example.invalid')
+            self.assertEqual(archive.db.execute("SELECT value FROM meta WHERE key='headers_backfill'").fetchone()[0],'done')
+            self.assertEqual(archive.verify(),[])
+        finally: archive.db.close()
+    def test_header_backfill_resumes_from_its_checkpoint(self):
+        first=self.a.ingest(b'To: one@example.invalid\r\nSubject: One\r\nMessage-ID: <1@example.invalid>\r\n\r\none\r\n')
+        second=self.a.ingest(b'To: two@example.invalid\r\nSubject: Two\r\nMessage-ID: <2@example.invalid>\r\n\r\ntwo\r\n')
+        with self.a.db:
+            self.a.db.execute('UPDATE messages SET recipient=NULL')
+            self.a.db.execute('UPDATE search SET recipient=?',('',))
+        rowid=self.a.db.execute('SELECT rowid FROM messages WHERE hash=?',(first,)).fetchone()[0]
+        with self.a.db:
+            self.a.db.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('headers_backfill',?)",(str(rowid),))
+        self.a._backfill_headers()
+        self.assertIsNone(self.a.details(first)['recipient'])
+        self.assertEqual(self.a.details(second)['recipient'],'two@example.invalid')
+        self.assertEqual(self.a.db.execute("SELECT value FROM meta WHERE key='headers_backfill'").fetchone()[0],'done')
+        with self.a.db: self.a.db.execute("DELETE FROM meta WHERE key='headers_backfill'")
+        self.a._backfill_headers()
+        self.assertEqual(self.a.details(first)['recipient'],'one@example.invalid')
+        self.assertEqual([r[0] for r in self.a.find('',recipient='one')],[first])
+    def test_reindex_populates_recipients_for_legacy_rows(self):
+        h=self.a.ingest(b'To: revive@example.invalid\r\nSubject: Revive\r\nMessage-ID: <r@example.invalid>\r\n\r\nrevive body\r\n')
+        with self.a.db:
+            self.a.db.execute('UPDATE messages SET recipient=?,cc=?,bcc=?',('','',''))
+            self.a.db.execute('DELETE FROM search')
+        self.assertEqual(self.a.reindex(),1)
+        self.assertEqual([r[0] for r in self.a.find('',recipient='revive')],[h])
+        self.assertEqual(self.a.db.execute("SELECT value FROM meta WHERE key='headers_backfill'").fetchone()[0],'done')
     def test_version_flag(self):
         out=io.StringIO()
         with mock.patch('sys.argv',['dispatch.py','--version']), contextlib.redirect_stdout(out):

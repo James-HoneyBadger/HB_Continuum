@@ -11,9 +11,17 @@ __version__ = '0.3.0'
 
 SYNC_MAX_ATTEMPTS = 3
 SYNC_LOG_LIMIT = 1000
+BACKFILL_CHUNK = 500
+
+MESSAGE_HEADERS = ('Subject','From','Date','Message-ID','In-Reply-To','To','Cc','Bcc')
 
 _HTML_BLOCK_TAGS = frozenset({'br','p','div','tr','li','hr','h1','h2','h3','h4','h5','h6','blockquote','pre'})
 _HTML_SKIP_TAGS = frozenset({'script','style','head','title'})
+
+def _like(text):
+    """SQL LIKE pattern for a case-insensitive substring, with wildcards escaped."""
+    escaped=text.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
+    return f'%{escaped}%'
 
 def _sent_ts(date_header):
     """UTC epoch seconds for a Date header, or None when it cannot be parsed."""
@@ -111,9 +119,60 @@ class Archive:
         CREATE INDEX IF NOT EXISTS attachments_sha256 ON attachments(sha256);
         CREATE TABLE IF NOT EXISTS sync_state(account TEXT NOT NULL, folder TEXT NOT NULL, validity TEXT NOT NULL, last_uid INTEGER NOT NULL DEFAULT 0, updated TEXT NOT NULL, PRIMARY KEY(account,folder,validity));
         CREATE TABLE IF NOT EXISTS sync_log(id INTEGER PRIMARY KEY, account TEXT NOT NULL, folder TEXT NOT NULL, started TEXT NOT NULL, finished TEXT NOT NULL, archived INTEGER NOT NULL, error TEXT);''')
-        if 'sent_ts' not in {row[1] for row in self.db.execute('PRAGMA table_info(messages)')}:
-            self.db.execute('ALTER TABLE messages ADD COLUMN sent_ts INTEGER')
+        added={column for column in ('sent_ts','recipient','cc','bcc')
+               if column not in {row[1] for row in self.db.execute('PRAGMA table_info(messages)')}}
+        with self.db:
+            for column in sorted(added):
+                self.db.execute(f"ALTER TABLE messages ADD COLUMN {column} {'INTEGER' if column=='sent_ts' else 'TEXT'}")
         self.db.execute('CREATE INDEX IF NOT EXISTS messages_sent_ts ON messages(sent_ts)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)')
+        index_columns={row[1] for row in self.db.execute('PRAGMA table_info(search)')}
+        if not {'recipient','cc','bcc'} <= index_columns: self._rebuild_search_index()
+        elif added: self._backfill_headers()
+    def _rebuild_search_index(self):
+        """Recreate the search index with recipient columns, keeping indexed text."""
+        with self.db:
+            self.db.execute('DROP TABLE IF EXISTS search_rebuild')
+            self.db.execute('CREATE VIRTUAL TABLE search_rebuild USING fts5(hash UNINDEXED, subject, sender, recipient, cc, bcc, body)')
+            self.db.execute('INSERT INTO search_rebuild(hash,subject,sender,recipient,cc,bcc,body)'
+                            " SELECT hash,subject,sender,'','','',body FROM search")
+            self.db.execute('DROP TABLE search')
+            self.db.execute('ALTER TABLE search_rebuild RENAME TO search')
+        self._backfill_headers()
+    def _backfill_headers(self):
+        """Populate recipient, cc and bcc from preserved raw mail, in resumable chunks.
+
+        The one-time upgrade pass commits every BACKFILL_CHUNK messages and records
+        its position, so an interrupted upgrade continues rather than restarting,
+        and search stays complete without asking the user to run reindex.
+        """
+        while True:
+            row=self.db.execute("SELECT value FROM meta WHERE key='headers_backfill'").fetchone()
+            if row and row[0]=='done': return
+            cursor=int(row[0]) if row else 0
+            batch=self.db.execute('SELECT rowid,hash FROM messages WHERE rowid>? ORDER BY rowid LIMIT ?',
+                                  (cursor,BACKFILL_CHUNK)).fetchall()
+            if not batch:
+                with self.db: self.db.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('headers_backfill','done')")
+                return
+            for rowid,digest in batch:
+                self._refresh_headers(digest)
+            with self.db:
+                self.db.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('headers_backfill',?)",(str(batch[-1][0]),))
+    def _refresh_headers(self, digest):
+        """Re-read one stored message and refresh its recipient headers and index row."""
+        path=self.raw/(digest+'.eml')
+        if not path.is_file(): return
+        raw=path.read_bytes()
+        if hashlib.sha256(raw).hexdigest()!=digest: return
+        fields=self._fields(BytesParser(policy=policy.default).parsebytes(raw))
+        with self.db:
+            self.db.execute('UPDATE messages SET recipient=?,cc=?,bcc=? WHERE hash=?',(fields[5],fields[6],fields[7],digest))
+            self.db.execute('UPDATE search SET recipient=?,cc=?,bcc=? WHERE hash=?',(fields[5],fields[6],fields[7],digest))
+    @staticmethod
+    def _fields(msg):
+        """Header values in storage order; absent headers become empty strings."""
+        return [str(msg.get(name,'')) for name in MESSAGE_HEADERS]
     @staticmethod
     def _part_text(part):
         """Extract decoded text from a MIME part; never raises on hostile charsets."""
@@ -186,10 +245,12 @@ class Archive:
         body=self._body_of(msg)
         attachments=[(name,ctype,len(payload),self._store_attachment(payload))
                      for name,ctype,payload in self._attachment_parts(msg)]
-        fields=[str(msg.get(k,'')) for k in ('Subject','From','Date','Message-ID','In-Reply-To')]
+        fields=self._fields(msg)
         with self.db:
-            cur=self.db.execute('INSERT OR IGNORE INTO messages(hash,subject,sender,date,message_id,reply_to,body,sent_ts) VALUES(?,?,?,?,?,?,?,?)',(digest,*fields,body,_sent_ts(fields[2])))
-            if cur.rowcount: self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(digest,fields[0],fields[1],body))
+            cur=self.db.execute('INSERT OR IGNORE INTO messages(hash,subject,sender,date,message_id,reply_to,body,sent_ts,recipient,cc,bcc) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+                                (digest,fields[0],fields[1],fields[2],fields[3],fields[4],body,_sent_ts(fields[2]),fields[5],fields[6],fields[7]))
+            if cur.rowcount: self.db.execute('INSERT INTO search(hash,subject,sender,recipient,cc,bcc,body) VALUES(?,?,?,?,?,?,?)',
+                                             (digest,fields[0],fields[1],fields[5],fields[6],fields[7],body))
             for filename,content_type,size,sha256 in attachments:
                 self.db.execute('INSERT OR IGNORE INTO attachments VALUES(?,?,?,?,?)',(digest,filename,content_type,size,sha256))
             if origin:
@@ -226,19 +287,22 @@ class Archive:
             except ValueError:
                 skipped+=1
         return imported,skipped
-    def find(self, query, limit=100, sender=None, after=None, before=None):
-        """Full-text search with optional sender and date-range filters.
+    def find(self, query, limit=100, sender=None, after=None, before=None, recipient=None):
+        """Full-text search with optional sender, recipient and date-range filters.
 
-        An empty query lists messages that match the filters, newest first. A sender
-        match is a case-insensitive substring of the From header. Dates accept ISO
-        dates, ISO datetimes or epoch seconds; a date-only bound covers the whole
-        day. Messages with unparseable dates are excluded by date filters.
+        An empty query lists messages that match the filters, newest first. Sender
+        and recipient matches are case-insensitive substrings of the stored headers,
+        where recipient covers To, Cc and Bcc. Dates accept ISO dates, ISO datetimes
+        or epoch seconds; a date-only bound covers the whole day. Messages with
+        unparseable dates are excluded by date filters.
         """
         limit=max(1,min(int(limit),5000))
         filters=''; params=[]
         if sender:
-            escaped=sender.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
-            filters+=" AND m.sender LIKE ? ESCAPE '\\'"; params.append(f'%{escaped}%')
+            filters+=" AND m.sender LIKE ? ESCAPE '\\'"; params.append(_like(sender))
+        if recipient:
+            filters+=" AND (m.recipient LIKE ? ESCAPE '\\' OR m.cc LIKE ? ESCAPE '\\' OR m.bcc LIKE ? ESCAPE '\\')"
+            params.extend([_like(recipient)]*3)
         if after is not None:
             filters+=' AND m.sent_ts IS NOT NULL AND m.sent_ts>=?'; params.append(_timestamp(after))
         if before is not None:
@@ -272,11 +336,13 @@ class Archive:
             body=self._body_of(msg)
             attachments=[(name,ctype,len(payload),self._store_attachment(payload))
                          for name,ctype,payload in self._attachment_parts(msg)]
-            fields=[str(msg.get(k,'')) for k in ('Subject','From','Date','Message-ID','In-Reply-To')]
+            fields=self._fields(msg)
             with self.db:
-                self.db.execute('UPDATE messages SET subject=?,sender=?,date=?,message_id=?,reply_to=?,body=?,sent_ts=? WHERE hash=?',(*fields,body,_sent_ts(fields[2]),digest))
+                self.db.execute('UPDATE messages SET subject=?,sender=?,date=?,message_id=?,reply_to=?,body=?,sent_ts=?,recipient=?,cc=?,bcc=? WHERE hash=?',
+                                (fields[0],fields[1],fields[2],fields[3],fields[4],body,_sent_ts(fields[2]),fields[5],fields[6],fields[7],digest))
                 self.db.execute('DELETE FROM search WHERE hash=?',(digest,))
-                self.db.execute('INSERT INTO search VALUES(?,?,?,?)',(digest,fields[0],fields[1],body))
+                self.db.execute('INSERT INTO search(hash,subject,sender,recipient,cc,bcc,body) VALUES(?,?,?,?,?,?,?)',
+                                (digest,fields[0],fields[1],fields[5],fields[6],fields[7],body))
                 self.db.execute('DELETE FROM attachments WHERE message=?',(digest,))
                 for filename,content_type,size,sha256 in attachments:
                     self.db.execute('INSERT OR IGNORE INTO attachments VALUES(?,?,?,?,?)',(digest,filename,content_type,size,sha256))
@@ -288,6 +354,7 @@ class Archive:
             raw=path.read_bytes()
             if hashlib.sha256(raw).hexdigest()!=digest: continue
             self.ingest(raw); rebuilt+=1
+        with self.db: self.db.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('headers_backfill','done')")
         return rebuilt
     def attachments(self, digest):
         """Attachment metadata for one message, ordered by filename."""
@@ -333,9 +400,9 @@ class Archive:
             shutil.rmtree(dest)
             raise
     def details(self, digest):
-        row=self.db.execute('SELECT subject,sender,date,message_id,reply_to,body FROM messages WHERE hash=?',(digest,)).fetchone()
+        row=self.db.execute('SELECT subject,sender,date,message_id,reply_to,body,recipient,cc,bcc FROM messages WHERE hash=?',(digest,)).fetchone()
         if row is None: raise ValueError('Unknown message')
-        return dict(zip(('subject','sender','date','message_id','reply_to','body'),row))
+        return dict(zip(('subject','sender','date','message_id','reply_to','body','recipient','cc','bcc'),row))
     def recent(self, limit=100):
         return self.db.execute('SELECT hash,subject,sender FROM messages ORDER BY rowid DESC LIMIT ?', (max(1,min(int(limit),5000)),)).fetchall()
     def timeline(self, sender=None, limit=100):
@@ -493,7 +560,7 @@ class Archive:
 def main():
     import getpass
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('log'); q.add_argument('--limit',default=100); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--recipient'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('log'); q.add_argument('--limit',default=100); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
     a=p.parse_args(); ar=Archive(a.archive)
     if a.cmd=='import':
         for f in a.files:
@@ -505,7 +572,7 @@ def main():
                 imported,skipped=ar.import_mbox(path)
                 print(json.dumps({'file':str(path),'imported':imported,'skipped':skipped}))
             else: print(ar.ingest(path.read_bytes()))
-    elif a.cmd=='search': print(json.dumps(ar.find(a.query,a.limit,a.sender,a.after,a.before),indent=2))
+    elif a.cmd=='search': print(json.dumps(ar.find(a.query,a.limit,a.sender,a.after,a.before,a.recipient),indent=2))
     elif a.cmd=='verify':
         bad=ar.verify(); print(json.dumps(bad)); return int(bool(bad))
     elif a.cmd=='reindex': print(ar.reindex())

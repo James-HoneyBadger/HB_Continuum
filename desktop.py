@@ -26,7 +26,9 @@ def launch(archive):
     filters=ttk.Frame(root,padding=(10,0))
     filters.pack(fill='x')
     ttk.Label(filters,text='Sender').pack(side='left')
-    sender_filter=ttk.Entry(filters,width=24); sender_filter.pack(side='left',padx=(3,10))
+    sender_filter=ttk.Entry(filters,width=20); sender_filter.pack(side='left',padx=(3,10))
+    ttk.Label(filters,text='To/cc').pack(side='left')
+    recipient_filter=ttk.Entry(filters,width=20); recipient_filter.pack(side='left',padx=(3,10))
     ttk.Label(filters,text='From').pack(side='left')
     after_filter=ttk.Entry(filters,width=11); after_filter.pack(side='left',padx=(3,10))
     ttk.Label(filters,text='To').pack(side='left')
@@ -35,7 +37,8 @@ def launch(archive):
     def filter_values():
         return (sender_filter.get().strip() or None,
                 after_filter.get().strip() or None,
-                before_filter.get().strip() or None)
+                before_filter.get().strip() or None,
+                recipient_filter.get().strip() or None)
     status=tk.StringVar()
     pane=ttk.Panedwindow(root,orient=prefs['layout'])
     pane.pack(fill='both',expand=True,padx=10,pady=5)
@@ -69,8 +72,8 @@ def launch(archive):
         try:
             term=query.get().strip()
             if term and prefs['search_mode']=='Exact phrase': term='"'+term.replace('"','""')+'"'
-            sender,after,before=filter_values()
-            hits=(archive.find(term,prefs['search_limit'],sender,after,before) if term or sender or after or before
+            sender,after,before,recipient=filter_values()
+            hits=(archive.find(term,prefs['search_limit'],sender,after,before,recipient) if term or sender or after or before or recipient
                   else archive.recent(prefs['recent_limit']))
             rows.delete(*rows.get_children())
             display('')
@@ -84,8 +87,8 @@ def launch(archive):
         try:
             h=selection[0]
             data=archive.details(h)
-            keys=('subject','sender','date','message_id','reply_to') if prefs['show_message_ids'] else ('subject','sender','date')
-            header='\n'.join(f"{k}: {data[k]}" for k in keys)
+            keys=('subject','sender','recipient','cc','date','message_id','reply_to') if prefs['show_message_ids'] else ('subject','sender','recipient','cc','date')
+            header='\n'.join(f"{k}: {data[k]}" for k in keys if data[k])
             files=archive.attachments(h)
             listing=('\n\nAttachments:\n'+'\n'.join(f"  {name}  ({ctype}, {size} bytes)\n  SHA-256: {sha}" for name,ctype,size,sha in files)) if files else ''
             display(header+('\nSHA-256: '+h if prefs['show_hash'] else '')+listing+'\n\n'+data['body'])
