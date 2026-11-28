@@ -319,6 +319,27 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.a.find('Hidden'),[])
         self.assertEqual(self.a.import_directory(tree),(2,0))
         self.assertEqual(self.a.stats()['messages'],2)
+    def test_sync_log_records_success_and_failure_without_secrets(self):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.select.return_value=('OK',[b'1']); m.response.return_value=('UIDVALIDITY',[b'11'])
+        m.uid.side_effect=[('OK',[b'3']),('OK',[(b'3',RAW)])]
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.a.sync('host','user','hunter2-secret')
+        (row,)=self.a.sync_log()
+        self.assertEqual((row[0],row[1],row[4]),('host|user','INBOX',1))
+        self.assertIsNone(row[5])
+        broken=mock.MagicMock(); broken.__enter__.return_value=broken
+        broken.select.return_value=('OK',[b'1']); broken.response.return_value=('UIDVALIDITY',[None])
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=broken):
+            self.assertRaises(RuntimeError,self.a.sync,'host','user','hunter2-secret')
+        log=self.a.sync_log()
+        self.assertEqual(len(log),2)
+        self.assertEqual(log[0][4],0); self.assertIn('Missing UIDVALIDITY',log[0][5])
+        self.assertNotIn('hunter2-secret',json.dumps(log))
+    def test_sync_log_is_bounded(self):
+        with mock.patch('dispatch.SYNC_LOG_LIMIT',2):
+            for _ in range(5): self.a._log_sync('h|u','INBOX','2024-01-01 00:00:00',0,None)
+        self.assertEqual(self.a.db.execute('SELECT count(*) FROM sync_log').fetchone()[0],2)
     def test_version_flag(self):
         out=io.StringIO()
         with mock.patch('sys.argv',['dispatch.py','--version']), contextlib.redirect_stdout(out):

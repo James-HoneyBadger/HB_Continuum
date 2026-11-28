@@ -10,6 +10,7 @@ from html.parser import HTMLParser
 __version__ = '0.3.0'
 
 SYNC_MAX_ATTEMPTS = 3
+SYNC_LOG_LIMIT = 1000
 
 _HTML_BLOCK_TAGS = frozenset({'br','p','div','tr','li','hr','h1','h2','h3','h4','h5','h6','blockquote','pre'})
 _HTML_SKIP_TAGS = frozenset({'script','style','head','title'})
@@ -105,7 +106,8 @@ class Archive:
         CREATE TABLE IF NOT EXISTS sync_failures(account TEXT NOT NULL, folder TEXT NOT NULL, validity TEXT NOT NULL, uid TEXT NOT NULL, error TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 1, last_seen TEXT NOT NULL, PRIMARY KEY(account,folder,validity,uid));
         CREATE TABLE IF NOT EXISTS attachments(message TEXT NOT NULL REFERENCES messages(hash), filename TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL, PRIMARY KEY(message,filename,sha256));
         CREATE INDEX IF NOT EXISTS attachments_sha256 ON attachments(sha256);
-        CREATE TABLE IF NOT EXISTS sync_state(account TEXT NOT NULL, folder TEXT NOT NULL, validity TEXT NOT NULL, last_uid INTEGER NOT NULL DEFAULT 0, updated TEXT NOT NULL, PRIMARY KEY(account,folder,validity));''')
+        CREATE TABLE IF NOT EXISTS sync_state(account TEXT NOT NULL, folder TEXT NOT NULL, validity TEXT NOT NULL, last_uid INTEGER NOT NULL DEFAULT 0, updated TEXT NOT NULL, PRIMARY KEY(account,folder,validity));
+        CREATE TABLE IF NOT EXISTS sync_log(id INTEGER PRIMARY KEY, account TEXT NOT NULL, folder TEXT NOT NULL, started TEXT NOT NULL, finished TEXT NOT NULL, archived INTEGER NOT NULL, error TEXT);''')
         if 'sent_ts' not in {row[1] for row in self.db.execute('PRAGMA table_info(messages)')}:
             self.db.execute('ALTER TABLE messages ADD COLUMN sent_ts INTEGER')
         self.db.execute('CREATE INDEX IF NOT EXISTS messages_sent_ts ON messages(sent_ts)')
@@ -375,9 +377,30 @@ class Archive:
                 'origins':self.db.execute('SELECT count(*) FROM origins').fetchone()[0],
                 'attachments':self.db.execute('SELECT count(*) FROM attachments').fetchone()[0]}
     def sync(self, host, user, password, folder='INBOX'):
+        """Synchronize one mailbox, recording every attempt in the local sync log.
+
+        The log holds timings, counts and error text only: never passwords,
+        subjects, senders or message bodies.
+        """
         from sync_lock import sync_lock
-        with sync_lock(self.root):
-            return self._sync(host, user, password, folder)
+        account=host+'|'+user
+        started=self.db.execute("SELECT datetime('now')").fetchone()[0]
+        try:
+            with sync_lock(self.root):
+                count=self._sync(host, user, password, folder)
+        except Exception as error:
+            self._log_sync(account,folder,started,0,f'{type(error).__name__}: {error}')
+            raise
+        self._log_sync(account,folder,started,count,'')
+        return count
+    def _log_sync(self, account, folder, started, archived, error):
+        with self.db:
+            self.db.execute("INSERT INTO sync_log(account,folder,started,finished,archived,error) VALUES(?,?,?,datetime('now'),?,?)",
+                            (account,folder,started,archived,(error or '')[:500] or None))
+            self.db.execute('DELETE FROM sync_log WHERE id NOT IN (SELECT id FROM sync_log ORDER BY id DESC LIMIT ?)',(SYNC_LOG_LIMIT,))
+    def sync_log(self, limit=100):
+        """Recent synchronization attempts, newest first, for local diagnostics."""
+        return self.db.execute('SELECT account,folder,started,finished,archived,error FROM sync_log ORDER BY id DESC LIMIT ?',(max(1,min(int(limit),SYNC_LOG_LIMIT)),)).fetchall()
     def _sync(self, host, user, password, folder):
         if folder.startswith('"') and folder.endswith('"'):
             folder=folder[1:-1]
@@ -457,7 +480,7 @@ class Archive:
 def main():
     import getpass
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('log'); q.add_argument('--limit',default=100); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
     a=p.parse_args(); ar=Archive(a.archive)
     if a.cmd=='import':
         for f in a.files:
@@ -481,6 +504,7 @@ def main():
     elif a.cmd=='verify-attachments':
         bad=ar.verify_attachments(); print(json.dumps(bad)); return int(bool(bad))
     elif a.cmd=='failures': print(json.dumps(ar.failures(a.limit),indent=2))
+    elif a.cmd=='log': print(json.dumps(ar.sync_log(a.limit),indent=2))
     elif a.cmd=='export': ar.export(a.hashes,a.destination)
     elif a.cmd=='sync': print(ar.sync(a.host,a.user,getpass.getpass(),a.folder))
     elif a.cmd=='gui':

@@ -64,6 +64,7 @@ python3 dispatch.py search --sender accounts@example.invalid --after 2024-01-01
 python3 dispatch.py verify
 python3 dispatch.py reindex
 python3 dispatch.py failures
+python3 dispatch.py log
 python3 dispatch.py attachments HASH
 python3 dispatch.py attachment SHA256 OUT_FILE
 python3 dispatch.py verify-attachments
@@ -73,7 +74,7 @@ python3 dispatch.py export evidence HASH
 python3 -m unittest discover -s tests -v
 ```
 
-Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, read-only mailbox selection and BODY.PEEK. Passwords are prompted for, never stored by the application. Provider-specific authentication may be required. Synchronization is incremental: each archived message is recorded against its mailbox UID and a per-mailbox watermark is stored, so a repeat run asks the server only for newer UIDs instead of rescanning the whole mailbox, an interrupted run continues where it stopped, and a changed UIDVALIDITY triggers a full rescan. Transient connection resets are retried, and a message that repeatedly fails to ingest is recorded in the local failure ledger (`dispatch.py failures`) and skipped after three attempts so one unusual message cannot block the whole mailbox. Skipped messages stay on the server; nothing is deleted or marked read. Gmail OAuth and a native MCP integration remain future work. Manual synchronization prompts for passwords; scheduled synchronization is macOS-only and reads credentials from the login Keychain.
+Use `--archive PATH` before the subcommand to select storage. Sync uses TLS, read-only mailbox selection and BODY.PEEK. Passwords are prompted for, never stored by the application. Provider-specific authentication may be required. Each synchronization attempt is recorded locally in a bounded log that holds timings, counts and error text only — never passwords, subjects, senders or bodies — readable with `dispatch.py log` or the workstation. Synchronization is incremental: each archived message is recorded against its mailbox UID and a per-mailbox watermark is stored, so a repeat run asks the server only for newer UIDs instead of rescanning the whole mailbox, an interrupted run continues where it stopped, and a changed UIDVALIDITY triggers a full rescan. Transient connection resets are retried, and a message that repeatedly fails to ingest is recorded in the local failure ledger (`dispatch.py failures`) and skipped after three attempts so one unusual message cannot block the whole mailbox. Skipped messages stay on the server; nothing is deleted or marked read. Gmail OAuth and a native MCP integration remain future work. Manual synchronization prompts for passwords; scheduled synchronization is macOS-only and reads credentials from the login Keychain.
 
 ## Privacy and limitations
 

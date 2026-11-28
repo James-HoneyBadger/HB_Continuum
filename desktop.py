@@ -140,6 +140,14 @@ def launch(archive):
                                 for account,folder,validity,uid,attempts,error,last_seen in failed))
             status.set(f'{len(failed)} mailbox messages could not be archived; they remain on the server.')
         except Exception as e: messagebox.showerror('Synchronization failures',str(e))
+    def sync_log():
+        try:
+            entries=archive.sync_log()
+            if not entries: return messagebox.showinfo('Synchronization log','No synchronization attempts are recorded yet.')
+            display('\n\n'.join(f"{account} / {folder}\n{started} to {finished}  |  {archived} archived"
+                                  + (f"\n{error}" if error else '') for account,folder,started,finished,archived,error in entries))
+            status.set(f'{len(entries)} recent synchronization attempts. The log records counts and errors, never credentials or message content.')
+        except Exception as e: messagebox.showerror('Synchronization log',str(e))
     def save_attachments():
         selected=rows.selection()
         if not selected: return messagebox.showinfo('Attachments','Select one or more messages first.')
@@ -174,7 +182,7 @@ def launch(archive):
     analysis_bar=ttk.Frame(root,padding=(10,0))
     analysis_bar.pack(fill='x',before=pane)
     for label,fn in [('Conversation',show_thread),('Timeline',show_timeline),('Correspondents',show_correspondents),
-                     ('Sync failures',sync_failures)]:
+                     ('Sync failures',sync_failures),('Sync log',sync_log)]:
         ttk.Button(analysis_bar,text=label,command=fn).pack(side='left',padx=3)
     def scheduling():
         from schedule_ui import launch as launch_schedule
