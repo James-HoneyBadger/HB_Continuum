@@ -711,8 +711,10 @@ Scheduler verification status:
 
 ## Known limitations
 
-- No encryption at rest; no OAuth. HTML is reduced to offline text but never
-  rendered. PDF and DOCX email attachments are converted only when the
+- Existing archives are plaintext and are not migrated. New archives can be
+  created encrypted, but raw EML files, external documents, preferences and
+  exports remain unencrypted. No OAuth. HTML is reduced to offline text but
+  never rendered. PDF and DOCX email attachments are converted only when the
   optional local extractors are installed; image and legacy Office contents
   are not converted, so those attachments expose names, MIME types and any
   text payloads rather than their visual content.
@@ -735,17 +737,18 @@ Scheduler verification status:
 
 ## Outstanding defects
 
-- No encryption at rest and no OAuth; both are documented limits, not
-  regressions.
+- Existing archives are not encrypted or migrated, and OAuth remains absent;
+  these are documented limits, not regressions.
 
 ## Next recommended tasks
 
 1. Run the benchmark harness on Windows and Linux and add a 1M-record run
    before making large-archive claims.
-2. Implement attachment content extraction and the remaining source
-   registration/interchange interfaces.
+2. Expand source registration and interchange interfaces.
 3. Exercise intelligence against a live installed Ollama model and perform an
    interactive desktop acceptance run.
+4. Design encrypted migration, key management and keyed backup/restore as a
+   separate future milestone.
 
 ## Release qualification: v0.4.0-alpha (2026-11-27)
 
