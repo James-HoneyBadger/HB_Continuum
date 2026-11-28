@@ -12,6 +12,10 @@ Continuum has grown from an email preservation utility into a private historical
 
 **Next milestone — v0.5, the Intelligence Update (planned):** scalable search beyond the current candidate ceiling, evidence-grounded conversational research with inspectable source references, additional document ingestion, and optional Honey Badger application interchange. These are development objectives, not released capabilities.
 
+## Development roadmap
+
+[Read the comprehensive roadmap: v0.4 through Second Me and Digital Legacy](docs/ROADMAP.md). Milestones describe planned capabilities, not release commitments.
+
 ## Independent and interoperable
 
 **Independent by design. Interoperable by choice. Intelligent when desired.**
