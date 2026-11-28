@@ -182,3 +182,38 @@ class SyncWatermarkBoundaryTests(unittest.TestCase):
                 m.uid.assert_called_once_with('search',None,'UID 4294967295:*')
             finally:
                 ar.db.close()
+
+
+class MailboxDiscoveryTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.a=Archive(Path(self.tmp.name)/'archive')
+    def tearDown(self):
+        self.a.db.close()
+
+    def test_mailboxes_skips_noselect_entries(self):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.list.return_value=('OK',[b'(\\HasNoChildren) "/" "INBOX"',
+                                   b'(\\Noselect) "/" "[Gmail]"',
+                                   b'(\\HasNoChildren) "/" "Sent Items"'])
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.assertEqual(self.a.mailboxes('host','user','pw'),
+                             ['INBOX','Sent Items'])
+
+    def test_sync_mailboxes_reports_each_folder_and_continues_after_a_failure(self):
+        discovered=self.a.mailboxes
+        with mock.patch.object(Archive,'mailboxes',staticmethod(lambda *a: ['INBOX','Broken'])), \
+             mock.patch.object(Archive,'sync',autospec=True) as sync:
+            sync.side_effect=[3, RuntimeError('boom')]
+            result=self.a.sync_mailboxes('host','user','pw')
+        self.assertEqual(result['folders']['INBOX'],{'imported':3})
+        self.assertIn('boom',result['folders']['Broken']['error'])
+        self.assertEqual(result['imported'],3)
+        self.assertEqual(result['failed'],1)
+        self.assertEqual(sync.call_count,2)
+
+    def test_sync_mailboxes_rejects_an_empty_server_listing(self):
+        with mock.patch.object(Archive,'mailboxes',staticmethod(lambda *a: [])):
+            with self.assertRaises(ValueError):
+                self.a.sync_mailboxes('host','user','pw')
