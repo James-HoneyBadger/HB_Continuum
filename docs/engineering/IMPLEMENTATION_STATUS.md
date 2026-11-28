@@ -1222,3 +1222,32 @@ interchange (Phase V).
   355 passed/2 skipped with it), mypy clean on 28 files, frontend build,
   `cargo check`, `cargo test`, Tauri debug build and packaged-engine smoke
   passed. The synthetic research demo remains available and was run locally.
+
+## Stable release qualification (2026-11-28)
+
+Feature freeze applied; no new source adapters or feature areas were added.
+
+- Verified the full synthetic suite covering archival preservation, encrypted
+  archives, migration, unlock/lock, unified search, research retrieval and
+  conversations, EML/document/Facebook imports, backup/verification/restore
+  and IPC workflows.
+- Verification: 357 Python tests, 0 failures on Python 3.12.0 and 3.13.7
+  (338 passed/19 skipped without SQLCipher; 355 passed/2 skipped with
+  `sqlcipher3`), mypy clean on 28 files, production frontend build, clean
+  `npm ci`, `npm audit` with zero vulnerabilities, `cargo check`,
+  `cargo test`, Tauri debug build, native `.app` bundle creation and packaged
+  PyInstaller engine smoke all passed.
+- Native bundle: `/Applications`-compatible `.app` layout contains the
+  `hb-continuum` executable and the ARM64 `hb-engine` sidecar. A brief launch
+  against a missing archive stayed running without a crash and left no engine
+  process after termination; no interactive acceptance run is claimed.
+- Release metadata remains `0.5.0-beta`. No release or tag was created.
+- Remaining limitations: no signing/notarization; packaged macOS qualification
+  is Apple Silicon only; desktop-created archives are plaintext; optional
+  PDF/DOCX, keyring and SQLCipher packages are not installed in every test
+  environment; retrieval is FTS5 rather than semantic; OCR and PDF page
+  navigation are absent; the merged timeline is capped at 5,000 entries;
+  no live Ollama model or exhaustive million-record benchmark is claimed.
+- Recommendation: **GO** for stable personal-use qualification of the
+  current source and synthetic workflows. Publishing is a separate owner
+  decision requiring a stable version choice and signing/notarization policy.

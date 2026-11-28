@@ -89,6 +89,23 @@ environment; otherwise those features fail with their normal "not installed"
 errors. The Tauri shell never needs Tkinter, so a build machine without it
 still produces a fully functional shell engine.
 
+## Dependency notes
+
+- The core Python engine and archive workflows use the standard library.
+  `sqlcipher3`, `pypdf`, `python-docx`, `keyring` and `cryptography` are
+  optional and lazy-loaded; a build environment without them produces a
+  plaintext-only engine without PDF/DOCX extraction or OS credential stores.
+- `sqlcipher3` 0.6.5 / SQLCipher 4.20.0 community was used for encrypted
+  qualification. Optional Python packages are not currently pinned by a
+  repository requirements file; pin them in the release build environment and
+  record the resulting versions with the artifact.
+- `frontend/package-lock.json` and `src-tauri/Cargo.lock` are tracked. A clean
+  `npm ci` install and production frontend build are part of validation.
+  `npm audit` reports no vulnerabilities with the current lockfile.
+- The Rust bundle depends on the Tauri 2 crate family; `cargo check` and
+  `cargo test` are run locally and in CI. No separate Rust advisory scanner is
+  part of the repository.
+
 ## macOS desktop qualification
 
 The native Tauri desktop shell is qualified on **macOS Apple Silicon only**.
@@ -98,6 +115,13 @@ archive chooser: choose an empty folder and **Create archive here**, or open an
 existing archive (including an encrypted one). No hidden archive is created.
 New archives created from this screen are unencrypted; create encrypted
 archives with `dispatch.py --archive PATH init-encrypted` first.
+
+A local debug bundle is produced at
+`src-tauri/target/debug/bundle/macos/HB Continuum.app`; a release bundle uses
+the same layout under `target/release`. For local testing, copy the `.app` to
+`/Applications` and launch it once. Because the build is unsigned, macOS
+Gatekeeper may require an explicit Open confirmation; that warning is expected
+and is not a defect in the archive engine.
 
 The Linux and Windows CI jobs exercise the portable Python engine, not a
 packaged native desktop application. They do not establish packaged-desktop
