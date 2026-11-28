@@ -2,55 +2,125 @@
 
 **A local-first personal archive and historical research application.**
 
-HB Continuum is an independent, open-source hobby project within the Honey Badger Universe. Originally developed as HB Dispatch to preserve email correspondence, it now supports other historical records, searchable documents, research tools and optional local AI.
+HB Continuum is an independent, open-source hobby project developed as part of
+the Honey Badger Universe. It helps an individual preserve and explore their
+own documented history without depending entirely on external service
+providers.
 
-Its purpose is straightforward: help people preserve and explore their documented history on infrastructure they control.
+Originally developed to preserve email correspondence, Continuum now also
+supports searchable documents, user-obtained social exports, research tools and
+optional local artificial intelligence. Development is iterative and driven by
+practical use. Features are introduced when they can be implemented, tested and
+maintained responsibly.
 
-**Current release: [v0.5.0-beta](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.5.0-beta)** — a source-only beta, primarily developed and qualified for Apple Silicon macOS.
+## Status
 
-[Release notes and source download](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.5.0-beta) · [Full user and developer README](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/README.md) · [Active development branch](https://github.com/James-HoneyBadger/HB_Continuum/tree/develop/intelligence-update)
+**Current release: [v0.5.0-beta](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.5.0-beta).**
+This is a beta source release, not a signed or notarized stable distribution.
+The native desktop application is qualified on **macOS Apple Silicon only**.
+The portable Python engine is exercised by CI on Linux and Windows, but
+packaged desktop applications for those platforms are not claimed as
+supported.
 
-**Branch note:** The default `main` branch retains the earlier Dispatch-era code baseline. Use the release tag for the capabilities described here.
+No formal stable release has been declared. Formal stable publication remains
+the owner's decision.
 
-## What Continuum does
+## Which branch to use
 
-| Capability | v0.5 beta |
-| --- | --- |
-| Email preservation | Read-only IMAP, original EML storage, SHA-256 verification, mailbox provenance and scheduled synchronization |
-| Social history | Import user-obtained Facebook JSON exports |
-| Document research | Local text, Markdown, CSV, JSON, PDF and DOCX ingestion; optional PDF/DOCX attachment extraction |
-| Search | Unified full-text search, deep pagination beyond the former 5,000-candidate ceiling, filters and nested Boolean queries |
-| Historical research | Timelines, participant relationships, collections, journals, saved searches and reports |
-| Optional local AI | Ollama-based research conversations with bounded evidence and inspectable source references |
-| Database protection | Optional SQLCipher encryption, explicit migration, archive lock/unlock and encrypted database backups |
-| Desktop | Tauri/Vue application with archive selection, import progress, record navigation, health checks and recovery |
+This `main` branch holds the earlier v0.3 code baseline, before the Continuum
+rewrite. The qualified v0.5 implementation — the `hb_engine` package, the
+Tauri 2 / Vue 3 desktop shell, encrypted archives and the research workspace —
+is published at the `v0.5.0-beta` tag and developed on
+`develop/intelligence-update`.
 
-No telemetry, advertising, mandatory accounts, subscriptions or cloud inference. AI is disabled by default, and the archive remains useful without it.
-
-## Security and privacy — please read
-
-Continuum can contain sensitive personal information. Protecting that information is a central development priority.
-
-- Optional SQLCipher encrypts the archive, catalog and research databases. New encrypted archives currently require the optional `sqlcipher3` package and CLI creation; new archives created through the desktop are plaintext.
-- Existing plaintext archives are never migrated automatically. Explicit migration creates a separate encrypted destination and preserves the original.
-- Encrypted database backups retain database encryption, and scheduled synchronization defers while an encrypted archive is locked.
-- Raw EML files, configuration, external documents and exports are outside the database encryption boundary. Use encrypted storage for the entire archive and backups, such as an encrypted APFS volume or disk image on macOS.
-- Encryption at rest does not protect an unlocked archive against every form of host compromise. Keep independent backups and test restoration before relying on the archive.
-
-Read [Encryption](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/ENCRYPTION.md), [Encryption migration](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/ENCRYPTION_MIGRATION.md) and the [Security threat model](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/SECURITY_MODEL.md) before storing sensitive information.
-
-## Getting started
-
-Use the released source rather than the older default branch:
+Clone the tag rather than this branch:
 
 ```sh
 git clone --branch v0.5.0-beta https://github.com/James-HoneyBadger/HB_Continuum.git
 cd HB_Continuum
 python3 dispatch.py --version
-python3 dispatch.py --help
 ```
 
-Requires Python 3.12+ with SQLite FTS5. Building the desktop also requires Node.js 22+, Rust and Tauri platform prerequisites.
+The capabilities and commands below describe `v0.5.0-beta`, not the code in
+this branch.
+
+## What it does
+
+- Preserves original EML messages under SHA-256 hashes, with IMAP provenance,
+  integrity verification and read-only retrieval.
+- Imports user-obtained Facebook JSON exports and local documents without
+  modifying the originals.
+- Provides unified full-text search, timelines, source coverage, collections,
+  a research journal and archive reports.
+- Supports bounded historical research with source-linked evidence and
+  validated citations. Local AI through Ollama is optional and disabled by
+  default.
+- Supports SQLCipher-encrypted databases for new archives, explicit
+  plaintext-to-encrypted migration and verified encrypted backups.
+- Keeps the primary workflow local: no telemetry, advertising, subscription or
+  mandatory cloud account.
+
+## Requirements
+
+- Python 3.12 or newer with SQLite FTS5 support.
+- Node.js 22+ and Rust only when building the Tauri desktop shell.
+- Optional local packages for additional capabilities:
+  - `sqlcipher3` for encrypted databases;
+  - `pypdf` and `python-docx` for PDF and DOCX text extraction;
+  - `keyring`/`cryptography` where supported for credential storage.
+
+The core engine uses the Python standard library. Tkinter is only needed for
+the legacy Tk workstation.
+
+## Quick start
+
+From a checkout of the `v0.5.0-beta` tag:
+
+```sh
+python3 dispatch.py --version
+python3 dispatch.py --archive ~/HB_Continuum_Archive import sample.eml
+python3 dispatch.py --archive ~/HB_Continuum_Archive search invoice
+python3 dispatch.py --archive ~/HB_Continuum_Archive verify
+python3 dispatch.py --archive ~/HB_Continuum_Archive health
+python3 -m unittest discover -s tests -v
+```
+
+`dispatch.py gui` starts the legacy Tk workstation. The native Tauri shell is
+the primary desktop application.
+
+Unified imports and search include Facebook exports, documents and all
+sources:
+
+```sh
+python3 dispatch.py --archive ~/HB_Continuum_Archive facebook import ~/facebook-export
+python3 dispatch.py --archive ~/HB_Continuum_Archive documents import ~/documents
+python3 dispatch.py --archive ~/HB_Continuum_Archive search-all "receipt"
+```
+
+Create a new encrypted archive from the command line:
+
+```sh
+python3 dispatch.py --archive ~/EncryptedArchive init-encrypted
+```
+
+Existing encrypted archives can be opened and unlocked in the desktop
+application. Migrate an existing plaintext archive only after reading
+[Encrypted archive migration](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/ENCRYPTION_MIGRATION.md)
+and verifying an independent backup.
+
+## Desktop application
+
+On macOS Apple Silicon, build the engine sidecar and the native shell:
+
+```sh
+python3 -m pip install pyinstaller
+python3 scripts/build_engine.py
+cd frontend
+npm ci
+npm run tauri -- build --config src-tauri/tauri.bundle.conf.json
+```
+
+For development:
 
 ```sh
 cd frontend
@@ -58,37 +128,81 @@ npm ci
 npm run tauri -- dev
 ```
 
-Start with a separate test archive and fictional records. For encrypted archive setup, install the documented SQLCipher dependency and follow the encryption guide. The beta does not include signed or notarized installers.
+The build is unsigned and not notarized. On first launch, choose a folder and
+select **Create archive here**, or open an existing archive. See
+[Packaging](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/PACKAGING.md)
+for the complete layout, local installation notes and platform limitations.
+
+## Data safety and limitations
+
+Original EML files are preserved as received; hashes detect changes, not
+authenticity or a certified chain of custody. HTML is not rendered. Failed
+imports can leave recoverable raw files, and failed exports can be partial.
+
+Database encryption protects the SQLite databases only. Raw EML files,
+external documents, preferences, exports and configuration remain outside the
+database encryption boundary. Encrypted backups keep database files encrypted,
+but raw files and configuration in a snapshot remain plaintext. See the
+[security model](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/SECURITY_MODEL.md).
+
+The application cannot prove that a mailbox was fully downloaded. Verify folder
+coverage independently. Do not use HB Continuum as the sole copy of
+irreplaceable evidence: keep independent backups and test restoration.
+
+Optional local AI can help explore evidence, but model output is derived text,
+not preserved evidence. Retrieved records and conversation history are treated
+as untrusted data; model output cannot modify the archive. Citation identity is
+validated, but factual conclusions and contradiction labels are not
+independently proven.
+
+Other current limits include keyword/FTS5 rather than semantic retrieval, no
+OCR, no per-token model streaming, a 5,000-entry merged timeline cap, no
+signed installer and no packaged-desktop qualification outside macOS Apple
+Silicon. Optional PDF/DOCX extraction and credential-store packages are not
+guaranteed to be installed.
 
 ## Documentation
 
+Documentation is pinned to the `v0.5.0-beta` tag, matching the release source.
+
 - [Practical tutorial](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/TUTORIAL.md)
-- [Full release README and CLI reference](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/README.md)
-- [Document ingestion](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/DOCUMENTS.md)
-- [Facebook import](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/FACEBOOK_IMPORT.md)
+- [Packaging and local installation](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/PACKAGING.md)
+- [Encryption and recovery](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/ENCRYPTION.md)
+- [Encrypted archive migration](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/ENCRYPTION_MIGRATION.md)
+- [Security model and threat boundaries](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/SECURITY_MODEL.md)
 - [Intelligence workspace](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/INTELLIGENCE.md)
-- [Archive hardening and recovery](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/ARCHIVE_HARDENING.md)
-- [Packaging](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/PACKAGING.md)
-- [Implementation and qualification status](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/engineering/IMPLEMENTATION_STATUS.md)
+- [Documents](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/DOCUMENTS.md) and [Facebook import](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/FACEBOOK_IMPORT.md)
+- [Scheduled synchronization](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/SCHEDULED_SYNC.md)
+- [Archive hardening](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/ARCHIVE_HARDENING.md) and [migration](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/MIGRATION.md)
+- [Benchmarks](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/BENCHMARKS.md) and [implementation status](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/engineering/IMPLEMENTATION_STATUS.md)
 
-## Beta status and limitations
+## Development principles
 
-The published v0.5 qualification reports 357 Python tests with no failures (355 passed and two skipped with SQLCipher), successful static analysis, frontend and Rust builds, native Apple Silicon macOS bundle and engine smoke tests, and 12 successful CI jobs. See the [release notes](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.5.0-beta) for the precise scope.
+- Reliable preservation and recovery of original information.
+- Privacy and protection of sensitive archival records.
+- Useful, dependable search and research capabilities.
+- Optional, local AI rather than a mandatory service.
+- Open formats and user-controlled information.
+- Simplicity, maintainability and honest documentation over feature quantity.
 
-This is not a comprehensive security audit. Packaged Linux and Windows desktop applications are not qualified. Live Ollama inference and full interactive desktop acceptance have not been established by the release qualification. Retrieval is keyword-based, not semantic; model answers are interpretations, not evidence, and a valid citation does not establish factual correctness. Scanned PDFs are not OCRed. Read-only IMAP does not delete server mail, and hashes do not establish authenticity or certified chain of custody.
+Use synthetic test data. Never inspect or modify a personal archive during
+development. Use established cryptographic technology; never invent encryption
+algorithms or perform unverified production migrations.
 
-## Development direction
-
-Continuum is maintained primarily by one developer. Development is incremental, guided by actual use rather than a fixed feature schedule.
-
-The priorities are reliable preservation and recovery, protection of sensitive records, straightforward research and search, optional local AI, and a maintainable desktop experience. Future improvements will be selected in small, independently testable milestones. There are no delivery-date commitments, commercial support obligations or promises of comprehensive platform support.
-
-The idea of exploring one's documented past through local intelligence is an inspiration, not a commitment to build an artificial replica of a person.
-
-Constructive feedback and contributions are welcome.
+Continuum is maintained primarily by one developer as a personal FOSS
+undertaking. Development plans are flexible, and there are no commitments
+concerning delivery dates, comprehensive platform support or commercial
+service levels. Contributions, constructive feedback and independent
+development are welcome.
 
 *The intelligence is replaceable. The memories are yours.*
 
 ## License
 
-Copyright (c) 2026 Honey Badger Universe. [GPL-3.0-only](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/LICENSE). Commercial use is permitted under the license, subject to its applicable source-distribution and copyleft requirements. Earlier MIT-licensed distributions retain their original license rights.
+Copyright (c) 2026 Honey Badger Universe.
+
+Current and future distributions of this source tree are licensed under the
+[GNU General Public License version 3](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/LICENSE)
+(GPL-3.0-only). Commercial use is permitted under the license, including its
+source-distribution and copyleft requirements. Prior distributions released
+under MIT retain their original license rights.
