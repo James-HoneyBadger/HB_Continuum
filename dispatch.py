@@ -92,6 +92,9 @@ def html_to_text(markup):
     lines = (' '.join(line.split()) for line in parser.text().splitlines())
     return '\n'.join(line for line in lines if line)
 
+class SyncInterrupted(RuntimeError):
+    """The connection failed mid-run; the message is not at fault, so retry later."""
+
 class Archive:
     def __init__(self, root):
         self.root = Path(root).expanduser(); self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -389,7 +392,8 @@ class Archive:
             with sync_lock(self.root):
                 count=self._sync(host, user, password, folder)
         except Exception as error:
-            self._log_sync(account,folder,started,0,f'{type(error).__name__}: {error}')
+            try: self._log_sync(account,folder,started,0,f'{type(error).__name__}: {error}')
+            except Exception: pass
             raise
         self._log_sync(account,folder,started,count,'')
         return count
@@ -437,9 +441,14 @@ class Archive:
                 try:
                     payload=[p[1] for p in self._fetch(m,uid) if isinstance(p,tuple)]
                     if len(payload)!=1: raise RuntimeError('Unexpected fetch response')
+                    if not payload[0]: raise RuntimeError('Empty fetch response')
                     self.ingest(payload[0],origin); count+=1
+                except SyncInterrupted:
+                    raise
                 except Exception as error:
-                    self._record_failure(origin,f'{type(error).__name__}: {error}')
+                    # Bookkeeping must never mask the failure that caused it.
+                    try: self._record_failure(origin,f'{type(error).__name__}: {error}')
+                    except Exception: pass
                     raise
                 if attempts:
                     with self.db: self.db.execute('DELETE FROM sync_failures WHERE account=? AND folder=? AND validity=? AND uid=?',origin)
@@ -454,17 +463,21 @@ class Archive:
             self.db.execute('''INSERT INTO sync_state(account,folder,validity,last_uid,updated) VALUES(?,?,?,?,datetime('now'))
                 ON CONFLICT(account,folder,validity) DO UPDATE SET last_uid=max(last_uid,excluded.last_uid), updated=excluded.updated''',(account,folder,validity,last_uid))
     def _fetch(self, connection, uid, attempts=SYNC_MAX_ATTEMPTS):
-        """Fetch one UID with BODY.PEEK, retrying transient connection aborts."""
+        """Fetch one UID with BODY.PEEK, retrying transient connection failures.
+
+        Exhausted retries raise SyncInterrupted: the connection is unusable, which
+        says nothing about the message, so it must not consume its attempt budget.
+        """
         failure=None
         for attempt in range(attempts):
             try:
                 status,parts=connection.uid('fetch',uid,'(BODY.PEEK[])')
                 if status!='OK': raise RuntimeError('Fetch failed')
                 return parts
-            except imaplib.IMAP4.abort as error:
+            except (imaplib.IMAP4.abort,OSError) as error:
                 failure=error
                 if attempt+1<attempts: time.sleep(2**attempt)
-        raise RuntimeError(f'Fetch failed after {attempts} attempts: {failure}')
+        raise SyncInterrupted(f'Fetch interrupted after {attempts} attempts: {failure}')
     def _failure_attempts(self, origin):
         row=self.db.execute('SELECT attempts FROM sync_failures WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone()
         return row[0] if row else 0

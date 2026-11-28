@@ -3,7 +3,7 @@
 import unittest,tempfile, json, sqlite3, io, contextlib, imaplib
 from unittest import mock
 from pathlib import Path
-from dispatch import Archive, __version__, main, read_mbox
+from dispatch import Archive, SyncInterrupted, __version__, main, read_mbox
 RAW=b'From: sender@example.invalid\r\nSubject: Synthetic invoice\r\nMessage-ID: <test@example.invalid>\r\n\r\nTest evidence only.\r\n'
 class Tests(unittest.TestCase):
     def setUp(self):
@@ -135,6 +135,31 @@ class Tests(unittest.TestCase):
             self.assertEqual(self.a.sync('host','user','pw'),1)
         self.assertEqual(self.a.failures(),[])
         self.assertEqual(len(self.a.find('invoice')),1)
+    def test_connection_aborts_do_not_quarantine_a_healthy_message(self):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.select.return_value=('OK',[b'1']); m.response.return_value=('UIDVALIDITY',[b'21'])
+        interrupted=[('OK',[b'4'])]+[imaplib.IMAP4.abort('connection reset')]*3
+        m.uid.side_effect=interrupted*3+[('OK',[b'4']),('OK',[(b'4',RAW)])]
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m), mock.patch('dispatch.time.sleep'):
+            for _ in range(3):
+                self.assertRaises(SyncInterrupted,self.a.sync,'host','user','pw')
+            self.assertEqual(self.a.failures(),[])
+            self.assertEqual(self.a._sync_state('host|user','INBOX','21'),0)
+            self.assertIn('SyncInterrupted',self.a.sync_log()[0][5])
+            self.assertEqual(self.a.sync('host','user','pw'),1)
+        self.assertEqual(len(self.a.find('invoice')),1)
+        self.assertEqual(self.a.failures(),[])
+        self.assertEqual(self.a._sync_state('host|user','INBOX','21'),4)
+    def test_empty_fetch_is_recorded_as_a_message_failure(self):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.select.return_value=('OK',[b'1']); m.response.return_value=('UIDVALIDITY',[b'22'])
+        m.uid.side_effect=[('OK',[b'9']),('OK',[(b'9',b'')])]
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.assertRaises(RuntimeError,self.a.sync,'host','user','pw')
+        (row,)=self.a.failures()
+        self.assertEqual((row[3],row[4]),('9',1))
+        self.assertIn('Empty fetch response',row[5])
+        self.assertEqual(self.a.stats()['messages'],0)
     def test_sync_quarantines_repeatedly_failing_message(self):
         good=b'Subject: Second letter\r\nMessage-ID: <2@example.invalid>\r\n\r\nsecond body\r\n'
         m=mock.MagicMock(); m.__enter__.return_value=m
