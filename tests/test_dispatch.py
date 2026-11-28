@@ -286,3 +286,79 @@ class DiscoveryQuotingTests(unittest.TestCase):
             code=dispatch_module.main(['--archive',str(self.a.root),'sync','host',
                                        'user','--all-folders'])
         self.assertEqual(code,0)
+
+
+class FolderStateTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.a=Archive(Path(self.tmp.name)/'archive')
+    def tearDown(self):
+        self.a.db.close()
+
+    def server(self, uids, exists=b'2', validity=b'1'):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.select.return_value=('OK',[exists])
+        m.response.return_value=('UIDVALIDITY',[validity])
+        m.uid.side_effect=uids
+        return m
+
+    def state(self, folder='INBOX'):
+        return self.a.db.execute(
+            'SELECT uidvalidity, last_seen_uid, remote_message_count, '
+            'local_message_count, status FROM imap_folder_state '
+            'WHERE folder_name=?',(folder,)).fetchone()
+
+    def test_initial_sync_records_state(self):
+        m=self.server([('OK',[b'1 2']),('OK',[(b'1',RAW)]),('OK',[(b'2',RAW+b'Two')])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.assertEqual(self.a.sync('host','user','pw'),2)
+        validity,last,remote,local,status=self.state()
+        self.assertEqual((validity,last,remote,local,status),('1',2,2,2,'ok'))
+
+    def test_second_run_uses_the_stored_watermark(self):
+        m=self.server([('OK',[b'1']),('OK',[(b'1',RAW)]),
+                       ('OK',[b'2']),('OK',[(b'2',RAW+b'Two')])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.a.sync('host','user','pw'); self.a.sync('host','user','pw')
+        searches=[c.args[2] for c in m.uid.call_args_list if c.args[:2]==('search',None)]
+        self.assertEqual(searches,['ALL','UID 2:*'])
+        self.assertEqual(self.state()[1],2)
+
+    def test_uidvalidity_change_warns_and_rescans(self):
+        m=self.server([('OK',[b'1']),('OK',[(b'1',RAW)]),
+                       ('OK',[b'1']),('OK',[(b'1',RAW+b'Rewritten')])],
+                      validity=b'5')
+        m.response.side_effect=[('UIDVALIDITY',[b'1']),('UIDVALIDITY',[b'5'])]
+        with self.assertLogs('hb_engine.dispatch',level='WARNING'):
+            with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+                self.a.sync('host','user','pw'); self.a.sync('host','user','pw')
+        searches=[c.args[2] for c in m.uid.call_args_list if c.args[:2]==('search',None)]
+        self.assertEqual(searches,['ALL','ALL'])
+        self.assertEqual(self.state()[0],'5')
+
+    def test_interrupted_sync_marks_error_and_resumes(self):
+        m=self.server([('OK',[b'1 2']),('OK',[(b'1',RAW)]),('NO',[])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            with self.assertRaises(RuntimeError):
+                self.a.sync('host','user','pw')
+        self.assertEqual(self.state()[4],'error')
+        self.assertEqual(self.state()[1],1)
+        resume=self.server([('OK',[b'2']),('OK',[(b'2',RAW+b'Two')])])
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=resume):
+            self.assertEqual(self.a.sync('host','user','pw'),1)
+        self.assertEqual(self.state()[1],2)
+        self.assertEqual(self.state()[4],'ok')
+
+    def test_health_reports_folder_coverage(self):
+        m=self.server([('OK',[b'1']),('OK',[(b'1',RAW)])],exists=b'5')
+        with mock.patch('hb_engine.dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.a.sync('host','user','pw')
+        coverage=self.a.health()['folder_coverage']
+        self.assertTrue(coverage['available'])
+        self.assertEqual(coverage['incomplete'],1)
+        folder=coverage['folders'][0]
+        self.assertEqual(folder['remote_messages'],5)
+        self.assertEqual(folder['local_messages'],1)
+        self.assertEqual(folder['missing'],4)
+        self.assertFalse(folder['complete'])
