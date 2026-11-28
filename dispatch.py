@@ -29,6 +29,26 @@ def _sent_ts(date_header):
     except (OverflowError,OSError,ValueError):
         return None
 
+def read_mbox(handle):
+    """Yield raw message bytes from an mbox stream.
+
+    Separator lines starting with 'From ' are consumed and the single quoting
+    '>' that mbox adds to lines matching '>*From ' is removed; everything else,
+    including line endings and headers, is preserved byte for byte. Content
+    before the first separator is ignored, as mbox defines no message there.
+    """
+    buffer=None
+    for line in handle:
+        if line.startswith(b'From '):
+            if buffer: yield bytes(buffer)
+            buffer=bytearray()
+            continue
+        if buffer is None: continue
+        if line.startswith(b'>') and line.lstrip(b'>').startswith(b'From '):
+            line=line[1:]
+        buffer+=line
+    if buffer: yield bytes(buffer)
+
 def _timestamp(value, end_of_day=False):
     """Epoch seconds for an ISO date, ISO datetime or epoch number."""
     from datetime import datetime, timezone
@@ -171,6 +191,36 @@ class Archive:
                 self.db.execute('INSERT OR IGNORE INTO origins VALUES(?,?,?,?,?)',(*origin,digest))
                 if self.db.execute('SELECT hash FROM origins WHERE account=? AND folder=? AND validity=? AND uid=?',origin).fetchone()[0]!=digest: raise ValueError('Origin conflict')
         return digest
+    def import_mbox(self, path):
+        """Ingest every message of an mbox file, returning (imported, skipped).
+
+        Messages are streamed one at a time so a large mailbox file is never held
+        in memory. A message that cannot be archived is counted and skipped rather
+        than aborting the whole migration.
+        """
+        imported=skipped=0
+        with open(path,'rb') as handle:
+            for raw in read_mbox(handle):
+                try:
+                    self.ingest(raw); imported+=1
+                except ValueError:
+                    skipped+=1
+        return imported,skipped
+    def import_directory(self, path):
+        """Ingest every regular file below a directory, returning (imported, skipped).
+
+        Suits Maildir trees and exported mail folders. Hidden files and hidden
+        directories are ignored, and one unreadable message does not stop the walk.
+        """
+        root=Path(path); imported=skipped=0
+        for entry in sorted(root.rglob('*')):
+            if not entry.is_file(): continue
+            if any(part.startswith('.') for part in entry.relative_to(root).parts): continue
+            try:
+                self.ingest(entry.read_bytes()); imported+=1
+            except ValueError:
+                skipped+=1
+        return imported,skipped
     def find(self, query, limit=100, sender=None, after=None, before=None):
         """Full-text search with optional sender and date-range filters.
 
@@ -410,7 +460,15 @@ def main():
     q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
     a=p.parse_args(); ar=Archive(a.archive)
     if a.cmd=='import':
-        for f in a.files: print(ar.ingest(Path(f).read_bytes()))
+        for f in a.files:
+            path=Path(f)
+            if path.is_dir():
+                imported,skipped=ar.import_directory(path)
+                print(json.dumps({'directory':str(path),'imported':imported,'skipped':skipped}))
+            elif path.suffix.lower() in ('.mbox','.mbx'):
+                imported,skipped=ar.import_mbox(path)
+                print(json.dumps({'file':str(path),'imported':imported,'skipped':skipped}))
+            else: print(ar.ingest(path.read_bytes()))
     elif a.cmd=='search': print(json.dumps(ar.find(a.query,a.limit,a.sender,a.after,a.before),indent=2))
     elif a.cmd=='verify':
         bad=ar.verify(); print(json.dumps(bad)); return int(bool(bad))

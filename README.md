@@ -57,6 +57,8 @@ Python 3.12+ with SQLite FTS5 and optional Tkinter.
 ```sh
 python3 dispatch.py --version
 python3 dispatch.py import sample.eml
+python3 dispatch.py import takeout.mbox
+python3 dispatch.py import ~/Maildir
 python3 dispatch.py search invoice --sender alice@example.invalid --after 2024-01-01 --before 2024-12-31
 python3 dispatch.py search --sender accounts@example.invalid --after 2024-01-01
 python3 dispatch.py verify

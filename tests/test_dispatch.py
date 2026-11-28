@@ -3,7 +3,7 @@
 import unittest,tempfile, json, sqlite3, io, contextlib, imaplib
 from unittest import mock
 from pathlib import Path
-from dispatch import Archive, __version__, main
+from dispatch import Archive, __version__, main, read_mbox
 RAW=b'From: sender@example.invalid\r\nSubject: Synthetic invoice\r\nMessage-ID: <test@example.invalid>\r\n\r\nTest evidence only.\r\n'
 class Tests(unittest.TestCase):
     def setUp(self):
@@ -277,6 +277,48 @@ class Tests(unittest.TestCase):
         (self.a.raw/('0'*64+'.eml')).write_bytes(b'Subject: Fake\r\n\r\nnot matching its name\r\n')
         self.assertEqual(self.a.reindex(),0)
         self.assertEqual(self.a.find('fake'),[])
+    def test_mbox_import_preserves_messages_and_quoting(self):
+        mbox=(b'From alice@example.invalid Mon Jan  1 00:00:00 2024\n'
+              b'Subject: First archived\nMessage-ID: <mbox1@example.invalid>\n\n'
+              b'line one\n>From the archive\n\n'
+              b'From bob@example.invalid Tue Jan  2 00:00:00 2024\n'
+              b'Subject: Second archived\nMessage-ID: <mbox2@example.invalid>\n\n'
+              b'line two\n')
+        path=Path(self.tmp.name)/'mail.mbox'; path.write_bytes(mbox)
+        self.assertEqual(self.a.import_mbox(path),(2,0))
+        self.assertEqual(len(self.a.find('archived')),2)
+        first=self.a.find('"line one"')[0][0]
+        self.assertIn('From the archive',self.a.details(first)['body'])
+        self.assertEqual(self.a.import_mbox(path),(2,0))
+        self.assertEqual(self.a.stats()['messages'],2)
+        self.assertEqual(self.a.verify(),[])
+    def test_mbox_import_skips_unarchivable_message(self):
+        mbox=(b'From a@example.invalid Mon Jan  1 00:00:00 2024\nSubject: Good one\n\nbody\n'
+              b'From b@example.invalid Tue Jan  2 00:00:00 2024\nSubject: Bad one\n\nbody\n')
+        path=Path(self.tmp.name)/'partial.mbox'; path.write_bytes(mbox)
+        real=self.a.ingest
+        def failing(raw,origin=None):
+            if b'Bad one' in raw: raise ValueError('Message exceeds 64 MiB limit')
+            return real(raw,origin)
+        self.a.ingest=failing
+        self.assertEqual(self.a.import_mbox(path),(1,1))
+        self.assertEqual(len(self.a.find('Good')),1)
+    def test_read_mbox_handles_edges(self):
+        self.assertEqual(list(read_mbox(io.BytesIO(b''))),[])
+        self.assertEqual(list(read_mbox(io.BytesIO(b'junk without separator'))),[])
+        self.assertEqual(list(read_mbox(io.BytesIO(b'From a@b Mon Jan  1 00:00:00 2024\nSubject: x\n\nno trailing newline'))),
+                         [b'Subject: x\n\nno trailing newline'])
+    def test_directory_import_covers_maildir_trees(self):
+        tree=Path(self.tmp.name)/'Maildir'
+        for name,body in (('cur/1.eml',b'Subject: Cur one\r\n\r\nfirst\r\n'),
+                          ('new/2.eml',b'Subject: New two\r\n\r\nsecond\r\n')):
+            (tree/name).parent.mkdir(parents=True,exist_ok=True); (tree/name).write_bytes(body)
+        (tree/'.hidden').mkdir(); (tree/'.hidden/3.eml').write_bytes(b'Subject: Hidden\r\n\r\nhidden\r\n')
+        self.assertEqual(self.a.import_directory(tree),(2,0))
+        self.assertEqual(len(self.a.find('Cur')),1); self.assertEqual(len(self.a.find('New')),1)
+        self.assertEqual(self.a.find('Hidden'),[])
+        self.assertEqual(self.a.import_directory(tree),(2,0))
+        self.assertEqual(self.a.stats()['messages'],2)
     def test_version_flag(self):
         out=io.StringIO()
         with mock.patch('sys.argv',['dispatch.py','--version']), contextlib.redirect_stdout(out):
