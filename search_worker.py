@@ -120,7 +120,10 @@ class SearchController:
         self._busy = False
 
     def destroy(self):
-        self.cancel()
-        if self._after_id is not None and self._after_cancel is not None:
-            self._after_cancel(self._after_id)
-            self._after_id = None
+        """Stop polling and wait briefly for in-flight queries on window close.
+
+        Tk calls this from the main thread when the window closes, so the wait
+        is bounded to keep the close responsive while still preventing a worker
+        from touching the archive after the application has torn it down.
+        """
+        self.close(timeout=2.0)

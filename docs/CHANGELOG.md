@@ -20,7 +20,8 @@ Storage formats frozen for this series.
 - Dependency declarations split into core, optional, development and packaging
   files.
 - Background search worker gained a lifecycle: workers are joined before an
-  archive is closed.
+  archive is closed, and the Tk workstation waits briefly for in-flight queries
+  when its window closes.
 - Documentation claims are machine-checked against the implementation inventory.
 - Fixed: the security-review fixture was excluded by `.gitignore`, so fresh
   clones lacked it.
