@@ -6,7 +6,7 @@ funded, and items may be dropped without notice.
 
 ## Where the project stands
 
-`v0.5.0-beta` is the current source release: archival preservation, full-text
+`v1.0.0` is the current source release: archival preservation, full-text
 search and timelines, document and social-export ingestion, optional local
 research through Ollama, SQLCipher database encryption with explicit migration,
 and verified backups. The qualification record and remaining limitations are in

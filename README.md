@@ -17,20 +17,25 @@ maintained responsibly.
 
 ## Status
 
-**Current release: [v0.5.0-beta](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.5.0-beta).**
-This is a beta source release, not a signed or notarized stable distribution.
-The native desktop application is qualified on **macOS Apple Silicon only**.
-The portable Python engine is exercised by CI on Linux and Windows, but
-packaged desktop applications for those platforms are not claimed as
-supported.
+**Current release: [v1.0.0](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v1.0.0).**
+This is a stable source release for personal use, published without a signed
+or notarized installer. The native desktop application is qualified on
+**macOS Apple Silicon only**. The portable Python engine is exercised by CI on
+Linux and Windows, but packaged desktop applications for those platforms are
+not claimed as supported.
 
-No formal stable release has been declared. Formal stable publication
-remains the owner's decision.
+"Stable" here means the archival core is dependable and the storage formats are
+frozen for this series. It does not mean feature-complete: MBOX export,
+incremental synchronization, richer research tooling and deeper local
+intelligence are planned, not present. The
+[roadmap](docs/ROADMAP.md) and
+[implementation status](docs/engineering/IMPLEMENTATION_STATUS.md) state what
+exists.
 
 ## Getting the source
 
-The default branch `main` carries the qualified v0.5 implementation, and the
-`v0.5.0-beta` tag identifies the released source:
+The default branch `main` carries the released implementation, and the
+`v1.0.0` tag identifies it:
 
 ```sh
 git clone https://github.com/James-HoneyBadger/HB_Continuum.git

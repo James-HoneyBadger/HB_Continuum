@@ -1,6 +1,6 @@
 [package]
 name = "hb-continuum"
-version = "0.5.0-beta"
+version = "1.0.0"
 description = "HB Continuum desktop shell"
 edition = "2021"
 
