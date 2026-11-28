@@ -42,7 +42,15 @@ class SearchControllerTests(unittest.TestCase):
         self.a=Archive(Path(self.tmp.name)/'archive')
         self.h=self.a.ingest(b'From: a@example.invalid\r\nSubject: Silver invoice\r\n\r\nBullion receipt')
         self.sched=RecordingScheduler()
+        self.controllers=[]
+    def controller(self, query_fn):
+        c=SearchController(self.a.root, query_fn, self.sched, self.sched.cancel)
+        c.on_result=mock.Mock(); c.on_error=mock.Mock()
+        self.controllers.append(c)
+        return c
     def tearDown(self):
+        for c in self.controllers:
+            c.close()
         self.a.db.close(); self.tmp.cleanup()
     def drive(self, c, timeout=2.0):
         deadline=time.time()+timeout
@@ -56,8 +64,7 @@ class SearchControllerTests(unittest.TestCase):
         def qf(conn, term):
             done.set()
             return find_readonly(conn, term)
-        c=SearchController(self.a.root, qf, self.sched, self.sched.cancel)
-        c.on_result=mock.Mock(); c.on_error=mock.Mock()
+        c=self.controller(qf)
         c.submit('invoice')
         self.assertTrue(c.busy)
         self.assertTrue(done.wait(2))
@@ -72,8 +79,7 @@ class SearchControllerTests(unittest.TestCase):
         def qf(conn, term):
             gate.wait(2)
             return []
-        c=SearchController(self.a.root, qf, self.sched, self.sched.cancel)
-        c.on_result=mock.Mock(); c.on_error=mock.Mock()
+        c=self.controller(qf)
         c.submit('first')
         c.submit('second')
         stats={'messages':1,'origins':0}
@@ -87,11 +93,11 @@ class SearchControllerTests(unittest.TestCase):
         c.on_result.assert_called_once_with([('fresh','S','F')],stats)
         c.cancel()
         gate.set()
+        self.assertTrue(c.close())
     def test_error_re_enables(self):
         def qf(conn, term):
             raise RuntimeError('boom')
-        c=SearchController(self.a.root, qf, self.sched, self.sched.cancel)
-        c.on_result=mock.Mock(); c.on_error=mock.Mock()
+        c=self.controller(qf)
         c.submit('x')
         self.drive(c)
         self.assertFalse(c.busy)
@@ -103,7 +109,7 @@ class SearchControllerTests(unittest.TestCase):
         def qf(conn, term):
             gate.wait(2)
             return []
-        c=SearchController(self.a.root, qf, self.sched, self.sched.cancel)
+        c=self.controller(qf)
         c.submit('x')
         self.assertTrue(c.busy)
         c.cancel()
@@ -111,3 +117,4 @@ class SearchControllerTests(unittest.TestCase):
         c._poll()
         self.assertFalse(c.busy)
         gate.set()
+        self.assertTrue(c.close())
