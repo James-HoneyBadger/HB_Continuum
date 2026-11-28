@@ -69,6 +69,11 @@ def load(root):
     return decode(read_json(Path(root)/'preferences.json',{'version':1,'preferences':{}}))
 
 def save(root,values):
+    """Persist preferences.
+
+    Boundary: preferences.json is plaintext and is not encrypted by an
+    encrypted archive. It stores no credentials.
+    """
     write_json(Path(root)/'preferences.json',{'version':1,'preferences':validate(values)})
 
 def export(path,values):

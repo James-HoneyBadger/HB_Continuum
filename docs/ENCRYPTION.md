@@ -118,6 +118,41 @@ There is no password change, key rotation, recovery key or password-reset
 workflow. **If the password is lost, the encrypted databases cannot be
 recovered by the application.**
 
+## Data boundary at a glance
+
+Verified against the code, not copied from the release notes. "Inside" means
+protected by SQLCipher on an encrypted archive.
+
+| Data | Inside the SQLCipher boundary? | Where it lives | Supplementary control |
+| --- | --- | --- | --- |
+| SQLite databases | **Yes** | `archive.sqlite3`, `research.sqlite3`, `catalog.sqlite3` in the archive root | None needed beyond the passphrase |
+| FTS5 indexes | **Yes** | Inside those three databases | None |
+| Raw EML store | No | `<archive>/raw/<sha256>.eml` | Encrypted volume or container for the archive folder |
+| External documents | No | Their original paths; the archive stores only extracted text and metadata | Encrypted volume, or keep originals on one |
+| Configuration | No | `preferences.json`, `schedule.json`, `migrations` snapshots | Encrypted volume |
+| Credential store | No | OS keyring, or `credentials.key` + `credentials.enc` in the archive directory when the insecure fallback is opted into | Keyring preferred; see [SECURITY.md](../SECURITY.md) |
+| Exports and reports | No | The destination the user names | Encrypted volume; check before sharing |
+| Logs | No | `boundary-notice.log`, scheduler status and diagnostics | Encrypted volume |
+| Backups | Partly | Databases keep their encryption; `raw/`, configuration and reports in the snapshot do not | Treat a backup as plaintext unless every file in it is protected |
+
+The in-app notice repeats this when an archive is opened; acknowledging it is
+recorded once in `boundary-notice.log`.
+
+## Can the raw store be brought inside?
+
+Assessment, not a commitment. None of these ships in `v0.5.0-beta`.
+
+| Option | FTS5 indexing | Streaming large EML reads | Backup and restore | Migration cost | External readability | Verdict |
+| --- | --- | --- | --- | --- | --- | --- |
+| SQLCipher attached database holding EML blobs | Works: text is indexed from the same connection | Poor: blobs must be read through the database API; no plain file streaming | Simplest: one encrypted file family to copy | High: rewrite of ingest, verify, export and raw-hash checks | Lost: no file manager access | Not feasible now |
+| Separate encrypted volume (APFS/FileVault, LUKS, BitLocker) | Unchanged | Unchanged: ordinary files | Unchanged, but the backup must stay on encrypted media | None | Kept, when mounted | **Feasible now, by the user** — documented below |
+| Per-file AEAD blob store with a key from the archive passphrase | Works, with an extra decrypt step per file | Good: files decrypt to a temp path or stream | Medium: manifest plus key handling must cover many files | High: new on-disk format, key rotation, corruption handling | Lost without the tool | Feasible later |
+
+Recommendation: use an encrypted volume for the archive directory today. That
+protects raw EML, documents, configuration, exports and logs without inventing
+a second cryptographic format. A per-file blob store would only be justified if
+users need the archive to remain protected while it is detached and shared.
+
 ## What is encrypted
 
 - `archive.sqlite3`, `research.sqlite3` and `catalog.sqlite3`, including

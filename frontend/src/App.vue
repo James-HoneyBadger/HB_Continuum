@@ -76,6 +76,17 @@ const password = ref("");
 const unlocking = ref(false);
 const working = ref(false);
 const archiveExists = ref<boolean | null>(null);
+const boundaryAck = ref(localStorage.getItem("hb.boundaryNotice") === "acknowledged");
+
+async function acknowledgeBoundary() {
+  try {
+    await invoke("acknowledge_boundary_notice");
+  } catch (e) {
+    error.value = String(e);
+  }
+  boundaryAck.value = true;
+  localStorage.setItem("hb.boundaryNotice", "acknowledged");
+}
 
 async function refreshStats() {
   try {
@@ -278,6 +289,18 @@ onUnmounted(() => window.removeEventListener("keydown", handleShortcut));
       </div>
     </header>
 
+    <section v-if="archiveExists && !boundaryAck" class="boundary-notice" aria-live="polite">
+      <div>
+        <strong>What encryption covers.</strong>
+        An encrypted archive protects <code>archive.sqlite3</code>,
+        <code>research.sqlite3</code> and <code>catalog.sqlite3</code>. Original
+        EML files, imported documents, preferences, exports and logs are stored
+        as ordinary files and stay readable on disk. Use FileVault, BitLocker or
+        an encrypted container for the archive folder as well.
+      </div>
+      <button class="secondary" @click="acknowledgeBoundary">Understood</button>
+    </section>
+
     <section v-if="archiveExists === null" class="center-state" aria-live="polite">
       <h2>{{ error ? "Could not open the archive" : "Opening archive…" }}</h2>
       <p class="meta">
@@ -393,6 +416,24 @@ onUnmounted(() => window.removeEventListener("keydown", handleShortcut));
   flex-direction: column;
   height: 100vh;
   background: var(--hb-app-bg);
+}
+.boundary-notice {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--hb-warning-bg, #fff6d6);
+  color: var(--hb-warning-text, #4a3a00);
+  border-bottom: 1px solid var(--hb-border-strong);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+.boundary-notice code {
+  font-size: 0.85em;
+}
+.boundary-notice button {
+  flex: 0 0 auto;
 }
 .app-header {
   display: flex;

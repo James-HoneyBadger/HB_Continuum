@@ -377,7 +377,10 @@ def render(report, fmt):
     return renderer(report)
 
 def write_report(report, fmt, destination):
-    """Write a rendered report, refusing to replace an existing file."""
+    """Write a rendered report, refusing to replace an existing file.
+
+    Boundary: the report is written outside the archive as plaintext.
+    """
     text = render(report, fmt)
     path = Path(destination)
     if path.suffix.lower() != EXTENSIONS[fmt]:

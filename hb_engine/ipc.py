@@ -311,6 +311,31 @@ def _encryption_lock(root):
     return lock(root)
 
 
+def _acknowledge_boundary_notice(root):
+    """Record that the user accepted the encryption boundary notice.
+
+    Appends one JSON line to ``boundary-notice.log`` in the archive directory.
+    That log sits outside the database encryption boundary and holds no
+    secrets: a timestamp, a notice identifier and the archive path only.
+    """
+    import datetime
+    path = Path(root).expanduser() / 'boundary-notice.log'
+    record = {
+        'acknowledged_at': datetime.datetime.now(datetime.timezone.utc)
+                                   .isoformat(timespec='seconds'),
+        'notice': 'encryption-boundary-v1',
+        'archive': str(path.parent),
+    }
+    try:
+        with path.open('a', encoding='utf-8') as handle:
+            handle.write(json.dumps(record, sort_keys=True) + '\n')
+    except OSError as exc:
+        raise IPCError('NOTICE_LOG_UNWRITABLE',
+                       f'cannot record the acknowledgement: {exc.strerror}') from None
+    return {'path': str(path), 'notice': record['notice'],
+            'acknowledged_at': record['acknowledged_at']}
+
+
 def _timeline_sources(value):
     if value is None:
         return ['email']
@@ -1783,6 +1808,8 @@ class IPCServer:
                 return _result(request_id, _encryption_lock(self.root))
             if method == 'archive_status':
                 return _result(request_id, _archive_status(self.root))
+            if method == 'acknowledge_boundary_notice':
+                return _result(request_id, _acknowledge_boundary_notice(self.root))
             if method == 'create_archive':
                 path = params.get('path')
                 if not isinstance(path, str) or not path.strip():

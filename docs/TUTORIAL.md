@@ -24,6 +24,15 @@ This is not a replacement mail client, cloud backup service, or automated mailbo
 
 ## 2. Start with a disposable practice archive
 
+### What encryption does not cover
+
+If you choose an encrypted archive, only the three SQLite databases are
+encrypted. The original `.eml` files under `raw/`, imported documents at their
+own locations, `preferences.json`, exports, reports and logs stay readable on
+disk. Use FileVault, BitLocker or an encrypted container for the archive folder
+as well. The full table, and an assessment of what could change, is in
+[Encrypted archive creation](ENCRYPTION.md#data-boundary-at-a-glance).
+
 Install Python 3.12 or newer with SQLite FTS5 support. The native Tauri desktop shell is the primary interface, with macOS Apple Silicon as the qualified desktop target. Tkinter is only used by the legacy workstation; some Linux distributions package it separately. From a terminal:
 
 ```sh

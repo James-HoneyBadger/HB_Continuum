@@ -804,6 +804,11 @@ class Archive:
     def verify(self):
         return verify_raw(self.db,self.raw)
     def export(self, hashes, destination):
+        """Write original message files to a user-chosen directory.
+
+        Boundary: the destination is outside the archive and is written as
+        plaintext, even when the archive databases are encrypted.
+        """
         dest=Path(destination)
         hashes=list(dict.fromkeys(hashes))
         if not hashes: raise ValueError('Select at least one message')
