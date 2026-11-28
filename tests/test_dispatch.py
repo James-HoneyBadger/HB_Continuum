@@ -3,7 +3,7 @@
 import unittest,tempfile, json, sqlite3, io, contextlib, imaplib
 from unittest import mock
 from pathlib import Path
-from dispatch import Archive, SyncInterrupted, __version__, main, read_mbox
+from dispatch import Archive, SyncInterrupted, __version__, main, parse_folder_list, read_mbox
 RAW=b'From: sender@example.invalid\r\nSubject: Synthetic invoice\r\nMessage-ID: <test@example.invalid>\r\n\r\nTest evidence only.\r\n'
 class Tests(unittest.TestCase):
     def setUp(self):
@@ -448,6 +448,42 @@ class Tests(unittest.TestCase):
         self.assertRaises(FileExistsError,self.a.export_mbox,[h],target)
         self.assertEqual(target.read_text(),'keep')
         self.assertRaises(ValueError,self.a.export_mbox,['0'*64],Path(self.tmp.name)/'other.mbox')
+    def test_folder_list_parsing_covers_quoted_and_nil_names(self):
+        self.assertEqual(parse_folder_list(b'(\\HasNoChildren) "/" "INBOX"'),
+                         {'name':'INBOX','delimiter':'/','flags':['\\HasNoChildren']})
+        self.assertEqual(parse_folder_list(b'(\\HasChildren \\Noselect) "/" "[Gmail]"')['flags'],
+                         ['\\HasChildren','\\Noselect'])
+        self.assertEqual(parse_folder_list(b'(\\HasNoChildren) NIL "Sent Items"'),
+                         {'name':'Sent Items','delimiter':'','flags':['\\HasNoChildren']})
+        self.assertEqual(parse_folder_list(b'(\\HasNoChildren) "/" "A \\"quoted\\" name"')['name'],'A "quoted" name')
+        self.assertIsNone(parse_folder_list(b'garbage'))
+        self.assertIsNone(parse_folder_list(None))
+    def test_folders_lists_mailboxes_without_selecting(self):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.list.return_value=('OK',[b'(\\HasNoChildren) "/" "INBOX"', b'(\\HasNoChildren) "/" "Archive/2024"'])
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.assertEqual([f['name'] for f in self.a.folders('imap.gmail.com','user','abcd efgh')],
+                             ['INBOX','Archive/2024'])
+        m.login.assert_called_once_with('user','abcdefgh')
+        m.select.assert_not_called()
+        m.uid.assert_not_called()
+    def test_folders_reports_listing_failure(self):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.list.return_value=('NO',[None])
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m):
+            self.assertRaises(RuntimeError,self.a.folders,'host','user','pw')
+    def test_sync_accepts_several_folders_from_the_command_line(self):
+        m=mock.MagicMock(); m.__enter__.return_value=m
+        m.select.return_value=('OK',[b'1']); m.response.return_value=('UIDVALIDITY',[b'5'])
+        m.uid.side_effect=[('OK',[b'1']),('OK',[(b'1',RAW)]),('OK',[b'9']),('OK',[(b'9',RAW)])]
+        out=io.StringIO()
+        with mock.patch('dispatch.imaplib.IMAP4_SSL',return_value=m), mock.patch('getpass.getpass',return_value='pw'), \
+             mock.patch('sys.argv',['dispatch.py','--archive',str(self.a.root),'sync','host','user','--folder','INBOX','--folder','Archive']), \
+             contextlib.redirect_stdout(out):
+            self.assertEqual(main(),0)
+        self.assertEqual(out.getvalue().strip(),'2')
+        self.assertEqual([call.args[0] for call in m.select.call_args_list],['"INBOX"','"Archive"'])
+        self.assertEqual(self.a.stats()['origins'],2)
     def test_version_flag(self):
         out=io.StringIO()
         with mock.patch('sys.argv',['dispatch.py','--version']), contextlib.redirect_stdout(out):

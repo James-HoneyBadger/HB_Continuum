@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (c) 2026 Honey Badger Universe
 """Local read-only email archive. No network access except explicit sync."""
-import shutil, argparse, hashlib, imaplib, sqlite3, ssl, json, os, tempfile, time
+import shutil, argparse, hashlib, imaplib, re, sqlite3, ssl, json, os, tempfile, time
 from pathlib import Path
 from email import policy
 from email.parser import BytesParser
@@ -22,6 +22,23 @@ def _like(text):
     """SQL LIKE pattern for a case-insensitive substring, with wildcards escaped."""
     escaped=text.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
     return f'%{escaped}%'
+
+_LIST_PATTERN = re.compile(rb'^\((?P<flags>[^)]*)\)\s+(?P<delimiter>NIL|"(?:[^"\\]|\\.)*")\s+(?P<name>.+?)\s*$')
+
+def _unquote(value):
+    """Decode an IMAP quoted string or unquoted token into text."""
+    if len(value)>=2 and value.startswith(b'"') and value.endswith(b'"'):
+        value=re.sub(rb'\\(.)', rb'\1', value[1:-1])
+    return value.decode('utf-8', errors='replace')
+
+def parse_folder_list(entry):
+    """Interpret one IMAP LIST response line as {'name','delimiter','flags'}."""
+    if not isinstance(entry,(bytes,bytearray)): return None
+    match=_LIST_PATTERN.match(bytes(entry).strip())
+    if not match: return None
+    delimiter='' if match.group('delimiter')==b'NIL' else _unquote(match.group('delimiter'))
+    flags=[flag.decode('ascii',errors='replace') for flag in match.group('flags').split()]
+    return {'name':_unquote(match.group('name')),'delimiter':delimiter,'flags':flags}
 
 def _mbox_quote(raw):
     """Quote lines a reader could mistake for an mbox 'From ' separator."""
@@ -486,6 +503,19 @@ class Archive:
         return {'messages':self.db.execute('SELECT count(*) FROM messages').fetchone()[0],
                 'origins':self.db.execute('SELECT count(*) FROM origins').fetchone()[0],
                 'attachments':self.db.execute('SELECT count(*) FROM attachments').fetchone()[0]}
+    @staticmethod
+    def _password_for(host, password):
+        """Gmail shows app passwords in groups; whitespace is not part of the secret."""
+        return ''.join(password.split()) if host.lower()=='imap.gmail.com' else password
+    def folders(self, host, user, password):
+        """List the server's mailboxes read-only; no message is fetched or changed."""
+        from preferences import load
+        prefs=load(self.root)
+        with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(), timeout=prefs['network_timeout']) as m:
+            m.login(user,self._password_for(host,password))
+            status,data=m.list()
+        if status!='OK': raise RuntimeError('Folder listing failed')
+        return [folders for folders in (parse_folder_list(entry) for entry in data) if folders]
     def sync(self, host, user, password, folder='INBOX'):
         """Synchronize one mailbox, recording every attempt in the local sync log.
 
@@ -518,8 +548,7 @@ class Archive:
         if not folder or any(c in folder for c in '\r\n\x00'):
             raise ValueError('Invalid mailbox name')
         quoted='"'+folder.replace('\\','\\\\').replace('"','\\"')+'"'
-        if host.lower()=='imap.gmail.com':
-            password=''.join(password.split())
+        password=self._password_for(host,password)
         from preferences import load
         prefs=load(self.root)
         with imaplib.IMAP4_SSL(host, ssl_context=ssl.create_default_context(), timeout=prefs['network_timeout']) as m:
@@ -600,8 +629,13 @@ class Archive:
 def main():
     import getpass
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--recipient'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('log'); q.add_argument('--limit',default=100); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('export-mbox'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--recipient'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('log'); q.add_argument('--limit',default=100); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('export-mbox'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',action='append'); q=sub.add_parser('folders'); q.add_argument('host'); q.add_argument('user'); sub.add_parser('gui')
     a=p.parse_args(); ar=Archive(a.archive)
+    try: return _run_command(ar,a)
+    finally: ar.db.close()
+
+def _run_command(ar, a):
+    import getpass
     if a.cmd=='import':
         for f in a.files:
             path=Path(f)
@@ -627,7 +661,10 @@ def main():
     elif a.cmd=='log': print(json.dumps(ar.sync_log(a.limit),indent=2))
     elif a.cmd=='export': ar.export(a.hashes,a.destination)
     elif a.cmd=='export-mbox': print(ar.export_mbox(a.hashes,a.destination))
-    elif a.cmd=='sync': print(ar.sync(a.host,a.user,getpass.getpass(),a.folder))
+    elif a.cmd=='sync':
+        password=getpass.getpass()
+        print(sum(ar.sync(a.host,a.user,password,folder) for folder in (a.folder or ['INBOX'])))
+    elif a.cmd=='folders': print(json.dumps(ar.folders(a.host,a.user,getpass.getpass()),indent=2))
     elif a.cmd=='gui':
         from desktop import launch
         launch(ar)
