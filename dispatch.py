@@ -522,6 +522,34 @@ class Archive:
             " FROM (SELECT hash, account||' / '||folder AS place FROM origins GROUP BY hash, account, folder)"
             " GROUP BY hash HAVING count(*)>1 ORDER BY count(*) DESC, hash LIMIT ?",
             (max(1,min(int(limit),5000)),)).fetchall()
+    def interchange(self, since=None, limit=None):
+        """Yield portable metadata records for HB Continuum and other readers.
+
+        Each record carries stable identifiers, stored headers, attachment
+        references and provenance, but no message body, so an integration can
+        decide separately whether to read original files. `since` restricts the
+        export to messages acquired at or after that ISO timestamp, which makes
+        incremental hand-off possible; imports without provenance are skipped in
+        that mode. Records are produced one at a time to bound memory use.
+        """
+        sql=('SELECT hash,subject,sender,date,message_id,reply_to,recipient,cc,bcc,sent_ts FROM messages m')
+        params=[]
+        if since is not None:
+            sql+=' WHERE EXISTS (SELECT 1 FROM origins o WHERE o.hash=m.hash AND o.first_seen>=?)'
+            params.append(str(since))
+        sql+=' ORDER BY m.rowid'
+        if limit is not None:
+            sql+=' LIMIT ?'; params.append(max(1,min(int(limit),1_000_000)))
+        for row in self.db.execute(sql,params):
+            digest=row[0]
+            yield {'sha256':digest,'subject':row[1],'sender':row[2],'date':row[3],
+                   'sent_ts':row[9],'message_id':row[4],'reply_to':row[5],
+                   'recipient':row[6],'cc':row[7],'bcc':row[8],
+                   'attachments':[dict(zip(('filename','content_type','size','sha256'),item))
+                                  for item in self.attachments(digest)],
+                   'origins':[dict(zip(('account','folder','validity','uid','first_seen'),item)) for item in
+                              self.db.execute('SELECT account,folder,validity,uid,first_seen FROM origins'
+                                              ' WHERE hash=? ORDER BY account,folder,validity,uid',(digest,))]}
     def stats(self):
         return {'messages':self.db.execute('SELECT count(*) FROM messages').fetchone()[0],
                 'origins':self.db.execute('SELECT count(*) FROM origins').fetchone()[0],
@@ -652,7 +680,7 @@ class Archive:
 def main():
     import getpass
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--recipient'); q.add_argument('--attachment'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('duplicates'); q.add_argument('--limit',default=500); q=sub.add_parser('provenance'); q.add_argument('hash'); q=sub.add_parser('log'); q.add_argument('--limit',default=100); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('export-mbox'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',action='append'); q=sub.add_parser('folders'); q.add_argument('host'); q.add_argument('user'); sub.add_parser('gui')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--recipient'); q.add_argument('--attachment'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('duplicates'); q.add_argument('--limit',default=500); q=sub.add_parser('provenance'); q.add_argument('hash'); q=sub.add_parser('log'); q.add_argument('--limit',default=100); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('export-mbox'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('interchange'); q.add_argument('destination'); q.add_argument('--since'); q.add_argument('--limit'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',action='append'); q=sub.add_parser('folders'); q.add_argument('host'); q.add_argument('user'); sub.add_parser('gui')
     a=p.parse_args(); ar=Archive(a.archive)
     try: return _run_command(ar,a)
     finally: ar.db.close()
@@ -687,6 +715,15 @@ def _run_command(ar, a):
     elif a.cmd=='log': print(json.dumps(ar.sync_log(a.limit),indent=2))
     elif a.cmd=='export': ar.export(a.hashes,a.destination)
     elif a.cmd=='export-mbox': print(ar.export_mbox(a.hashes,a.destination))
+    elif a.cmd=='interchange':
+        with os.fdopen(os.open(Path(a.destination),os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'w',encoding='utf-8') as output:
+            output.write('{"format":"hb-dispatch-interchange-1","messages":[')
+            first=True
+            for record in ar.interchange(a.since,a.limit):
+                output.write(('' if first else ',')+json.dumps(record,ensure_ascii=False))
+                first=False
+            output.write(']}')
+        print(Path(a.destination).resolve())
     elif a.cmd=='sync':
         password=getpass.getpass()
         print(sum(ar.sync(a.host,a.user,password,folder) for folder in (a.folder or ['INBOX'])))

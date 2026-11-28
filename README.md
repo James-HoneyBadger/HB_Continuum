@@ -67,6 +67,7 @@ python3 dispatch.py reindex
 python3 dispatch.py failures
 python3 dispatch.py duplicates
 python3 dispatch.py provenance HASH
+python3 dispatch.py interchange manifest.json --since 2024-01-01
 python3 dispatch.py log
 python3 dispatch.py attachments HASH
 python3 dispatch.py attachment SHA256 OUT_FILE
@@ -92,6 +93,10 @@ Maintain multiple mailboxes automatically with the local synchronization center,
 ## Configuration center
 
 Customize the workstation per archive with validated, portable settings for appearance, research, file locations, integrity checks and synchronization. Open **Configuration center** in the desktop application. See [Configuration reference](docs/CONFIGURATION.md).
+
+## Interchange with HB Continuum
+
+`interchange` writes a portable, versioned JSON manifest of message metadata, attachment references and provenance for other Honey Badger applications, optionally limited to messages acquired after a timestamp. Bodies are omitted and the archive stays the only writer. See [Continuum integration](docs/CONTINUUM_INTEGRATION.md).
 
 ## Research workbench
 

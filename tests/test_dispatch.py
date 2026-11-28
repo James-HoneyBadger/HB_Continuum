@@ -559,6 +559,40 @@ class Tests(unittest.TestCase):
             self.assertIsNone(places[0]['first_seen'])
             self.assertEqual(archive.duplicates(),[])
         finally: archive.db.close()
+    def test_interchange_records_metadata_without_bodies(self):
+        h=self.a.ingest(self.attachment_message(b'ic@example.invalid',b'rows.csv',b'text/csv'),('imap.one|user','INBOX','1','7'))
+        records=list(self.a.interchange())
+        self.assertEqual(len(records),1)
+        record=records[0]
+        self.assertEqual((record['sha256'],record['subject']), (h,'Filed'))
+        self.assertNotIn('body',record)
+        self.assertEqual(record['attachments'][0]['filename'],'rows.csv')
+        self.assertTrue(record['attachments'][0]['sha256'])
+        self.assertEqual(record['origins'][0]['account'],'imap.one|user')
+        self.assertTrue(record['origins'][0]['first_seen'])
+        stream=self.a.interchange()
+        self.assertIs(iter(stream),stream)
+    def test_interchange_supports_incremental_and_bounded_export(self):
+        old=self.a.ingest(b'Subject: Old\r\nMessage-ID: <old@example.invalid>\r\n\r\nold\r\n',('imap|user','INBOX','1','1'))
+        new=self.a.ingest(b'Subject: New\r\nMessage-ID: <new@example.invalid>\r\n\r\nnew\r\n',('imap|user','INBOX','1','2'))
+        with self.a.db:
+            self.a.db.execute("UPDATE origins SET first_seen='2024-01-01 00:00:00' WHERE hash=?",(old,))
+            self.a.db.execute("UPDATE origins SET first_seen='2024-06-01 00:00:00' WHERE hash=?",(new,))
+        since=[r['sha256'] for r in self.a.interchange(since='2024-03-01 00:00:00')]
+        self.assertEqual(since,[new])
+        self.assertEqual([r['sha256'] for r in self.a.interchange(limit=1)],[old])
+        self.assertEqual([r['sha256'] for r in self.a.interchange(since='2030-01-01 00:00:00')],[])
+    def test_interchange_command_writes_portable_manifest(self):
+        h=self.a.ingest(RAW,('imap.one|user','INBOX','1','7'))
+        dest=Path(self.tmp.name)/'manifest.json'
+        out=io.StringIO()
+        with mock.patch('sys.argv',['dispatch.py','--archive',str(self.a.root),'interchange',str(dest)]), contextlib.redirect_stdout(out):
+            self.assertEqual(main(),0)
+        document=json.loads(dest.read_text())
+        self.assertEqual(document['format'],'hb-dispatch-interchange-1')
+        self.assertEqual([r['sha256'] for r in document['messages']],[h])
+        self.assertEqual(document['messages'][0]['origins'][0]['folder'],'INBOX')
+        self.assertRaises(FileExistsError,self.a.export_mbox,[h],dest)
     def test_version_flag(self):
         out=io.StringIO()
         with mock.patch('sys.argv',['dispatch.py','--version']), contextlib.redirect_stdout(out):
