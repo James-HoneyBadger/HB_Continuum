@@ -94,6 +94,22 @@ class SearchControllerTests(unittest.TestCase):
         c.cancel()
         gate.set()
         self.assertTrue(c.close())
+    def test_destroy_waits_for_in_flight_queries(self):
+        gate=threading.Event()
+        finished=threading.Event()
+        def qf(conn, term):
+            gate.wait(2)
+            finished.set()
+            return []
+        c=self.controller(qf)
+        c.submit('x')
+        threading.Timer(0.05, gate.set).start()
+        c.destroy()
+        self.assertTrue(finished.is_set())
+        self.assertFalse(c._threads)
+        with self.assertRaises(RuntimeError):
+            c.submit('y')
+
     def test_error_re_enables(self):
         def qf(conn, term):
             raise RuntimeError('boom')

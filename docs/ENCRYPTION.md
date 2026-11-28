@@ -140,7 +140,7 @@ recorded once in `boundary-notice.log`.
 
 ## Can the raw store be brought inside?
 
-Assessment, not a commitment. None of these ships in `v0.5.0-beta`.
+Assessment, not a commitment. None of these ship in `v1.0.0`.
 
 | Option | FTS5 indexing | Streaming large EML reads | Backup and restore | Migration cost | External readability | Verdict |
 | --- | --- | --- | --- | --- | --- | --- |
