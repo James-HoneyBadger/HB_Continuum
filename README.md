@@ -1,93 +1,94 @@
 # HB Continuum
 
-**Open-source, local-first personal knowledge archive and historical research workstation.**
+**A local-first personal archive and historical research application.**
 
-*Time is linear. Knowledge need not be.*
+HB Continuum is an independent, open-source hobby project within the Honey Badger Universe. Originally developed as HB Dispatch to preserve email correspondence, it now supports other historical records, searchable documents, research tools and optional local AI.
 
-Part of the Honey Badger Universe, HB Continuum began as HB Dispatch, an email preservation engine, and has evolved into a broader workstation for preserving, organizing and exploring your documented history on infrastructure you control.
+Its purpose is straightforward: help people preserve and explore their documented history on infrastructure they control.
 
-> **Current milestone: [v0.4.0-beta](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.4.0-beta)** — source-only beta.
->
-> [Download the release](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.4.0-beta) · [Current development source and full README](https://github.com/James-HoneyBadger/HB_Continuum/tree/develop/continuum-integration) · [Release history](https://github.com/James-HoneyBadger/HB_Continuum/releases)
+**Current release: [v0.5.0-beta](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.5.0-beta)** — a source-only beta, primarily developed and qualified for Apple Silicon macOS.
 
-**Source branch note:** The current Continuum implementation is on `develop/continuum-integration` and the `v0.4.0-beta` tag. This `main` branch retains the earlier Dispatch-era code baseline; the capabilities below refer to the v0.4 beta.
+[Release notes and source download](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.5.0-beta) · [Full user and developer README](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/README.md) · [Active development branch](https://github.com/James-HoneyBadger/HB_Continuum/tree/develop/intelligence-update)
 
-## Your history. Your archive. Your choice.
+**Branch note:** The default `main` branch retains the earlier Dispatch-era code baseline. Use the release tag for the capabilities described here.
 
-**Independent by design. Interoperable by choice. Intelligent when desired.**
+## What Continuum does
 
-Local-first storage, open formats, user ownership, no telemetry, no advertising, no tracking, no mandatory accounts, subscriptions, cloud services or AI. Original evidence, annotations and generated interpretations remain distinct.
-
-## What v0.4 delivers
-
-| Capability | Current beta functionality |
+| Capability | v0.5 beta |
 | --- | --- |
-| Email | Read-only IMAP, original EML preservation, SHA-256 verification, deduplication and provenance |
-| Social history | Facebook JSON export ingestion, including posts, comments, messages, events, media metadata and reactions |
-| Discovery | SQLite FTS5, unified search, nested Boolean queries, saved searches and filters |
-| Historical exploration | Paged timelines, participant relationships and source management |
-| Research | Workspaces, tags, evidence collections, report drafts, revision-tracked journal and archive reports |
-| Maintenance | Scheduled synchronization, integrity checks, index repair, validated backups and restoration |
-| Local intelligence | Optional Ollama message and conversation summaries |
-| Desktop | Tauri 2 / Vue 3 interface with Python engine and legacy Tkinter fallback |
+| Email preservation | Read-only IMAP, original EML storage, SHA-256 verification, mailbox provenance and scheduled synchronization |
+| Social history | Import user-obtained Facebook JSON exports |
+| Document research | Local text, Markdown, CSV, JSON, PDF and DOCX ingestion; optional PDF/DOCX attachment extraction |
+| Search | Unified full-text search, deep pagination beyond the former 5,000-candidate ceiling, filters and nested Boolean queries |
+| Historical research | Timelines, participant relationships, collections, journals, saved searches and reports |
+| Optional local AI | Ollama-based research conversations with bounded evidence and inspectable source references |
+| Database protection | Optional SQLCipher encryption, explicit migration, archive lock/unlock and encrypted database backups |
+| Desktop | Tauri/Vue application with archive selection, import progress, record navigation, health checks and recovery |
 
-A deployment on November 26, 2026 preserved 31,441 unique messages across Gmail and IONOS, with reconciled storage and index counts and successful SQLite quick integrity checks. iCloud Mail ingestion subsequently began successfully. These observations do not establish complete mailbox coverage. Private source records are not published.
+No telemetry, advertising, mandatory accounts, subscriptions or cloud inference. AI is disabled by default, and the archive remains useful without it.
+
+## Security and privacy — please read
+
+Continuum can contain sensitive personal information. Protecting that information is a central development priority.
+
+- Optional SQLCipher encrypts the archive, catalog and research databases. New encrypted archives currently require the optional `sqlcipher3` package and CLI creation; new archives created through the desktop are plaintext.
+- Existing plaintext archives are never migrated automatically. Explicit migration creates a separate encrypted destination and preserves the original.
+- Encrypted database backups retain database encryption, and scheduled synchronization defers while an encrypted archive is locked.
+- Raw EML files, configuration, external documents and exports are outside the database encryption boundary. Use encrypted storage for the entire archive and backups, such as an encrypted APFS volume or disk image on macOS.
+- Encryption at rest does not protect an unlocked archive against every form of host compromise. Keep independent backups and test restoration before relying on the archive.
+
+Read [Encryption](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/ENCRYPTION.md), [Encryption migration](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/ENCRYPTION_MIGRATION.md) and the [Security threat model](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/SECURITY_MODEL.md) before storing sensitive information.
 
 ## Getting started
 
-Use the published beta source, rather than assuming this branch contains the latest implementation:
+Use the released source rather than the older default branch:
 
 ```sh
-git clone --branch v0.4.0-beta https://github.com/James-HoneyBadger/HB_Continuum.git
+git clone --branch v0.5.0-beta https://github.com/James-HoneyBadger/HB_Continuum.git
 cd HB_Continuum
 python3 dispatch.py --version
 python3 dispatch.py --help
-python3 -m unittest discover -s tests -v
 ```
 
-Requires Python 3.12+ with SQLite FTS5. Desktop development additionally requires Node.js 22+, Rust and Tauri platform prerequisites.
+Requires Python 3.12+ with SQLite FTS5. Building the desktop also requires Node.js 22+, Rust and Tauri platform prerequisites.
 
 ```sh
 cd frontend
-npm install
+npm ci
 npm run tauri -- dev
 ```
 
-The beta is distributed as source, without signed application binaries. Start with fictional data in a separate test archive and follow the tutorial before connecting a real mailbox.
+Start with a separate test archive and fictional records. For encrypted archive setup, install the documented SQLCipher dependency and follow the encryption guide. The beta does not include signed or notarized installers.
 
 ## Documentation
 
-- [Full current README and CLI reference](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/README.md)
-- [Practical tutorial](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/TUTORIAL.md)
-- [Historical research use case](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/USE_CASE_PERSONAL_HISTORY.md)
-- [Private intelligence workstation and optional integrations](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/PRIVATE_INTELLIGENCE_WORKSTATION.md)
-- [Facebook import](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/FACEBOOK_IMPORT.md)
-- [Archive hardening and recovery](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/ARCHIVE_HARDENING.md)
-- [Local AI summarization](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/AI_SUMMARIZATION.md)
-- [Packaging](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.4.0-beta/docs/PACKAGING.md)
-- [Implementation and qualification status](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/engineering/IMPLEMENTATION_STATUS.md)
-- [Performance benchmarks](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/docs/BENCHMARKS.md)
+- [Practical tutorial](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/TUTORIAL.md)
+- [Full release README and CLI reference](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/README.md)
+- [Document ingestion](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/DOCUMENTS.md)
+- [Facebook import](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/FACEBOOK_IMPORT.md)
+- [Intelligence workspace](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/INTELLIGENCE.md)
+- [Archive hardening and recovery](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/ARCHIVE_HARDENING.md)
+- [Packaging](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/PACKAGING.md)
+- [Implementation and qualification status](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/engineering/IMPLEMENTATION_STATUS.md)
 
-## Beta qualification and limitations
+## Beta status and limitations
 
-The recorded v0.4 beta qualification includes 280 Python tests (278 passed, two skipped), successful static analysis, frontend build, Rust checks and tests, engine-sidecar smoke tests and a Tauri debug build. See the qualification record for scope. This is not a comprehensive security audit or a guarantee of complete interactive desktop validation.
+The published v0.5 qualification reports 357 Python tests with no failures (355 passed and two skipped with SQLCipher), successful static analysis, frontend and Rust builds, native Apple Silicon macOS bundle and engine smoke tests, and 12 successful CI jobs. See the [release notes](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.5.0-beta) for the precise scope.
 
-Unified search currently pages over at most 5,000 fused candidates. Application-level encryption at rest and OAuth are not implemented. PDF, Office and image attachment content extraction remains limited. Facebook media bytes are not copied. Local AI currently summarizes messages and conversations rather than answering arbitrary questions across the entire archive.
+This is not a comprehensive security audit. Packaged Linux and Windows desktop applications are not qualified. Live Ollama inference and full interactive desktop acceptance have not been established by the release qualification. Retrieval is keyword-based, not semantic; model answers are interpretations, not evidence, and a valid citation does not establish factual correctness. Scanned PDFs are not OCRed. Read-only IMAP does not delete server mail, and hashes do not establish authenticity or certified chain of custody.
 
-Use encrypted storage, independent backups and tested restoration. Read-only IMAP does not delete server mail. Archive hashes detect changes, not authenticity or legal chain of custody. Do not use Continuum as your only evidence archive.
+## Development direction
 
-## The road ahead: historical intelligence
+Continuum is maintained primarily by one developer. Development is incremental, guided by actual use rather than a fixed feature schedule.
 
-The proposed v0.5 **Intelligence Update** focuses on scalable retrieval, evidence-grounded conversational research through local Ollama, inspectable source references, additional document ingestion and optional Honey Badger interchange.
+The priorities are reliable preservation and recovery, protection of sensitive records, straightforward research and search, optional local AI, and a maintainable desktop experience. Future improvements will be selected in small, independently testable milestones. There are no delivery-date commitments, commercial support obligations or promises of comprehensive platform support.
 
-The longer-term **Second Me** vision is a historically grounded interface to your documented experiences, interests and projects. Its purpose is retrieval and reflection, not impersonation, invention or claims of consciousness.
+The idea of exploring one's documented past through local intelligence is an inspiration, not a commitment to build an artificial replica of a person.
 
-These are planned capabilities, not features of the current beta.
+Constructive feedback and contributions are welcome.
 
-**The intelligence is replaceable. The memories are yours.**
+*The intelligence is replaceable. The memories are yours.*
 
-## License and community
+## License
 
-Copyright (c) 2026 Honey Badger Universe.
-
-HB Continuum is a community-oriented FOSS project licensed under [GPL-3.0-only](https://github.com/James-HoneyBadger/HB_Continuum/blob/develop/continuum-integration/LICENSE). Commercial use is permitted subject to the license, including applicable source-distribution and copyleft obligations. Earlier MIT-licensed distributions retain their original license rights. There is no paid support or service commitment.
+Copyright (c) 2026 Honey Badger Universe. [GPL-3.0-only](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/LICENSE). Commercial use is permitted under the license, subject to its applicable source-distribution and copyleft requirements. Earlier MIT-licensed distributions retain their original license rights.
