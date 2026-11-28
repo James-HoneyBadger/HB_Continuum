@@ -4,7 +4,8 @@
 import json, sqlite3
 from pathlib import Path
 
-from .migrations import MIGRATIONS as _MIGRATIONS, apply as migrate, target_version
+from .migrations import (MIGRATIONS as _MIGRATIONS, apply as migrate,
+                         attachment_search_text, target_version)
 
 VERSION = target_version('catalog')
 MIGRATIONS = _MIGRATIONS['catalog']
@@ -53,6 +54,16 @@ def catalog_health(root):
             ).fetchone()[0]
         except sqlite3.OperationalError:
             invalid = None
+        try:
+            stale = conn.execute(
+                'SELECT count(*) FROM records r '
+                'JOIN record_search s ON s.rowid = r.rowid '
+                "WHERE coalesce(r.body,'') != coalesce(s.body,'') "
+                "OR coalesce(r.actor,'') != coalesce(s.actor,'') "
+                "OR coalesce(r.attachments_text,'') != coalesce(s.attachments_text,'')"
+            ).fetchone()[0]
+        except sqlite3.OperationalError:
+            stale = None
         by_source = []
         types = [row[0] for row in conn.execute(
             'SELECT source_type FROM source_files UNION '
@@ -73,13 +84,14 @@ def catalog_health(root):
     duplicate_rows = indexed - distinct
     current = version >= VERSION
     consistent = (current and checks == [('ok',)] and not foreign and not missing
-                  and not extra and not duplicate_rows and not dangling and not invalid)
+                  and not extra and not duplicate_rows and not stale and not dangling
+                  and not invalid)
     return {'available': True, 'schema_version': version, 'schema_current': current,
             'sqlite_ok': checks == [('ok',)],
             'foreign_key_errors': len(foreign), 'records': records,
             'source_files': files, 'index_rows': indexed,
             'index_missing_rows': missing, 'index_extra_rows': extra,
-            'index_duplicate_rows': duplicate_rows,
+            'index_duplicate_rows': duplicate_rows, 'index_stale_rows': stale,
             'dangling_file_references': dangling, 'invalid_attachments': invalid,
             'sources': by_source, 'consistent': consistent}
 
@@ -129,7 +141,15 @@ class Catalog:
     def add_record(self, record_id, source_type, source_key, record_kind, actor,
                    occurred_at, precision, body, original_json, file_hash, created_at,
                    updated_at=None, revision_kind=None, revision_key=None,
-                   revision_index=None, attachments_json='[]', attachments_text=''):
+                   revision_index=None, attachments_json='[]', attachments_text=None):
+        """Insert one record, ignoring duplicates.
+
+        Attachment metadata is searchable by contract: when the caller does not
+        supply pre-flattened `attachments_text`, it is derived from
+        `attachments_json` so a new source cannot silently hide it from search.
+        """
+        if attachments_text is None:
+            attachments_text = attachment_search_text(attachments_json)
         cur = self.db.execute(
             'INSERT OR IGNORE INTO records(record_id,source_type,source_key,record_kind,'
             'actor,occurred_at,occurred_precision,body,original_json,file_hash,created_at,'

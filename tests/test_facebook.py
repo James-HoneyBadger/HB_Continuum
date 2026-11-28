@@ -169,6 +169,46 @@ class FacebookImportTests(unittest.TestCase):
         finally:
             catalog.close()
 
+    def test_catalog_api_indexes_attachment_metadata(self):
+        catalog=Catalog(self.root)
+        try:
+            with catalog.db:
+                catalog.add_file('file-hash','facebook','posts','p',1,'now')
+                catalog.add_record('record-id','facebook','posts','post','Alice',
+                                   '2024-01-01T00:00:00+00:00','second','Stored note',
+                                   '{}','file-hash','now',
+                                   attachments_json='[{"kind":"photo","name":"Hidden cow"}]')
+            self.assertEqual(len(catalog.search_records('cow')),1)
+            self.assertEqual(catalog.record('record-id')['attachments'],
+                             [{'kind':'photo','name':'Hidden cow'}])
+        finally:
+            catalog.close()
+
+    def test_catalog_health_detects_index_content_drift(self):
+        import sqlite3
+        path=self.write('your_posts_1.json',{'your_posts':[
+            {'timestamp': 1700000000, 'data': [{'post': 'Bullion receipt'}]},
+        ]})
+        import_files([str(path)], self.root)
+        conn=sqlite3.connect(self.root/'catalog.sqlite3')
+        try:
+            conn.execute("UPDATE record_search SET body='rewritten text'")
+            conn.commit()
+        finally:
+            conn.close()
+        drifted=catalog_health(self.root)
+        self.assertFalse(drifted['consistent'])
+        self.assertEqual(drifted['index_stale_rows'],1)
+        catalog=Catalog(self.root)
+        try:
+            self.assertEqual(catalog.reindex(),1)
+            self.assertEqual(len(catalog.search_records('bullion')),1)
+        finally:
+            catalog.close()
+        health=catalog_health(self.root)
+        self.assertTrue(health['consistent'])
+        self.assertEqual(health['index_stale_rows'],0)
+
     def test_catalog_health_detects_and_repairs_index_drift(self):
         import sqlite3
         path=self.write('your_posts_1.json',{'your_posts':[

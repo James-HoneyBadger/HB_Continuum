@@ -205,13 +205,17 @@ landed (Overview dashboard, design tokens, timeline pagination).
   update/version metadata.
 - Catalog schema 5 adds `attachments_text` and rebuilds `record_search` with
   `body`, `actor` and `attachments_text`. A migration callable flattens
-  existing attachment JSON into bounded searchable text; new imports populate
-  it directly. Facebook, unified and advanced text search now match
-  attachment names, titles, URIs, links and related metadata.
+  existing attachment JSON into bounded searchable text; the catalog API also
+  derives it whenever a caller supplies attachment JSON without the flattened
+  text, and new imports populate it directly. Facebook, unified and advanced
+  text search now match attachment names, titles, URIs, links and related
+  metadata.
 - Tests cover post versions and update times, comment actors and revisions,
   message attachments, post external/media/place attachments, the 100-entry
   cap, search by attachment metadata, catalog migration defaults, the v4→v5
-  attachment FTS backfill and the IPC record response.
+  attachment FTS backfill, the IPC record response, API-level attachment
+  indexing and detection/repair of index rows whose text drifted from the
+  stored record.
 
 ### Saved advanced queries (2026-11-27)
 

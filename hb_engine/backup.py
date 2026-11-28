@@ -116,6 +116,18 @@ def validate_snapshot(root):
                     indexed = [rowid for rowid, in db.execute('SELECT rowid FROM record_search')]
                     if records != set(indexed) or len(set(indexed)) != len(indexed):
                         raise ValueError('Catalog search index mismatch')
+                    try:
+                        stale = db.execute(
+                            'SELECT count(*) FROM records r '
+                            'JOIN record_search s ON s.rowid = r.rowid '
+                            "WHERE coalesce(r.body,'') != coalesce(s.body,'') "
+                            "OR coalesce(r.actor,'') != coalesce(s.actor,'') "
+                            "OR coalesce(r.attachments_text,'') != coalesce(s.attachments_text,'')"
+                        ).fetchone()[0]
+                    except sqlite3.OperationalError:
+                        stale = 0
+                    if stale:
+                        raise ValueError('Catalog search index content mismatch')
     return {'files': len(expected), 'verified': True}
 
 def publish_stage(stage, dest):

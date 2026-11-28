@@ -79,9 +79,10 @@ by `--kind` and `--actor`.
 
 `verify` is a read-only report on `catalog.sqlite3`: SQLite's quick check,
 foreign-key errors, record and source-file counts, disagreement between the
-stored records and the FTS index, duplicate index rows, records whose source
-file is missing, and unreadable attachment metadata. It exits non-zero when
-a problem is found, and does not migrate or write to the catalog.
+stored records and the FTS index, duplicate index rows, index rows whose
+indexed text no longer matches the stored record, records whose source file
+is missing, and unreadable attachment metadata. It exits non-zero when a
+problem is found, and does not migrate or write to the catalog.
 
 `reindex` rebuilds the record FTS index from the stored `records` rows. The
 migration triggers normally keep the index in step, so this is a repair path

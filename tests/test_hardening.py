@@ -103,6 +103,28 @@ class HardeningTests(unittest.TestCase):
         manifest_path.write_text(json.dumps(manifest))
         with self.assertRaises(ValueError): validate_snapshot(snapshot)
 
+    def test_snapshot_rejects_catalog_index_content_drift(self):
+        import json, sqlite3
+        from facebook import import_files
+        from backup import digest
+        export=self.root/'posts.json'
+        export.write_text(json.dumps({'your_posts':[
+            {'timestamp':1700000000,'data':[{'post':'Bullion receipt'}]}]}))
+        import_files([str(export)],self.a.root)
+        snapshot=self.root/'snapshot'
+        self.assertTrue(backup(self.a.root,snapshot)['verified'])
+        conn=sqlite3.connect(snapshot/'catalog.sqlite3')
+        try:
+            conn.execute("UPDATE record_search SET body='rewritten text'")
+            conn.commit()
+        finally:
+            conn.close()
+        manifest_path=snapshot/'backup-manifest.json'
+        manifest=json.loads(manifest_path.read_text())
+        manifest['files']['catalog.sqlite3']=digest(snapshot/'catalog.sqlite3')
+        manifest_path.write_text(json.dumps(manifest))
+        with self.assertRaises(ValueError): validate_snapshot(snapshot)
+
     def test_backup_and_restore_round_trip(self):
         h=self.a.ingest(b'Subject: preserved\r\n\r\nhello')
         snapshot=self.root/'snapshot'; restored=self.root/'restored'
