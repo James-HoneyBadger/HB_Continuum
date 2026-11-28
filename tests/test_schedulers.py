@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (c) 2026 Honey Badger Universe
-import configparser, os, sys, tempfile, unittest
+import configparser, io, json, os, sys, tempfile, unittest
 from pathlib import Path
 from unittest import mock
 from schedulers import (LaunchdScheduler, SystemdScheduler, SchtasksScheduler,
@@ -244,6 +244,91 @@ class CredentialTests(unittest.TestCase):
         with self.assertRaises(SchedulerError):
             store.get('svc','user',self.root)
 
+    def test_missing_keyring_fails_closed_with_actionable_error(self):
+        with mock.patch.object(sys,'platform','linux'), \
+             mock.patch.object(KeyringCredentialStore,'available',staticmethod(lambda: False)), \
+             mock.patch.object(EncryptedFileCredentialStore,'available',staticmethod(lambda: True)):
+            with self.assertRaises(SchedulerError) as caught:
+                get_credential_store(self.root)
+        message=str(caught.exception)
+        self.assertIn('--allow-insecure-credential-fallback',message)
+        self.assertIn('keyring',message)
+        self.assertFalse((self.root/'credentials.enc').exists())
+
+    def test_insecure_fallback_warns_and_is_opt_in(self):
+        if not EncryptedFileCredentialStore.available():
+            self.skipTest('cryptography not installed')
+        import hb_engine.schedulers as schedulers
+        stderr=io.StringIO()
+        with mock.patch.object(sys,'platform','linux'), \
+             mock.patch.object(KeyringCredentialStore,'available',staticmethod(lambda: False)), \
+             mock.patch.object(schedulers,'_warned_fallback',False), \
+             mock.patch.object(sys,'stderr',stderr):
+            store=get_credential_store(self.root,allow_insecure_fallback=True)
+            store2=get_credential_store(self.root,allow_insecure_fallback=True)
+        self.assertIsInstance(store,EncryptedFileCredentialStore)
+        self.assertIsInstance(store2,EncryptedFileCredentialStore)
+        warning=stderr.getvalue()
+        self.assertIn('WARNING',warning)
+        self.assertIn('archive directory',warning)
+        self.assertEqual(warning.count('WARNING'),1)
+
+    def test_tampered_fallback_ciphertext_fails_cleanly(self):
+        if not EncryptedFileCredentialStore.available():
+            self.skipTest('cryptography not installed')
+        store=EncryptedFileCredentialStore()
+        try:
+            store.set('svc','user',PASSWORD,self.root)
+        except SchedulerError as exc:
+            self.skipTest(str(exc))
+        blob=self.root/'credentials.enc'
+        data=json.loads(blob.read_text())
+        key=next(iter(data))
+        token=data[key]
+        flipped=('A' if token[0]!='A' else 'B')+token[1:]
+        data[key]=flipped
+        blob.write_text(json.dumps(data))
+        with self.assertRaises(SchedulerError) as caught:
+            store.get('svc','user',self.root)
+        self.assertEqual(str(caught.exception),'stored credential cannot be decrypted')
+        self.assertNotIn(PASSWORD,str(caught.exception))
+
+    def test_corrupt_fallback_file_fails_cleanly(self):
+        if not EncryptedFileCredentialStore.available():
+            self.skipTest('cryptography not installed')
+        (self.root/'credentials.enc').write_text('not json')
+        with self.assertRaises(SchedulerError) as caught:
+            EncryptedFileCredentialStore().get('svc','user',self.root)
+        self.assertIn('unreadable or corrupt',str(caught.exception))
+
+    def test_no_plaintext_secret_is_written_under_the_archive(self):
+        if not EncryptedFileCredentialStore.available():
+            self.skipTest('cryptography not installed')
+        store=EncryptedFileCredentialStore()
+        try:
+            store.set('svc','user',PASSWORD,self.root)
+        except SchedulerError as exc:
+            self.skipTest(str(exc))
+        for path in self.root.rglob('*'):
+            if path.is_file():
+                self.assertNotIn(PASSWORD.encode('utf-8'),path.read_bytes(),str(path))
+
+    def test_existing_fallback_file_allows_unattended_read(self):
+        if not EncryptedFileCredentialStore.available():
+            self.skipTest('cryptography not installed')
+        from hb_engine.schedule import credential, service
+        import hb_engine.schedulers as schedulers
+        profile={'host':'imap.example.invalid','user':'user'}
+        store=EncryptedFileCredentialStore()
+        try:
+            store.set(service(profile),'user',PASSWORD,self.root)
+        except SchedulerError as exc:
+            self.skipTest(str(exc))
+        self.assertTrue(schedulers.fallback_credential_file_present(self.root))
+        with mock.patch.object(sys,'platform','linux'), \
+             mock.patch.object(KeyringCredentialStore,'available',staticmethod(lambda: False)):
+            self.assertEqual(credential(profile,self.root),PASSWORD)
+
     def test_missing_credential_raises(self):
         store=EncryptedFileCredentialStore()
         with self.assertRaises(SchedulerError):
@@ -268,7 +353,11 @@ class CredentialTests(unittest.TestCase):
         with mock.patch.object(sys,'platform','linux'), \
              mock.patch.object(KeyringCredentialStore,'available',staticmethod(lambda: False)), \
              mock.patch.object(EncryptedFileCredentialStore,'available',staticmethod(lambda: True)):
-            self.assertIsInstance(get_credential_store(self.root),EncryptedFileCredentialStore)
+            with self.assertRaises(SchedulerError):
+                get_credential_store(self.root)
+            self.assertIsInstance(
+                get_credential_store(self.root,allow_insecure_fallback=True),
+                EncryptedFileCredentialStore)
         with mock.patch.object(sys,'platform','linux'), \
              mock.patch.object(KeyringCredentialStore,'available',staticmethod(lambda: False)), \
              mock.patch.object(EncryptedFileCredentialStore,'available',staticmethod(lambda: False)):

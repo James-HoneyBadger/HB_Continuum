@@ -1,0 +1,2 @@
+# Development and test tooling.
+mypy==2.4.1

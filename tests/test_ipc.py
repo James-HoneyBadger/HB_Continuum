@@ -49,6 +49,19 @@ class IPCServerTests(unittest.TestCase):
             unsafe = server.handle(request('create_archive', path=str(encrypted)))
             self.assertEqual(unsafe['error']['code'], 'ARCHIVE_EXISTS')
 
+    def test_acknowledge_boundary_notice_is_logged(self):
+        resp=self.server.handle(request('acknowledge_boundary_notice'))
+        result=resp['result']
+        self.assertEqual(result['notice'],'encryption-boundary-v1')
+        log=Path(result['path'])
+        self.assertTrue(log.is_file())
+        line=json.loads(log.read_text().splitlines()[-1])
+        self.assertEqual(line['notice'],'encryption-boundary-v1')
+        self.assertEqual(line['archive'],str(self.root))
+        self.assertNotIn('password',log.read_text().lower())
+        self.server.handle(request('acknowledge_boundary_notice'))
+        self.assertEqual(len(log.read_text().splitlines()),2)
+
     def test_stats(self):
         resp=self.server.handle(request('stats'))
         self.assertEqual(resp['result']['archive']['messages'],1)

@@ -294,11 +294,16 @@ class KeyringCredentialStore:
             raise SchedulerError(f'keyring unavailable: {exc}') from None
 
 class EncryptedFileCredentialStore:
-    """Degraded fallback: Fernet-encrypted secrets under the archive directory.
+    """Opt-in degraded store: Fernet-encrypted secrets under the archive directory.
 
-    The master key is a 0600 file beside the ciphertext, so this protects
+    Outside the database encryption boundary: the ciphertext and its key both
+    live beside the archive as ``credentials.enc`` and ``credentials.key``.
+
+    The 0600 key file sits next to the ciphertext it protects, so this defends
     against casual inspection and accidental copying, not against an attacker
-    who can already read the user's home directory. Prefer keyring.
+    who can already read the archive directory. Fernet authenticates the
+    ciphertext, so tampering is detected, but an attacker with write access can
+    substitute both files. Never used unless the caller opts in explicitly.
     """
     name = 'encrypted-file'
 
@@ -333,7 +338,12 @@ class EncryptedFileCredentialStore:
         _, path = self._paths(root)
         if not path.exists():
             return {}
-        return json.loads(path.read_text(encoding='utf-8'))
+        try:
+            return json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            raise SchedulerError(
+                'stored credential file is unreadable or corrupt; delete '
+                'credentials.enc and store the password again') from None
 
     def _save(self, root, data):
         _, path = self._paths(root)
@@ -363,11 +373,48 @@ class EncryptedFileCredentialStore:
         if data.pop(service + '\0' + account, None) is not None:
             self._save(root, data)
 
-def get_credential_store(root=None):
+INSECURE_FALLBACK_WARNING = (
+    'WARNING: storing the mail password with the encrypted-file fallback.\n'
+    'The key file sits beside the ciphertext inside the archive directory, so\n'
+    'anyone who can read that directory can recover the password. Use the OS\n'
+    'credential store, or keep the archive on encrypted storage.'
+)
+
+_warned_fallback = False
+
+def _warn_insecure_fallback():
+    global _warned_fallback
+    if not _warned_fallback:
+        _warned_fallback = True
+        print(INSECURE_FALLBACK_WARNING, file=sys.stderr)
+
+
+def fallback_credential_file_present(root):
+    """True when an opt-in fallback store was already created under *root*."""
+    if root is None:
+        return False
+    path = Path(root) / 'credentials.enc'
+    return path.is_file()
+
+def get_credential_store(root=None, allow_insecure_fallback=False):
+    """Return the best available credential store, failing closed by default.
+
+    The OS store is always preferred. The encrypted-file fallback is refused
+    unless *allow_insecure_fallback* is set, so an unavailable keyring produces
+    an error rather than a silent downgrade.
+    """
     if sys.platform == 'darwin':
         return KeychainCredentialStore()
     if KeyringCredentialStore.available():
         return KeyringCredentialStore()
-    if EncryptedFileCredentialStore.available():
+    if allow_insecure_fallback and EncryptedFileCredentialStore.available():
+        _warn_insecure_fallback()
         return EncryptedFileCredentialStore()
-    raise SchedulerError('No credential store available; install the keyring package')
+    raise SchedulerError(
+        'The OS credential store is unavailable, so the mail password cannot be '
+        'stored safely. Linux: install and start a Secret Service provider (for '
+        'example gnome-keyring) together with the "keyring" Python package. '
+        'Windows: install the "keyring" package for Credential Manager. '
+        'To accept reduced protection, re-run with '
+        '--allow-insecure-credential-fallback; the password is then encrypted '
+        'with a key stored beside it in the archive directory.')

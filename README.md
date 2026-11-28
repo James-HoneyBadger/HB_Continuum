@@ -1,5 +1,7 @@
 # HB Continuum
 
+[![Security policy](https://img.shields.io/badge/security-policy-informational.svg)](SECURITY.md)
+
 **A local-first personal archive and historical research application.**
 
 HB Continuum is an independent, open-source hobby project developed as part of
@@ -35,6 +37,9 @@ git clone https://github.com/James-HoneyBadger/HB_Continuum.git
 cd HB_Continuum
 python3 dispatch.py --version
 ```
+
+Security reports go through [SECURITY.md](SECURITY.md); do not open a public
+issue for a suspected vulnerability.
 
 ## What it does
 
@@ -93,6 +98,12 @@ Create a new encrypted archive from the command line:
 
 ```sh
 python3 dispatch.py --archive ~/EncryptedArchive init-encrypted
+```
+
+Check which optional capabilities a given installation actually has:
+
+```sh
+python3 dispatch.py capabilities
 ```
 
 Existing encrypted archives can be opened and unlocked in the desktop
@@ -166,6 +177,7 @@ guaranteed to be installed.
 - [Archive hardening](docs/ARCHIVE_HARDENING.md) and [migration](docs/MIGRATION.md)
 - [Benchmarks](docs/BENCHMARKS.md) and [implementation status](docs/engineering/IMPLEMENTATION_STATUS.md)
 - [Roadmap and known gaps](docs/ROADMAP.md)
+- [Platform qualification](PLATFORM_QUALIFICATION.md) and [security policy](SECURITY.md)
 
 ## Development principles
 

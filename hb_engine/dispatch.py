@@ -804,6 +804,11 @@ class Archive:
     def verify(self):
         return verify_raw(self.db,self.raw)
     def export(self, hashes, destination):
+        """Write original message files to a user-chosen directory.
+
+        Boundary: the destination is outside the archive and is written as
+        plaintext, even when the archive databases are encrypted.
+        """
         dest=Path(destination)
         hashes=list(dict.fromkeys(hashes))
         if not hashes: raise ValueError('Select at least one message')
@@ -907,10 +912,40 @@ class Archive:
                 if prefs['batch_limit'] and count>=prefs['batch_limit']: break
             return count
 
+def capabilities():
+    """Report optional capabilities so packaging omissions are visible.
+
+    Each entry names the import name, whether it can be imported, and its
+    version when available. Nothing is installed or downloaded here.
+    """
+    import importlib
+    report = {}
+    for name in ('sqlcipher3', 'pypdf', 'docx', 'keyring', 'cryptography'):
+        entry = {'available': False, 'version': None}
+        try:
+            module = importlib.import_module(name)
+        except Exception:
+            report[name] = entry
+            continue
+        version = getattr(module, '__version__', None)
+        if version is None and name == 'cryptography':
+            try:
+                from importlib.metadata import version as _version
+                version = _version('cryptography')
+            except Exception:
+                version = None
+        entry['available'] = True
+        entry['version'] = version
+        report[name] = entry
+    return {'optional_dependencies': report,
+            'encryption': report['sqlcipher3']['available'],
+            'document_extraction': report['pypdf']['available'] or report['docx']['available'],
+            'os_credential_store': report['keyring']['available']}
+
 def main(argv=None):
     import atexit, getpass, sys
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); fb.add_parser('verify'); fb.add_parser('reindex'); q=sub.add_parser('documents'); dc=q.add_subparsers(dest='dcmd',required=True); dp=dc.add_parser('preview'); dp.add_argument('paths',nargs='+'); di=dc.add_parser('import'); di.add_argument('paths',nargs='+'); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version'); q=sub.add_parser('search-all'); q.add_argument('query'); q.add_argument('--limit',type=int,default=100); q.add_argument('--sources',default='email,facebook,document'); sub.add_parser('serve'); sub.add_parser('health'); sub.add_parser('reindex'); sub.add_parser('recover-orphans'); q=sub.add_parser('import-history'); q.add_argument('--limit',type=int,default=50); q=sub.add_parser('backup'); q.add_argument('destination'); q=sub.add_parser('verify-backup'); q.add_argument('snapshot'); q=sub.add_parser('restore'); q.add_argument('snapshot'); q=sub.add_parser('schedule'); q.add_argument('args',nargs=argparse.REMAINDER); q=sub.add_parser('migrate'); q.add_argument('--dry-run',action='store_true'); q.add_argument('--no-snapshot',action='store_true')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query'); sub.add_parser('verify'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui'); q=sub.add_parser('facebook'); fb=q.add_subparsers(dest='fcmd',required=True); fp=fb.add_parser('preview'); fp.add_argument('paths',nargs='+'); fi=fb.add_parser('import'); fi.add_argument('paths',nargs='+'); fl=fb.add_parser('list'); fl.add_argument('--kind'); fl.add_argument('--actor'); fl.add_argument('--limit',type=int,default=100); fs=fb.add_parser('search'); fs.add_argument('query'); fs.add_argument('--limit',type=int,default=100); fb.add_parser('verify'); fb.add_parser('reindex'); q=sub.add_parser('documents'); dc=q.add_subparsers(dest='dcmd',required=True); dp=dc.add_parser('preview'); dp.add_argument('paths',nargs='+'); di=dc.add_parser('import'); di.add_argument('paths',nargs='+'); q=sub.add_parser('summarize'); su=q.add_subparsers(dest='scmd',required=True); sr=su.add_parser('run'); sr.add_argument('hashes',nargs='*'); sr.add_argument('--all',action='store_true'); sr.add_argument('--type',choices=('message','thread'),default='message'); sr.add_argument('--model'); sr.add_argument('--prompt-version'); sr.add_argument('--force',action='store_true'); sl=su.add_parser('list'); sl.add_argument('hash'); sd=su.add_parser('delete'); sd.add_argument('hash'); sd.add_argument('--type'); sd.add_argument('--model'); sd.add_argument('--prompt-version'); q=sub.add_parser('search-all'); q.add_argument('query'); q.add_argument('--limit',type=int,default=100); q.add_argument('--sources',default='email,facebook,document'); sub.add_parser('serve'); sub.add_parser('health'); sub.add_parser('capabilities'); sub.add_parser('reindex'); sub.add_parser('recover-orphans'); q=sub.add_parser('import-history'); q.add_argument('--limit',type=int,default=50); q=sub.add_parser('backup'); q.add_argument('destination'); q=sub.add_parser('verify-backup'); q.add_argument('snapshot'); q=sub.add_parser('restore'); q.add_argument('snapshot'); q=sub.add_parser('schedule'); q.add_argument('args',nargs=argparse.REMAINDER); q=sub.add_parser('migrate'); q.add_argument('--dry-run',action='store_true'); q.add_argument('--no-snapshot',action='store_true')
     sub.add_parser('init-encrypted'); sub.add_parser('encryption-status')
     q=sub.add_parser('migrate-encrypted'); q.add_argument('--destination',required=True); q.add_argument('--backup',required=True)
     a=p.parse_args(argv)
@@ -999,6 +1034,8 @@ def main(argv=None):
         print(json.dumps([dict(zip(keys,row)) for row in ar.import_history(a.limit)],indent=2))
     elif a.cmd=='reindex': print(ar.reindex())
     elif a.cmd=='recover-orphans': print(json.dumps(ar.recover_orphans()))
+    elif a.cmd=='capabilities':
+        print(json.dumps(capabilities(),indent=2)); return 0
     elif a.cmd=='health':
         diagnosis=ar.health(); print(json.dumps(diagnosis,indent=2))
         catalog=diagnosis.get('catalog') or {}

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/James-HoneyBadger/HB_Continuum/security/advisories/new
+    about: Report vulnerabilities privately. Never post exploit details or real archive data in a public issue.
+  - name: Questions, results and ideas
+    url: https://github.com/James-HoneyBadger/HB_Continuum/discussions
+    about: Ask usage questions, share platform results or discuss proposals.

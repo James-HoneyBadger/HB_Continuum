@@ -147,6 +147,11 @@ def publish_stage(stage, dest):
         raise
 
 def backup(root, destination, *, lock=True):
+    """Copy an archive into a verified snapshot directory.
+
+    Boundary: database files keep their encryption, but ``raw/``, configuration
+    and reports inside the snapshot are copied as plaintext.
+    """
     root = Path(root).expanduser().resolve()
     dest = Path(destination).expanduser().resolve()
     encrypted = is_encrypted_archive(root)

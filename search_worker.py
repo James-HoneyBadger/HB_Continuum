@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (c) 2026 Honey Badger Universe
 """Background search for the Tk workstation. No widgets are touched off-thread."""
-import queue, sqlite3, threading
+import queue, sqlite3, threading, time
 from pathlib import Path
 from hb_engine.db import connect as db_connect
 
@@ -40,6 +40,8 @@ class SearchController:
         self._generation = 0
         self._busy = False
         self._after_id = None
+        self._closed = False
+        self._threads = []
         self.on_result = None
         self.on_error = None
 
@@ -48,12 +50,36 @@ class SearchController:
         return self._busy
 
     def submit(self, term):
+        if self._closed:
+            raise RuntimeError('search controller is closed')
         self._generation += 1
         self._busy = True
         gen = self._generation
-        threading.Thread(target=self._worker, args=(gen, term), daemon=True).start()
+        thread = threading.Thread(target=self._worker, args=(gen, term), daemon=True)
+        self._threads = [t for t in self._threads if t.is_alive()]
+        self._threads.append(thread)
+        thread.start()
         if self._after_id is None:
             self._after_id = self._after(self._interval_ms, self._poll)
+
+    def close(self, timeout=5.0):
+        """Stop polling and wait for in-flight queries to finish.
+
+        Callers that close the archive must call this first: a worker still
+        opening or reading a database would otherwise race with cleanup.
+        """
+        self._closed = True
+        self._generation += 1
+        self._busy = False
+        if self._after_id is not None:
+            if self._after_cancel is not None:
+                self._after_cancel(self._after_id)
+            self._after_id = None
+        deadline = time.monotonic() + timeout
+        for thread in list(self._threads):
+            thread.join(max(0.0, deadline - time.monotonic()))
+        self._threads = [t for t in self._threads if t.is_alive()]
+        return not self._threads
 
     def _worker(self, gen, term):
         try:

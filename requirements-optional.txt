@@ -1,0 +1,12 @@
+# Optional capabilities. Each is import-guarded; the engine runs without them
+# and reports the missing capability explicitly instead of degrading silently.
+#
+# Encrypted archives and encrypted backup/restore:
+sqlcipher3>=0.6,<0.7
+# PDF and DOCX text extraction:
+pypdf>=4,<7
+python-docx>=1.1,<2
+# OS credential store for scheduled synchronization:
+keyring>=25,<26
+# Crypto for the opt-in encrypted-file credential fallback:
+cryptography>=42

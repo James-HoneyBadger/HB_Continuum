@@ -98,9 +98,15 @@ still produces a fully functional shell engine.
   keyring/encrypted-file credential paths. macOS launchd scheduling can use
   the system `security` tool without the `keyring` package.
 - `sqlcipher3` 0.6.5 / SQLCipher 4.20.0 community was used for encrypted
-  qualification. Optional Python packages are not currently pinned by a
-  repository requirements file; pin them in the release build environment and
-  record the resulting versions with the artifact.
+  qualification. Dependencies are declared in four files: `requirements-core.txt`
+  (empty by design), `requirements-optional.txt` (encryption, extraction,
+  credential store), `requirements-dev.txt` (mypy) and
+  `requirements-packaging.txt` (PyInstaller). Install the optional set into the
+  build environment and record the resolved versions with the artifact.
+- Run `python3 dispatch.py capabilities` on a built engine to prove what it
+  actually contains. It reports `sqlcipher3`, `pypdf`, `docx`, `keyring` and
+  `cryptography` with versions, so a sidecar that silently omitted encryption
+  or extraction is visible instead of being discovered by a user later.
 - `frontend/package-lock.json` and `src-tauri/Cargo.lock` are tracked. A clean
   `npm ci` install and production frontend build are part of validation.
   `npm audit` reports no vulnerabilities with the current lockfile.

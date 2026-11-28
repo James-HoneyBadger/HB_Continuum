@@ -4,6 +4,9 @@ __pycache__/
 .mypy_cache/
 *.sqlite3*
 *.eml
+
+# synthetic fixtures used by the security review vector
+!tests/fixtures/security_review/*.eml
 .env
 .env.*
 raw/
