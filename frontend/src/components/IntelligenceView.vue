@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { nextTick, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useEngineJob } from "../composables/useEngineJob";
@@ -47,8 +47,14 @@ interface ResearchResult {
     per_record_chars: number;
     omitted: number;
     truncated: boolean;
+    max_input?: number;
   };
-  retrieval: { missing_records?: number; collection_filtered?: boolean };
+  retrieval: {
+    missing_records?: number;
+    collection_filtered?: boolean;
+    history_fallback?: boolean;
+    broad_fallback?: boolean;
+  };
   model: { enabled: boolean; name: string; used: boolean };
   answer: string | null;
   claims: Claim[];
@@ -97,6 +103,7 @@ interface Collection {
 
 const status = ref<any>(null);
 const modelStatus = ref<any>(null);
+const modelOptions = ref<string[]>([]);
 const conversations = ref<ConversationSummary[]>([]);
 const collections = ref<Collection[]>([]);
 const selectedId = ref<number | null>(null);
@@ -104,6 +111,9 @@ const conversation = ref<Conversation | null>(null);
 const result = ref<ResearchResult | null>(null);
 const detail = ref<any>(null);
 const notice = ref("");
+const answerPanel = ref<HTMLElement | null>(null);
+const detailPanel = ref<HTMLElement | null>(null);
+const activeEvidence = ref<string | null>(null);
 
 const question = ref("");
 const sourceEmail = ref(true);
@@ -122,6 +132,7 @@ const model = ref("");
 const askJob = useEngineJob();
 const modelJob = useEngineJob();
 const busy = askJob.busy;
+const askProgress = askJob.progress;
 const checking = modelJob.busy;
 
 function splitList(value: string): string[] | undefined {
@@ -165,13 +176,47 @@ async function loadConversations() {
   }
 }
 
+function dateFromEpoch(value: unknown, endOfDay = false): string {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds)) return "";
+  return new Date((seconds - (endOfDay ? 86400 : 0)) * 1000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+function applyConversationRequest(loaded: Conversation) {
+  const lastUser = [...loaded.turns].reverse().find((turn) => turn.role === "user");
+  const request = lastUser?.request;
+  if (!request || typeof request !== "object") return;
+  if (typeof request.question === "string") question.value = request.question;
+  if (Array.isArray(request.sources)) {
+    sourceEmail.value = request.sources.includes("email");
+    sourceFacebook.value = request.sources.includes("facebook");
+    sourceDocument.value = request.sources.includes("document");
+  }
+  fromDate.value = request.after != null ? dateFromEpoch(request.after) : "";
+  toDate.value = request.before != null ? dateFromEpoch(request.before, true) : "";
+  peopleText.value = Array.isArray(request.people) ? request.people.join(", ") : "";
+  topicsText.value = Array.isArray(request.topics) ? request.topics.join(", ") : "";
+  if (Number.isInteger(request.depth)) depth.value = request.depth;
+  if (Number.isInteger(request.context_budget)) contextBudget.value = request.context_budget;
+  if (Number.isInteger(request.per_record_chars)) perRecord.value = request.per_record_chars;
+  if (typeof request.model === "string" && request.model) model.value = request.model;
+  collectionId.value =
+    request.scope === "collection" && Number.isInteger(request.collection_id)
+      ? request.collection_id
+      : null;
+}
+
 async function selectConversation(id: number) {
   notice.value = "";
   detail.value = null;
+  activeEvidence.value = null;
   try {
     selectedId.value = id;
     const loaded = (await invoke("conversation_get", { conversationId: id })) as Conversation;
     conversation.value = loaded;
+    applyConversationRequest(loaded);
     const lastAssistant = [...loaded.turns].reverse().find((turn) => turn.role === "assistant");
     result.value = (lastAssistant?.answer as ResearchResult | null) ?? null;
   } catch (e) {
@@ -234,6 +279,8 @@ async function ensureConversation(): Promise<number | null> {
 
 async function ask() {
   notice.value = "";
+  detail.value = null;
+  activeEvidence.value = null;
   if (!question.value.trim()) {
     notice.value = "Enter a research question.";
     return;
@@ -292,6 +339,7 @@ async function ask() {
 
 async function checkModels() {
   modelStatus.value = null;
+  modelOptions.value = [];
   try {
     const outcome = await modelJob.start("intelligence_models");
     if (outcome.event === "job_error") {
@@ -299,17 +347,24 @@ async function checkModels() {
       return;
     }
     modelStatus.value = outcome.result;
+    modelOptions.value = Array.isArray(modelStatus.value?.models)
+      ? modelStatus.value.models
+      : [];
+    if (!model.value && modelOptions.value.length) model.value = modelOptions.value[0];
   } catch (e) {
     props.onError(String(e));
   }
 }
 
 async function inspect(item: Evidence) {
+  activeEvidence.value = item.evidence_id;
   try {
     detail.value =
       item.source === "email"
         ? await invoke("message", { hash: item.id })
         : await invoke("record", { recordId: item.id });
+    await nextTick();
+    detailPanel.value?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) {
     props.onError(String(e));
   }
@@ -317,7 +372,16 @@ async function inspect(item: Evidence) {
 
 function inspectCitation(evidenceId: string) {
   const item = evidenceFor(evidenceId);
-  if (item) void inspect(item);
+  if (!item) {
+    notice.value = `${evidenceId} is not part of the supplied evidence.`;
+    return;
+  }
+  void inspect(item);
+}
+
+async function backToAnswer() {
+  await nextTick();
+  answerPanel.value?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function exportConversation() {
@@ -386,6 +450,7 @@ onMounted(() => {
     <p v-if="status" class="status">
       Local AI: <strong>{{ status.enabled ? "enabled" : "disabled" }}</strong>
       · {{ status.endpoint }} · model {{ status.model }}
+      · input limit {{ status.max_input_chars }}
       <button type="button" :disabled="checking" @click="checkModels">
         {{ checking ? "Checking…" : "Check model" }}
       </button>
@@ -457,7 +522,10 @@ onMounted(() => {
           </label>
           <label class="range">
             Model
-            <input v-model="model" placeholder="Ollama model" />
+            <input v-model="model" list="ollama-models" placeholder="Ollama model" />
+            <datalist id="ollama-models">
+              <option v-for="name in modelOptions" :key="name" :value="name" />
+            </datalist>
           </label>
         </div>
         <div class="filters">
@@ -481,15 +549,24 @@ onMounted(() => {
         </div>
 
         <p v-if="notice" class="notice">{{ notice }}</p>
+        <p v-if="busy" class="meta progress">{{ askProgress }}</p>
 
         <section v-if="result" class="result">
           <div v-if="result.error" class="warning">{{ result.error }}</div>
           <div v-if="result.warning" class="warning">{{ result.warning }}</div>
           <div v-if="result.insufficient" class="warning">
-            The archive does not contain enough evidence for this question in the selected scope.
+            {{ result.evidence.length
+              ? "The model judged the supplied evidence insufficient to answer this question."
+              : "The archive does not contain matching evidence for this question in the selected scope." }}
           </div>
+          <p v-if="result.retrieval.history_fallback" class="meta">
+            Retrieval used the previous question because the new question found no matches.
+          </p>
+          <p v-if="result.retrieval.broad_fallback" class="meta">
+            No record matched every search term; evidence below is a broader term match.
+          </p>
 
-          <div v-if="result.answer" class="answer">
+          <div v-if="result.answer" ref="answerPanel" class="answer">
             <h3>Answer</h3>
             <pre>{{ result.answer }}</pre>
             <p class="meta">
@@ -497,10 +574,17 @@ onMounted(() => {
               · model used: {{ result.model.used ? result.model.name : "no" }}
               · evidence supplied: {{ result.evidence.length }}
               · context: {{ result.context.characters }}/{{ result.context.budget }} chars
+              <span v-if="result.context.max_input"> · input limit {{ result.context.max_input }}</span>
               <span v-if="result.context.omitted"> · {{ result.context.omitted }} record(s) omitted</span>
               <span v-if="result.context.truncated"> · excerpts truncated</span>
               <span v-if="result.retrieval.missing_records">
                 · {{ result.retrieval.missing_records }} source record(s) unavailable
+              </span>
+              <span v-if="result.retrieval.history_fallback">
+                · previous question used for retrieval
+              </span>
+              <span v-if="result.retrieval.broad_fallback">
+                · broader term match; no record matched all terms
               </span>
             </p>
             <button type="button" @click="saveAnswerToJournal">Save answer to journal</button>
@@ -552,7 +636,11 @@ onMounted(() => {
 
           <h3>Evidence supplied ({{ result.evidence.length }})</h3>
           <ul class="evidence">
-            <li v-for="item in result.evidence" :key="item.evidence_id">
+            <li
+              v-for="item in result.evidence"
+              :key="item.evidence_id"
+              :class="{ active: activeEvidence === item.evidence_id }"
+            >
               <div class="row">
                 <strong>{{ item.evidence_id }}</strong>
                 <span class="badge">{{ item.source }}</span>
@@ -580,7 +668,8 @@ onMounted(() => {
           </ul>
         </section>
 
-        <section v-if="detail" class="detail">
+        <section v-if="detail" ref="detailPanel" class="detail">
+          <button type="button" class="back" @click="backToAnswer">Back to answer</button>
           <h3>{{ detail.subject || detail.source_key || detail.record_kind }}</h3>
           <p class="meta">{{ detail.sender || detail.actor }} {{ detail.date || detail.occurred_at }}</p>
           <div v-if="detail.attachments?.length" class="attachments">
@@ -716,6 +805,17 @@ onMounted(() => {
 .claims li {
   border-top: 1px solid var(--hb-border);
   padding: 8px 0;
+}
+.evidence li.active {
+  border-left: 3px solid var(--hb-link);
+  padding-left: 8px;
+}
+.back {
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.progress {
+  font-style: italic;
 }
 .badge,
 .kind {

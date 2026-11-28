@@ -71,7 +71,10 @@ spawned as `python3 dispatch.py --archive <root> serve`.
   validated claims and citations; invented identifiers and uncited claims are
   reported rather than accepted. `intelligence_models` is a background job so
   a slow or unreachable loopback endpoint cannot block request handling.
-  Research requests are validated before a job starts. `conversation_*`
+  Research requests are validated before a job starts. Retrieval uses strict
+  all-term queries with a bounded OR fallback; a selected conversation's
+  previous question is retried only when a follow-up finds nothing. Context and
+  prompt text are reduced to honor `ai_max_input_chars`. `conversation_*`
   methods store only derived research turns in the research overlay; deleting
   a conversation never touches archived records, and export refuses paths
   inside the archive or an existing destination.

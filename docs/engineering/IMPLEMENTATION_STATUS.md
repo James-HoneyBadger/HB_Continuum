@@ -7,7 +7,8 @@ Maintained per the master engineering directive (section 41). Updated
 
 v0.5.0-beta consolidation, with the intelligence/search/document work,
 SQLCipher encrypted database creation, explicit plaintext-to-encrypted
-migration and archive protection landed. No production encryption claim is
+migration, archive protection and practical research workflow refinement
+landed. No production encryption claim is
 made and existing archives remain plaintext until the owner explicitly
 migrates them.
 
@@ -644,9 +645,9 @@ until the shell's flows are exercised against real archives.
 
 ## Test results
 
-347 Python tests ran on Python 3.12.0 and 3.13.7 with 0 failures. Without the
-optional `sqlcipher3` binding, 329 passed and 19 skipped; with it installed,
-345 passed and 2 optional-extractor tests skipped. `mypy==2.4.1` was clean on
+354 Python tests ran on Python 3.12.0 and 3.13.7 with 0 failures. Without the
+optional `sqlcipher3` binding, 335 passed and 19 skipped; with it installed,
+352 passed and 2 optional-extractor tests skipped. `mypy==2.4.1` was clean on
 28 source files. `npm run build` (vue-tsc + vite), `cargo check` and
 `cargo test` pass; background EML import, import history, sources, source
 removal, source verification, journal, collections, reports, relationships,
@@ -1148,11 +1149,45 @@ interchange (Phase V).
   rejection, `restore` into a new path, successful search in the restored
   encrypted archive, and ordinary-SQLite rejection of the copied database all
   passed.
-- Verification: 347 tests, 0 failures (329 passed/19 skipped without
-  SQLCipher; 345 passed/2 skipped with it), mypy clean on 28 files, frontend
+- Verification: 354 tests, 0 failures (335 passed/19 skipped without
+  SQLCipher; 352 passed/2 skipped with it), mypy clean on 28 files, frontend
   build, `cargo check` and `cargo test` pass.
 - Remaining limits: no in-place encryption, password recovery, key rotation,
   independent backup key or OS credential storage; original EML/external
   documents/configuration/exports remain plaintext; a compromised unlocked
   host can read the archive; old plaintext backups and snapshots may persist
   until the owner removes them.
+
+
+## Practical historical research (2026-11-28)
+
+- Retrieval now uses a stricter all-terms query for short questions, with a
+  broader OR fallback only when that returns nothing. Common question verbs and
+  framing words are excluded from term matching, so a missing topic does not
+  retrieve unrelated records merely because they contain a common word.
+- Conversation follow-ups can omit the topic. If current retrieval is empty
+  and the question looks referential or contains no topic terms, the engine
+  retries the last user question and reports `history_fallback`. The
+  conversation transcript is labeled as untrusted continuity, not evidence.
+- Context assembly and the final prompt are bounded by
+  `ai_max_input_chars`, not only the requested context budget. History and
+  evidence are reduced in a measured loop; the UI reports the effective budget
+  and input limit.
+- The Intelligence workspace restores a selected conversation's previous
+  question and filters, automatically titles an untitled conversation from its
+  first question, shows progress and cancellation, lists local Ollama models in
+  a datalist, and highlights citations. A cited record scrolls into view and
+  provides **Back to answer**.
+- Added `scripts/intelligence_demo.py`, a synthetic 2019–2023 archive with
+  correspondence and documents. It demonstrates disputed-invoice research, a
+  heritage grant, a garden document, a follow-up question and a missing-topic
+  question; inference is explicit via `--ask` and a loopback model.
+- Broad term matches are marked in the result so partial evidence is not
+  presented as if every search term was satisfied.
+- Added tests for strict retrieval, broad fallback, missing-topic behavior,
+  follow-up history through IPC, prompt bounds, and automatic conversation
+  titles. The synthetic demo was run locally; it never accesses a real archive.
+- Remaining limits: retrieval remains keyword/FTS5 rather than semantic; model
+  claims and contradiction labels are validated for citation identity, not
+  truth; per-token streaming is not implemented; no live Ollama model or
+  interactive desktop acceptance run is claimed by the automated suite.
