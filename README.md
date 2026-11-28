@@ -165,6 +165,7 @@ guaranteed to be installed.
 - [Scheduled synchronization](docs/SCHEDULED_SYNC.md)
 - [Archive hardening](docs/ARCHIVE_HARDENING.md) and [migration](docs/MIGRATION.md)
 - [Benchmarks](docs/BENCHMARKS.md) and [implementation status](docs/engineering/IMPLEMENTATION_STATUS.md)
+- [Roadmap and known gaps](docs/ROADMAP.md)
 
 ## Development principles
 
