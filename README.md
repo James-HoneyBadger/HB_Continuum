@@ -124,7 +124,7 @@ Sources can be disabled — stopping new automatic imports while every historica
 
 ## Evidence collections
 
-Group selected records into named collections inside a research workspace. Items are references to preserved records — SHA-256 hashes for email, record ids for catalog entries — with optional notes. Nothing is copied into the research overlay, and deleting a collection never deletes an archived record. A referenced record that disappears stays listed and is marked missing. Collections export as Markdown or JSON evidence manifests with stable identifiers, notes and explicit limitations, and never replace an existing file. Selected search results can be added to a collection directly from the Search workspace.
+Group selected records into named collections inside a research workspace. Items are references to preserved records — SHA-256 hashes for email, record ids for catalog entries — with optional notes. Nothing is copied into the research overlay, and deleting a collection never deletes an archived record. A referenced record that disappears stays listed and is marked missing. Collections export as Markdown or JSON evidence manifests with stable identifiers, notes and explicit limitations, and never replace an existing file. Selected search results, the open record in the Search reader and the open message in the Timeline can be added to a collection directly.
 
 A collection can also hold **report drafts**: titled notes that render a chronology ordered by declared date, evidence gaps for records that have gone missing, and explicit limitations. Drafts export as Markdown, JSON or standalone HTML, are stored as user annotations rather than evidence, and never replace an existing file.
 

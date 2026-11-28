@@ -90,11 +90,39 @@ async function addSelectedToCollection() {
     props.onError(String(e));
   }
 }
+
+async function addDetailToCollection() {
+  detailNotice.value = "";
+  if (!collectionId.value) {
+    detailNotice.value = "Choose a collection first.";
+    return;
+  }
+  const itemType = detail.value?.record_id ? "catalog" : "email";
+  const itemId = itemType === "catalog" ? detail.value?.record_id : detail.value?.hash;
+  if (!itemId) {
+    detailNotice.value = "Open a message or record first.";
+    return;
+  }
+  try {
+    await invoke("collection_add", {
+      collectionId: collectionId.value,
+      itemType,
+      itemId,
+      note: collectionNote.value || null,
+    });
+    detailNotice.value = "Added the open item to the selected collection.";
+    collectionNote.value = "";
+    props.onChanged();
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
 const detail = ref<any>(null);
 const threadView = ref<any[] | null>(null);
 const selected = ref<string[]>([]);
 const tagName = ref("");
 const notice = ref("");
+const detailNotice = ref("");
 
 function splitList(value: string): string[] | undefined {
   const items = value
@@ -160,6 +188,7 @@ async function runSearch(target = 1) {
     page.value = target;
     selected.value = [];
     detail.value = null;
+    detailNotice.value = "";
     threadView.value = null;
   } catch (e) {
     props.onError(String(e));
@@ -177,6 +206,7 @@ function toggle(id: string) {
 }
 
 async function openMessage(id: string) {
+  detailNotice.value = "";
   try {
     detail.value = await invoke("message", { hash: id });
     threadView.value = null;
@@ -186,6 +216,7 @@ async function openMessage(id: string) {
 }
 
 async function openRecord(id: string) {
+  detailNotice.value = "";
   try {
     detail.value = await invoke("record", { recordId: id });
     threadView.value = null;
@@ -195,6 +226,7 @@ async function openRecord(id: string) {
 }
 
 async function openThread(id: string) {
+  detailNotice.value = "";
   try {
     const response = (await invoke("thread", { hash: id })) as { messages: any[] };
     threadView.value = response.messages;
@@ -365,6 +397,19 @@ async function exportSelected() {
         <span v-if="detail.revision_kind"> · {{ detail.revision_kind }}</span>
         <span v-if="detail.revision_index"> · version {{ detail.revision_index }}</span>
       </p>
+      <div class="row">
+        <select v-model="collectionId">
+          <option :value="null">Choose collection…</option>
+          <option v-for="collection in collections" :key="collection.id" :value="collection.id">
+            {{ collection.workspace }} / {{ collection.name }}
+          </option>
+        </select>
+        <input v-model="collectionNote" placeholder="Collection note (optional)" maxlength="2000" />
+        <button :disabled="!collectionId" @click="addDetailToCollection">
+          Add this item to collection
+        </button>
+      </div>
+      <p v-if="detailNotice" class="notice">{{ detailNotice }}</p>
       <div v-if="detail.attachments?.length" class="attachments">
         <h3>Attachments (stored metadata)</h3>
         <ul>

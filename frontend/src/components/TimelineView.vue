@@ -16,10 +16,20 @@ interface Correspondent {
   count: number;
 }
 
+interface Collection {
+  id: number;
+  workspace: string;
+  name: string;
+}
+
 const senders = ref<Correspondent[]>([]);
 const rows = ref<TimelineRow[]>([]);
 const selectedSender = ref<string | null>(null);
 const detail = ref<any>(null);
+const collections = ref<Collection[]>([]);
+const collectionId = ref<number | null>(null);
+const collectionNote = ref("");
+const collectionNotice = ref("");
 const loading = ref(false);
 const pageSize = 100;
 const offset = ref(0);
@@ -92,6 +102,7 @@ function setOrder(next: "asc" | "desc") {
 }
 
 async function open(row: TimelineRow) {
+  collectionNotice.value = "";
   try {
     detail.value = await invoke("message", { hash: row.hash });
   } catch (e) {
@@ -99,7 +110,44 @@ async function open(row: TimelineRow) {
   }
 }
 
-onMounted(refresh);
+async function loadCollections() {
+  try {
+    const response = (await invoke("collections_list")) as { collections: Collection[] };
+    collections.value = response.collections;
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
+async function addDetailToCollection() {
+  collectionNotice.value = "";
+  if (!collectionId.value) {
+    collectionNotice.value = "Choose a collection first.";
+    return;
+  }
+  if (!detail.value?.hash) {
+    collectionNotice.value = "Open a message first.";
+    return;
+  }
+  try {
+    await invoke("collection_add", {
+      collectionId: collectionId.value,
+      itemType: "email",
+      itemId: detail.value.hash,
+      note: collectionNote.value || null,
+    });
+    collectionNotice.value = "Added this message to the selected collection.";
+    collectionNote.value = "";
+    props.onChanged();
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
+onMounted(() => {
+  void refresh();
+  void loadCollections();
+});
 </script>
 
 <template>
@@ -168,6 +216,19 @@ onMounted(refresh);
     <section v-if="detail" class="detail">
       <h3>{{ detail.subject || "(no subject)" }}</h3>
       <p class="meta">{{ detail.sender }} {{ detail.date }}</p>
+      <div class="row">
+        <select v-model="collectionId">
+          <option :value="null">Choose collection…</option>
+          <option v-for="collection in collections" :key="collection.id" :value="collection.id">
+            {{ collection.workspace }} / {{ collection.name }}
+          </option>
+        </select>
+        <input v-model="collectionNote" placeholder="Collection note (optional)" maxlength="2000" />
+        <button :disabled="!collectionId" @click="addDetailToCollection">
+          Add this message to collection
+        </button>
+      </div>
+      <p v-if="collectionNotice" class="notice">{{ collectionNotice }}</p>
       <pre class="body">{{ detail.body }}</pre>
     </section>
   </section>
@@ -286,6 +347,9 @@ ul {
 .meta {
   color: var(--hb-text-secondary);
   font-size: 13px;
+}
+.notice {
+  color: var(--hb-success-text);
 }
 .link {
   border: none;

@@ -340,7 +340,9 @@ landed (Overview dashboard, design tokens, timeline pagination).
 - New Collections workspace: create/delete collections, inspect items with
   resolved titles, add by identifier, remove items and export a manifest.
   Search results can be added to a selected collection directly, keeping the
-  identifiers visible.
+  identifiers visible. The open item in the Search reader (message or catalog
+  record) and the open message in the Timeline can also be added without first
+  checking a result, using the same collection selector and optional note.
 - Tests cover membership, duplicate names, unknown records, missing-record
   reporting, cascade deletion and manifest rendering/writing.
 
@@ -719,8 +721,9 @@ Scheduler verification status:
 
 1. Extend unified search with a paged FTS contract so results are not
    capped at 5000.
-2. Add collection selection from the timeline and record reader, and an
-   optional "hide disabled sources from default views" preference.
+2. Add an optional "hide disabled sources from default views" preference.
+   Collection selection is now available from the timeline, the search result
+   list and the open record reader.
 3. Run the benchmark harness on Windows and Linux and add a 1M-record run
    before making large-archive claims.
 
