@@ -151,6 +151,18 @@ def launch(archive):
                                   + (f"\n{error}" if error else '') for account,folder,started,finished,archived,error in entries))
             status.set(f'{len(entries)} recent synchronization attempts. The log records counts and errors, never credentials or message content.')
         except Exception as e: messagebox.showerror('Synchronization log',str(e))
+    def export_mbox():
+        selected=rows.selection()
+        if not selected: return messagebox.showinfo('Export mbox','Select one or more messages first.')
+        target=filedialog.asksaveasfilename(initialdir=prefs['export_directory'] or None,defaultextension='.mbox',
+                                            filetypes=[('Mailbox','*.mbox')],title='Save selected messages as an mbox file')
+        if not target: return
+        if Path(target).exists():
+            return messagebox.showerror('Export mbox','That file already exists; choose a new name so nothing is overwritten.')
+        try:
+            archive.export_mbox(selected,target)
+            messagebox.showinfo('Export complete',f'{len(selected)} messages written to {target}')
+        except Exception as e: messagebox.showerror('Export mbox',str(e))
     def save_attachments():
         selected=rows.selection()
         if not selected: return messagebox.showinfo('Attachments','Select one or more messages first.')
@@ -180,7 +192,7 @@ def launch(archive):
             messagebox.showinfo('Export complete',str(dest))
         except Exception as e: messagebox.showerror('Export',str(e))
     for label,fn in [('Search',search),('Import EML',import_files),('Verify',verify),('Repair archive',repair),
-                     ('Save attachments',save_attachments),('Export selected',export)]:
+                     ('Save attachments',save_attachments),('Export selected',export),('Export mbox',export_mbox)]:
         ttk.Button(toolbar,text=label,command=fn).pack(side='left',padx=3)
     analysis_bar=ttk.Frame(root,padding=(10,0))
     analysis_bar.pack(fill='x',before=pane)

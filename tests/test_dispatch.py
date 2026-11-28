@@ -428,6 +428,26 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.a.reindex(),1)
         self.assertEqual([r[0] for r in self.a.find('',recipient='revive')],[h])
         self.assertEqual(self.a.db.execute("SELECT value FROM meta WHERE key='headers_backfill'").fetchone()[0],'done')
+    def test_mbox_export_round_trips_exactly(self):
+        first=b'From: alice@example.invalid\r\nDate: Mon, 1 Jan 2024 12:00:00 +0000\r\nSubject: One\r\nMessage-ID: <1@example.invalid>\r\n\r\nFrom the archive\r\n>From quoted\r\n'
+        second=b'To: bob@example.invalid\r\nSubject: Two\r\nMessage-ID: <2@example.invalid>\r\n\r\ntwo\r\n'
+        a=self.a.ingest(first); b=self.a.ingest(second)
+        target=Path(self.tmp.name)/'exported.mbox'
+        self.a.export_mbox([a,b],target)
+        self.assertTrue(target.read_text().startswith('From alice@example.invalid Mon Jan  1 12:00:00 2024\n'))
+        restored=Archive(Path(self.tmp.name)/'restored')
+        try:
+            self.assertEqual(restored.import_mbox(target),(2,0))
+            self.assertEqual(sorted(p.stem for p in restored.raw.glob('*.eml')),sorted([a,b]))
+            self.assertEqual((restored.raw/(a+'.eml')).read_bytes(),first)
+            self.assertEqual((restored.raw/(b+'.eml')).read_bytes(),second)
+        finally: restored.db.close()
+    def test_mbox_export_refuses_to_overwrite(self):
+        h=self.a.ingest(RAW)
+        target=Path(self.tmp.name)/'existing.mbox'; target.write_text('keep')
+        self.assertRaises(FileExistsError,self.a.export_mbox,[h],target)
+        self.assertEqual(target.read_text(),'keep')
+        self.assertRaises(ValueError,self.a.export_mbox,['0'*64],Path(self.tmp.name)/'other.mbox')
     def test_version_flag(self):
         out=io.StringIO()
         with mock.patch('sys.argv',['dispatch.py','--version']), contextlib.redirect_stdout(out):

@@ -23,6 +23,23 @@ def _like(text):
     escaped=text.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
     return f'%{escaped}%'
 
+def _mbox_quote(raw):
+    """Quote lines a reader could mistake for an mbox 'From ' separator."""
+    out=[]
+    for line in raw.splitlines(keepends=True):
+        if line.lstrip(b'>').startswith(b'From '): line=b'>'+line
+        out.append(line)
+    return b''.join(out)
+
+def _mbox_envelope_date(date_header):
+    """Envelope timestamp in mbox form, with a fixed fallback for unparseable dates."""
+    from email.utils import parsedate_to_datetime
+    try:
+        moment=parsedate_to_datetime(str(date_header))
+    except (TypeError,ValueError,OverflowError):
+        moment=None
+    return time.asctime(moment.utctimetuple() if moment is not None else time.gmtime(0))
+
 def _sent_ts(date_header):
     """UTC epoch seconds for a Date header, or None when it cannot be parsed."""
     from datetime import timezone
@@ -375,15 +392,17 @@ class Archive:
         return [sha for (sha,) in self.db.execute('SELECT DISTINCT sha256 FROM attachments')
                 if not (p:=self.root/'attachments'/sha[:2]/sha).is_file()
                 or hashlib.sha256(p.read_bytes()).hexdigest()!=sha]
+    def _require_message(self, digest):
+        """Validate a message hash and confirm the message is known to the archive."""
+        if not isinstance(digest,str) or len(digest)!=64 or any(c not in '0123456789abcdef' for c in digest):
+            raise ValueError('Invalid message hash')
+        if not self.db.execute('SELECT 1 FROM messages WHERE hash=?',(digest,)).fetchone():
+            raise ValueError('Unknown message')
     def export(self, hashes, destination):
         dest=Path(destination)
         hashes=list(dict.fromkeys(hashes))
         if not hashes: raise ValueError('Select at least one message')
-        for h in hashes:
-            if not isinstance(h,str) or len(h)!=64 or any(x not in '0123456789abcdef' for x in h):
-                raise ValueError('Invalid message hash')
-            if not self.db.execute('SELECT 1 FROM messages WHERE hash=?',(h,)).fetchone():
-                raise ValueError('Unknown message')
+        for h in hashes: self._require_message(h)
         dest.mkdir(mode=0o700,parents=True,exist_ok=False)
         try:
             manifest=[]
@@ -399,6 +418,27 @@ class Archive:
         except Exception:
             shutil.rmtree(dest)
             raise
+    def export_mbox(self, hashes, destination):
+        """Write raw messages into an mbox file for use in another mail client.
+
+        Each message keeps its original bytes except that lines which a reader could
+        mistake for a separator gain one '>' (mboxrd), which import_mbox removes
+        again. A final newline is added only when a message lacks one.
+        """
+        hashes=list(dict.fromkeys(hashes))
+        if not hashes: raise ValueError('Select at least one message')
+        for h in hashes: self._require_message(h)
+        dest=Path(destination)
+        with os.fdopen(os.open(dest,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'wb') as output:
+            for h in hashes:
+                raw=(self.raw/(h+'.eml')).read_bytes()
+                if hashlib.sha256(raw).hexdigest()!=h: raise ValueError('Integrity mismatch')
+                data=self.details(h)
+                envelope=f"From {data['sender'] or 'unknown@invalid'} {_mbox_envelope_date(data['date'])}\n"
+                output.write(envelope.encode('utf-8',errors='replace'))
+                output.write(_mbox_quote(raw))
+                if not raw.endswith(b'\n'): output.write(b'\n')
+        return dest
     def details(self, digest):
         row=self.db.execute('SELECT subject,sender,date,message_id,reply_to,body,recipient,cc,bcc FROM messages WHERE hash=?',(digest,)).fetchone()
         if row is None: raise ValueError('Unknown message')
@@ -560,7 +600,7 @@ class Archive:
 def main():
     import getpass
     p=argparse.ArgumentParser(); p.add_argument('--archive',default='~/.hb-dispatch'); p.add_argument('--version',action='version',version=f'%(prog)s {__version__}'); sub=p.add_subparsers(dest='cmd',required=True)
-    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--recipient'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('log'); q.add_argument('--limit',default=100); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
+    q=sub.add_parser('import'); q.add_argument('files',nargs='+'); q=sub.add_parser('search'); q.add_argument('query',nargs='?',default=''); q.add_argument('--sender'); q.add_argument('--recipient'); q.add_argument('--after'); q.add_argument('--before'); q.add_argument('--limit',default=100);  sub.add_parser('verify'); sub.add_parser('reindex'); q=sub.add_parser('failures'); q.add_argument('--limit',default=500); q=sub.add_parser('log'); q.add_argument('--limit',default=100); q=sub.add_parser('attachments'); q.add_argument('hash'); q=sub.add_parser('attachment'); q.add_argument('sha256'); q.add_argument('destination'); sub.add_parser('verify-attachments'); q=sub.add_parser('export'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('export-mbox'); q.add_argument('destination'); q.add_argument('hashes',nargs='+'); q=sub.add_parser('sync'); q.add_argument('host'); q.add_argument('user'); q.add_argument('--folder',default='INBOX'); sub.add_parser('gui')
     a=p.parse_args(); ar=Archive(a.archive)
     if a.cmd=='import':
         for f in a.files:
@@ -586,6 +626,7 @@ def main():
     elif a.cmd=='failures': print(json.dumps(ar.failures(a.limit),indent=2))
     elif a.cmd=='log': print(json.dumps(ar.sync_log(a.limit),indent=2))
     elif a.cmd=='export': ar.export(a.hashes,a.destination)
+    elif a.cmd=='export-mbox': print(ar.export_mbox(a.hashes,a.destination))
     elif a.cmd=='sync': print(ar.sync(a.host,a.user,getpass.getpass(),a.folder))
     elif a.cmd=='gui':
         from desktop import launch

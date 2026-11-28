@@ -71,6 +71,7 @@ python3 dispatch.py verify-attachments
 python3 dispatch.py gui
 python3 dispatch.py sync imap.example.invalid user@example.invalid --folder INBOX
 python3 dispatch.py export evidence HASH
+python3 dispatch.py export-mbox selected.mbox HASH
 python3 -m unittest discover -s tests -v
 ```
 
