@@ -5,8 +5,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 from dispatch import Archive
-from schedule import profile,due,tick,write_json,read_json,service
-from sync_lock import sync_lock,SyncBusy
+from hb_engine import db, encryption
+from schedule import profile,due,tick,write_json
+import schedule
+from sync_lock import LOCK_SUPPORTED, sync_lock
 
 class SchedulingTests(unittest.TestCase):
     def setUp(self):
@@ -51,11 +53,47 @@ class SchedulingTests(unittest.TestCase):
         self.assertEqual(r['other']['status'],'ok')
         self.assertNotIn('secret should not be logged',(self.root/'schedule-status.json').read_text())
     def test_busy_defers_without_consuming_schedule(self):
+        if not LOCK_SUPPORTED:
+            self.skipTest('archive locking is unsupported here')
         write_json(self.root/'schedule.json',{'mail':self.p})
         with sync_lock(self.root):
             result=tick(self.root,now=self.now,get_password=lambda p:'fake')
         self.assertEqual(result['mail']['status'],'deferred: archive busy')
         self.assertNotIn('last_attempt',result['mail'])
+
+    def test_disabled_source_is_skipped_without_an_attempt(self):
+        write_json(self.root/'schedule.json',{'mail':self.p})
+        archive=Archive(self.root)
+        try: archive.source_set_enabled('email','imap.gmail.com|user@example.invalid',False)
+        finally: archive.db.close()
+        with mock.patch.object(Archive,'sync',return_value=1) as sync:
+            result=tick(self.root,now=self.now,get_password=lambda p:'fake')
+        sync.assert_not_called()
+        self.assertEqual(result['mail']['status'],'disabled')
+        self.assertNotIn('last_attempt',result['mail'])
+
+    def test_locked_encrypted_archive_defers_without_credentials(self):
+        if not db.encryption_available():
+            self.skipTest('optional sqlcipher3 binding is not installed')
+        encryption.create(self.root, 'synthetic schedule password')
+        encryption.lock(self.root)
+        write_json(self.root/'schedule.json',{'mail':self.p})
+        called=[]
+        result=tick(self.root,now=self.now,
+                    get_password=lambda p: called.append(p) or 'should-not-be-used')
+        self.assertEqual(result['mail']['status'],'deferred: encrypted archive locked')
+        self.assertEqual(called,[])
+        self.assertNotIn('should-not-be-used',
+                         (self.root/'schedule-status.json').read_text())
+
+    def test_tick_without_flock_runs_unescorted(self):
+        write_json(self.root/'schedule.json',{'mail':self.p})
+        with mock.patch.object(schedule,'HAS_FLOCK',False), \
+             mock.patch.object(Archive,'sync',return_value=2) as sync:
+            result=tick(self.root,now=self.now,get_password=lambda p:'fake')
+        self.assertEqual(result['mail']['status'],'ok')
+        self.assertEqual(result['mail']['imported'],2)
+        sync.assert_called_once()
     def test_legacy_gmail_folder(self):
         ar=Archive(self.root)
         try:

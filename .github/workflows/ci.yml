@@ -6,20 +6,60 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: macos-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.13"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Compile
-        run: python -m py_compile dispatch.py desktop.py schedule.py schedule_ui.py sync_lock.py tests/test_dispatch.py tests/test_schedule.py preferences.py preferences_ui.py tests/test_preferences.py research.py research_ui.py tests/test_research.py
+        run: python -m compileall -q hb_engine tests scripts dispatch.py desktop.py preferences_ui.py research_ui.py schedule_ui.py search_worker.py
       - name: Tests
         run: python -m unittest discover -s tests -v
+
+  scheduler:
+    name: scheduler (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install, inspect and remove a real scheduler entry
+        run: python scripts/scheduler_smoke.py
+
+  engine:
+    name: engine (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install PyInstaller
+        run: python -m pip install pyinstaller
+      - name: Build and smoke-test the bundled engine
+        run: python scripts/build_engine.py --no-copy --smoke
 
   typecheck:
     runs-on: ubuntu-latest
@@ -32,3 +72,18 @@ jobs:
         run: pip install mypy==2.4.1
       - name: Type check
         run: mypy
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: npm ci
+      - name: Build and type-check frontend
+        run: npm run build

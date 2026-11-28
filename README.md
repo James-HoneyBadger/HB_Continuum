@@ -22,27 +22,19 @@ The portable Python engine is exercised by CI on Linux and Windows, but
 packaged desktop applications for those platforms are not claimed as
 supported.
 
-No formal stable release has been declared. Formal stable publication remains
-the owner's decision.
+No formal stable release has been declared. Formal stable publication
+remains the owner's decision.
 
-## Which branch to use
+## Getting the source
 
-This `main` branch holds the earlier v0.3 code baseline, before the Continuum
-rewrite. The qualified v0.5 implementation — the `hb_engine` package, the
-Tauri 2 / Vue 3 desktop shell, encrypted archives and the research workspace —
-is published at the `v0.5.0-beta` tag and developed on
-`develop/intelligence-update`.
-
-Clone the tag rather than this branch:
+The default branch `main` carries the qualified v0.5 implementation, and the
+`v0.5.0-beta` tag identifies the released source:
 
 ```sh
-git clone --branch v0.5.0-beta https://github.com/James-HoneyBadger/HB_Continuum.git
+git clone https://github.com/James-HoneyBadger/HB_Continuum.git
 cd HB_Continuum
 python3 dispatch.py --version
 ```
-
-The capabilities and commands below describe `v0.5.0-beta`, not the code in
-this branch.
 
 ## What it does
 
@@ -74,7 +66,7 @@ the legacy Tk workstation.
 
 ## Quick start
 
-From a checkout of the `v0.5.0-beta` tag:
+From a checkout:
 
 ```sh
 python3 dispatch.py --version
@@ -105,8 +97,8 @@ python3 dispatch.py --archive ~/EncryptedArchive init-encrypted
 
 Existing encrypted archives can be opened and unlocked in the desktop
 application. Migrate an existing plaintext archive only after reading
-[Encrypted archive migration](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/ENCRYPTION_MIGRATION.md)
-and verifying an independent backup.
+[Encrypted archive migration](docs/ENCRYPTION_MIGRATION.md) and verifying an
+independent backup.
 
 ## Desktop application
 
@@ -130,8 +122,8 @@ npm run tauri -- dev
 
 The build is unsigned and not notarized. On first launch, choose a folder and
 select **Create archive here**, or open an existing archive. See
-[Packaging](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/PACKAGING.md)
-for the complete layout, local installation notes and platform limitations.
+[Packaging](docs/PACKAGING.md) for the complete layout, local installation
+notes and platform limitations.
 
 ## Data safety and limitations
 
@@ -143,7 +135,7 @@ Database encryption protects the SQLite databases only. Raw EML files,
 external documents, preferences, exports and configuration remain outside the
 database encryption boundary. Encrypted backups keep database files encrypted,
 but raw files and configuration in a snapshot remain plaintext. See the
-[security model](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/SECURITY_MODEL.md).
+[security model](docs/SECURITY_MODEL.md).
 
 The application cannot prove that a mailbox was fully downloaded. Verify folder
 coverage independently. Do not use HB Continuum as the sole copy of
@@ -163,18 +155,16 @@ guaranteed to be installed.
 
 ## Documentation
 
-Documentation is pinned to the `v0.5.0-beta` tag, matching the release source.
-
-- [Practical tutorial](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/TUTORIAL.md)
-- [Packaging and local installation](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/PACKAGING.md)
-- [Encryption and recovery](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/ENCRYPTION.md)
-- [Encrypted archive migration](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/ENCRYPTION_MIGRATION.md)
-- [Security model and threat boundaries](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/SECURITY_MODEL.md)
-- [Intelligence workspace](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/INTELLIGENCE.md)
-- [Documents](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/DOCUMENTS.md) and [Facebook import](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/FACEBOOK_IMPORT.md)
-- [Scheduled synchronization](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/SCHEDULED_SYNC.md)
-- [Archive hardening](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/ARCHIVE_HARDENING.md) and [migration](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/MIGRATION.md)
-- [Benchmarks](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/BENCHMARKS.md) and [implementation status](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/docs/engineering/IMPLEMENTATION_STATUS.md)
+- [Practical tutorial](docs/TUTORIAL.md)
+- [Packaging and local installation](docs/PACKAGING.md)
+- [Encryption and recovery](docs/ENCRYPTION.md)
+- [Encrypted archive migration](docs/ENCRYPTION_MIGRATION.md)
+- [Security model and threat boundaries](docs/SECURITY_MODEL.md)
+- [Intelligence workspace](docs/INTELLIGENCE.md)
+- [Documents](docs/DOCUMENTS.md) and [Facebook import](docs/FACEBOOK_IMPORT.md)
+- [Scheduled synchronization](docs/SCHEDULED_SYNC.md)
+- [Archive hardening](docs/ARCHIVE_HARDENING.md) and [migration](docs/MIGRATION.md)
+- [Benchmarks](docs/BENCHMARKS.md) and [implementation status](docs/engineering/IMPLEMENTATION_STATUS.md)
 
 ## Development principles
 
@@ -202,7 +192,7 @@ development are welcome.
 Copyright (c) 2026 Honey Badger Universe.
 
 Current and future distributions of this source tree are licensed under the
-[GNU General Public License version 3](https://github.com/James-HoneyBadger/HB_Continuum/blob/v0.5.0-beta/LICENSE)
-(GPL-3.0-only). Commercial use is permitted under the license, including its
-source-distribution and copyleft requirements. Prior distributions released
-under MIT retain their original license rights.
+[GNU General Public License version 3](LICENSE) (GPL-3.0-only). Commercial use
+is permitted under the license, including its source-distribution and copyleft
+requirements. Prior distributions released under MIT retain their original
+license rights.

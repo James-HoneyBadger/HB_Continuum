@@ -5,10 +5,11 @@ def launch(archive):
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
     from pathlib import Path
-    from preferences import load
+    from hb_engine.preferences import load
+    from search_worker import SearchController, find_readonly, recent_readonly
     prefs=load(archive.root)
     root=tk.Tk()
-    root.title('HB Dispatch — Correspondence Workstation')
+    root.title('HB Continuum — Historical Research Workstation')
     root.geometry(f"{prefs['window_width']}x{prefs['window_height']}")
     style=ttk.Style(root)
     if prefs['theme']!='System':
@@ -52,17 +53,37 @@ def launch(archive):
         body.delete('1.0','end')
         body.insert('1.0',text)
         body.configure(state='disabled')
-    def search(*_):
-        try:
-            term=query.get().strip()
-            if term and prefs['search_mode']=='Exact phrase': term='"'+term.replace('"','""')+'"'
-            hits=archive.find(term,prefs['search_limit']) if term else archive.recent(prefs['recent_limit'])
-            rows.delete(*rows.get_children())
-            display('')
-            for h,s,f in hits: rows.insert('', 'end',iid=h,values=(s,f))
-            stats=archive.stats()
-            status.set(f"{len(hits)} shown  |  {stats['messages']} archived messages  |  {stats['origins']} mailbox origins")
-        except Exception as e: messagebox.showerror('Search',str(e))
+    def make_query_fn(prefs):
+        def run(conn, term):
+            if term: return find_readonly(conn, term, prefs['search_limit'])
+            return recent_readonly(conn, prefs['recent_limit'])
+        return run
+    controller=SearchController(archive.root, make_query_fn(prefs), root.after, root.after_cancel)
+    def _busy():
+        search_btn.configure(state='disabled')
+        progress.pack(side='left',padx=4)
+        progress.start(12)
+        status.set('Searching\u2026')
+    def _idle():
+        search_btn.configure(state='normal')
+        progress.stop()
+        progress.pack_forget()
+    def show_results(hits, stats):
+        _idle()
+        rows.delete(*rows.get_children())
+        display('')
+        for h,s,f in hits: rows.insert('', 'end',iid=h,values=(s,f))
+        status.set(f"{len(hits)} shown  |  {stats['messages']} archived messages  |  {stats['origins']} mailbox origins")
+    def show_search_error(exc):
+        _idle()
+        messagebox.showerror('Search',str(exc))
+    controller.on_result=show_results
+    controller.on_error=show_search_error
+    def run_search(*_):
+        term=query.get().strip()
+        if term and prefs['search_mode']=='Exact phrase': term='"'+term.replace('"','""')+'"'
+        _busy()
+        controller.submit(term)
     def select(*_):
         selection=rows.selection()
         if not selection: return
@@ -71,7 +92,10 @@ def launch(archive):
             data=archive.details(h)
             keys=('subject','sender','date','message_id','reply_to') if prefs['show_message_ids'] else ('subject','sender','date')
             header='\n'.join(f"{k}: {data[k]}" for k in keys)
-            display(header+('\nSHA-256: '+h if prefs['show_hash'] else '')+'\n\n'+data['body'])
+            attachments=archive.attachments(h)
+            listing=('\nAttachments (indexed metadata):\n'+'\n'.join(
+                f'{name} | {mime} | {size} indexed characters' for name,mime,size in attachments)) if attachments else ''
+            display(header+('\nSHA-256: '+h if prefs['show_hash'] else '')+listing+'\n\n'+data['body'])
         except Exception as e: messagebox.showerror('Message',str(e))
     def show_thread():
         selected=rows.selection()
@@ -98,7 +122,7 @@ def launch(archive):
                 path=Path(f)
                 if path.stat().st_size>64*1024*1024: raise ValueError('Message exceeds 64 MiB limit')
                 archive.ingest(path.read_bytes())
-            search()
+            run_search()
         except Exception as e: messagebox.showerror('Import',str(e))
     def verify():
         try:
@@ -117,8 +141,11 @@ def launch(archive):
             archive.export(selected,dest)
             messagebox.showinfo('Export complete',str(dest))
         except Exception as e: messagebox.showerror('Export',str(e))
-    for label,fn in [('Search',search),('Import EML',import_files),('Verify',verify),('Export selected',export)]:
+    search_btn=ttk.Button(toolbar,text='Search',command=run_search)
+    search_btn.pack(side='left',padx=3)
+    for label,fn in [('Import EML',import_files),('Verify',verify),('Export selected',export)]:
         ttk.Button(toolbar,text=label,command=fn).pack(side='left',padx=3)
+    progress=ttk.Progressbar(toolbar,mode='indeterminate',length=110)
     analysis_bar=ttk.Frame(root,padding=(10,0))
     analysis_bar.pack(fill='x',before=pane)
     for label,fn in [('Conversation',show_thread),('Timeline',show_timeline),('Correspondents',show_correspondents)]:
@@ -137,8 +164,9 @@ def launch(archive):
         from research_ui import launch as launch_research
         launch_research(archive,root,rows.selection)
     ttk.Button(analysis_bar,text='Research workbench',command=research_workbench).pack(side='left',padx=3)
-    query.bind('<Return>',search)
+    query.bind('<Return>',run_search)
     root.bind('<Control-f>',lambda _:query.focus_set())
     rows.bind('<<TreeviewSelect>>',select)
-    search()
+    root.protocol('WM_DELETE_WINDOW',lambda:(controller.destroy(),root.destroy()))
+    run_search()
     root.mainloop()

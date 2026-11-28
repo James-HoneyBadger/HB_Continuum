@@ -6,9 +6,9 @@ def launch(root, parent=None):
     from tkinter import ttk, messagebox
     import subprocess, sys
     from pathlib import Path
-    from schedule import profile, config, read_json, write_json, service, agent_status
+    from hb_engine.schedule import profile, config, read_json, write_json, service, agent_status
     w=tk.Toplevel(parent) if parent else tk.Tk()
-    w.title('HB Dispatch | Synchronization center')
+    w.title('HB Continuum | Synchronization center')
     w.geometry('1040x620');w.minsize(820,540)
     frame=ttk.Frame(w,padding=18);frame.pack(fill='both',expand=True)
     ttk.Label(frame,text='Synchronization center',font=('TkDefaultFont',20,'bold')).pack(anchor='w')
@@ -89,13 +89,13 @@ def launch(root, parent=None):
             w.after(1000,poll)
         except Exception as e: messagebox.showerror('Scheduler',str(e),parent=w)
     def install_agent():
-        from schedule import install
+        from hb_engine.schedule import install
         try:
             if not messagebox.askyesno('Install scheduler','Enable local background synchronization? Finish any older manual import first. Enabled accounts may sync immediately.',parent=w):return
             install(root);refresh()
         except Exception as e:messagebox.showerror('Install scheduler',str(e),parent=w)
     def remove_agent():
-        from schedule import uninstall
+        from hb_engine.schedule import uninstall
         try:
             if not messagebox.askyesno('Remove scheduler','Stop and remove the background service? A running sync may be interrupted. The archive and account profiles will be retained.',parent=w):return
             uninstall(root);refresh()

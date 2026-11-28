@@ -1,18 +1,61 @@
-# Local scheduled synchronization (macOS)
+# Local scheduled synchronization
 
-HB Dispatch's synchronization center maintains an existing archive without
-a hosted scheduler or a permanent terminal window. It uses a
-per-user macOS LaunchAgent, the login Keychain and the existing read-only
-IMAP importer. Nothing is uploaded except the standard IMAP authentication
-and requests sent to your selected mail provider.
+HB Continuum's synchronization center maintains an existing archive without
+a hosted scheduler or a permanent terminal window. It uses a per-user
+platform scheduler, the operating system credential store and the existing
+read-only IMAP importer. Nothing is uploaded except the standard IMAP
+authentication and requests sent to your selected mail provider.
+
+| Platform | Scheduler | Credential store |
+|---|---|---|
+| macOS | launchd agent (`LaunchAgents/*.plist`) | login Keychain (`security`) |
+| Linux | `systemd --user` service + timer | SecretService via `keyring`; Fernet-encrypted file fallback |
+| Windows | Task Scheduler (`schtasks`) | Windows Credential Manager via `keyring` |
+| other | not supported (clear error) | `keyring`, else encrypted file |
+
+CI exercises the scheduler implementations on Ubuntu, macOS and Windows.
+Only the native macOS Apple Silicon desktop application is qualified as a
+packaged desktop target; the Linux and Windows entries describe portable
+engine paths, not a verified packaged application.
+
+Generated unit files, task definitions and profiles never contain a password.
+Only the synchronization command line is written; credentials are resolved
+from the store when a job runs.
+
+## Platform notes and limitations
+
+- **Linux** requires a running systemd user session. Install from the account
+  that owns that session; overriding `HOME` or `XDG_CONFIG_HOME` desynchronizes
+  the unit path from the user manager. Headless servers need
+  `loginctl enable-linger $USER`. Units live in
+  `$XDG_CONFIG_HOME/systemd/user` (default `~/.config/systemd/user`).
+- **Encrypted-file fallback** stores a Fernet key and ciphertext as `0600`
+  files inside the archive directory. It protects against casual inspection
+  and accidental copying, not against an attacker who can already read your
+  home directory. Prefer `keyring` (install with `pip install keyring`).
+- **Windows** tasks run as the logged-in user; `schtasks` definitions are
+  visible to other administrators. `keyring` uses Credential Manager.
+- **Locking** between overlapping runs is POSIX-only (`sync_lock.py`); Windows
+  relies on the single task instance rather than an archive lock.
+
+## Verifying a platform
+
+`scripts/scheduler_smoke.py` installs a real entry, checks its status and
+the generated files, then removes it. It exits 0 when verified or when the
+environment cannot host a scheduler (printing why), and 1 on a genuine
+defect. CI runs it on Ubuntu, macOS and Windows.
+
+```sh
+python3 scripts/scheduler_smoke.py
+```
 
 ## First-time setup
 
-1. Finish any import started with an older version of HB Dispatch. This
+1. Finish any import started with an older version of HB Continuum (formerly HB Dispatch). This
    matters because older versions did not participate in the synchronization lock.
-2. Start the correspondence workstation with
-   `python3 dispatch.py --archive ~/HB_Mail_Archive gui` and select
-   **Synchronization center**, or open it directly with
+2. Open the archive in the native desktop application and select **Sync**.
+   The legacy Tk interface calls this **Synchronization center**; it can also
+   be opened directly with
    `python3 schedule.py --archive ~/HB_Mail_Archive gui`.
 3. Create a profile for each provider. Enter its IMAP server, exact username
    (matching your prior manual import), and mailbox names separated by semicolons.
@@ -21,7 +64,7 @@ and requests sent to your selected mail provider.
 4. Select **Keychain setup**. In macOS Keychain Access, choose the login
    keychain and create a generic password item with the exact service and account
    shown. Use the provider's app-specific password where applicable.
-   The name is `HB Dispatch IMAP <lowercase-host>`; the account is your exact
+   The name is `HB Continuum IMAP <lowercase-host>`; the account is your exact
    IMAP username. Never put passwords in command arguments or profile JSON.
 5. Select the profile and **Run now** to test the credentials. macOS may
    ask permission for the security utility to read that specific Keychain item.
@@ -33,6 +76,22 @@ and requests sent to your selected mail provider.
    per minute, and runs accounts sequentially. Intervals and daily times
    are editable without reinstalling. Pause/resume affects future runs,
    not a currently running transfer.
+
+## Command-line installation
+
+```sh
+python3 dispatch.py --archive ~/HB_Mail_Archive schedule add work imap.example.invalid user@example.invalid --folder INBOX --minutes 30
+python3 dispatch.py --archive ~/HB_Mail_Archive schedule credential set work
+python3 dispatch.py --archive ~/HB_Mail_Archive schedule install --account work
+python3 dispatch.py --archive ~/HB_Mail_Archive schedule status
+python3 dispatch.py --archive ~/HB_Mail_Archive schedule uninstall
+```
+
+`install` accepts `--interval minutes --every N` or `--interval daily --at HH:MM`.
+With no interval given it adopts the account's profile schedule, and otherwise
+defaults to daily. `schedule credential set` prompts for the password and
+writes it to the platform store; it is never echoed or stored in a file on
+macOS or when `keyring` is available.
 
 ## Typical profile values
 
@@ -87,8 +146,9 @@ credentials, original EML files, or database rows.
   completed-folder imports during the most recent attempt, not a full
   reconciliation. Exceptions are recorded by type, without raw provider responses.
 - Keep the repository checkout and Python executable at their installed
-  paths; moving them requires removing and reinstalling the LaunchAgent.
-  Background scheduling requires macOS and a logged-in user session.
+  paths; moving them requires reinstalling the scheduler entry.
+  Background scheduling requires a logged-in user session (macOS, Linux) or
+  an available Task Scheduler service (Windows).
 - The schedule is not a backup. Back up the archive to independent,
   encrypted storage when synchronization is stopped and test restoration.
   Use the existing verify command for raw SHA-256 verification.

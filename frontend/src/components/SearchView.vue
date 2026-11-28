@@ -1,0 +1,675 @@
+<script setup lang="ts">
+import { computed, nextTick, onMounted, ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+import { useEngineJob } from "../composables/useEngineJob";
+
+const props = defineProps<{ onError: (message: string) => void; onChanged: () => void }>();
+
+interface ResultItem {
+  source: string;
+  id: string;
+  kind: string;
+  title: string;
+  actor: string;
+  date: string;
+  snippet: string;
+}
+
+const query = ref("");
+const queryInput = ref<HTMLInputElement | null>(null);
+const results = ref<ResultItem[]>([]);
+const total = ref(0);
+const searchJob = useEngineJob();
+const busy = searchJob.busy;
+const page = ref(1);
+const pageSize = 50;
+const hasMore = ref(false);
+const fromDate = ref("");
+const toDate = ref("");
+const sourceEmail = ref(true);
+const sourceFacebook = ref(true);
+const sourceDocument = ref(true);
+const sendersText = ref("");
+const kind = ref("");
+const tagsText = ref("");
+const totalIsExact = ref(true);
+const validationError = ref("");
+const humanQuery = computed(() => {
+  const parts: string[] = [];
+  if (query.value.trim()) parts.push(`text "${query.value.trim()}"`);
+  const chosen = [
+    sourceEmail.value ? "email" : null,
+    sourceFacebook.value ? "Facebook" : null,
+    sourceDocument.value ? "documents" : null,
+  ].filter((value): value is string => value !== null);
+  parts.push(chosen.length ? `in ${chosen.join(" and ")}` : "no source selected");
+  if (sendersText.value.trim()) parts.push(`sender/actor ${sendersText.value.trim()}`);
+  if (kind.value) parts.push(`kind ${kind.value}`);
+  if (tagsText.value.trim()) parts.push(`tagged ${tagsText.value.trim()}`);
+  if (fromDate.value || toDate.value) {
+    parts.push(`dated ${fromDate.value || "..."} to ${toDate.value || "..."}`);
+  }
+  return parts.join(" · ");
+});
+const collections = ref<{ id: number; workspace: string; name: string }[]>([]);
+const collectionId = ref<number | null>(null);
+const collectionNote = ref("");
+
+async function loadCollections() {
+  try {
+    const response = (await invoke("collections_list")) as {
+      collections: { id: number; workspace: string; name: string }[];
+    };
+    collections.value = response.collections;
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
+async function addSelectedToCollection() {
+  notice.value = "";
+  if (!collectionId.value) {
+    notice.value = "Choose a collection first.";
+    return;
+  }
+  if (!selected.value.length) {
+    notice.value = "Select one or more results first.";
+    return;
+  }
+  const targets = results.value.filter((item) => selected.value.includes(item.id));
+  try {
+    for (const item of targets) {
+      await invoke("collection_add", {
+        collectionId: collectionId.value,
+        itemType: item.source === "email" ? "email" : "catalog",
+        itemId: item.id,
+        note: collectionNote.value || null,
+      });
+    }
+    notice.value = `Added ${targets.length} record(s) to the selected collection.`;
+    collectionNote.value = "";
+    props.onChanged();
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
+async function addDetailToCollection() {
+  detailNotice.value = "";
+  if (!collectionId.value) {
+    detailNotice.value = "Choose a collection first.";
+    return;
+  }
+  const itemType = detail.value?.record_id ? "catalog" : "email";
+  const itemId = itemType === "catalog" ? detail.value?.record_id : detail.value?.hash;
+  if (!itemId) {
+    detailNotice.value = "Open a message or record first.";
+    return;
+  }
+  try {
+    await invoke("collection_add", {
+      collectionId: collectionId.value,
+      itemType,
+      itemId,
+      note: collectionNote.value || null,
+    });
+    detailNotice.value = "Added the open item to the selected collection.";
+    collectionNote.value = "";
+    props.onChanged();
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+const detail = ref<any>(null);
+const detailPanel = ref<HTMLElement | null>(null);
+const threadView = ref<any[] | null>(null);
+const threadPanel = ref<HTMLElement | null>(null);
+const selected = ref<string[]>([]);
+const tagName = ref("");
+const notice = ref("");
+const detailNotice = ref("");
+
+function splitList(value: string): string[] | undefined {
+  const items = value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length ? items : undefined;
+}
+
+async function runSearch(target = 1) {
+  notice.value = "";
+  const sources = [
+    sourceEmail.value ? "email" : null,
+    sourceFacebook.value ? "facebook" : null,
+    sourceDocument.value ? "document" : null,
+  ].filter((value): value is string => value !== null);
+  if (!sources.length) {
+    notice.value = "Choose at least one source.";
+    return;
+  }
+  validationError.value = "";
+  try {
+    const validation = (await invoke("search_validate", {
+      query: query.value,
+    })) as { valid: boolean; message: string };
+    if (!validation.valid) {
+      validationError.value = validation.message;
+      return;
+    }
+  } catch (e) {
+    props.onError(String(e));
+    return;
+  }
+  const after = fromDate.value
+    ? Math.floor(new Date(`${fromDate.value}T00:00:00Z`).getTime() / 1000)
+    : undefined;
+  const before = toDate.value
+    ? Math.floor(new Date(`${toDate.value}T00:00:00Z`).getTime() / 1000) + 86400
+    : undefined;
+  try {
+    const outcome = await searchJob.start("search_job", {
+      query: query.value,
+      sources,
+      page: target,
+      pageSize,
+      after,
+      before,
+      senders: splitList(sendersText.value),
+      kinds: kind.value ? [kind.value] : undefined,
+      tags: splitList(tagsText.value),
+    });
+    if (outcome.event === "job_error") {
+      props.onError(String(outcome.message || "Search failed"));
+      return;
+    }
+    const response = outcome.result as {
+      items: ResultItem[];
+      total: number;
+      has_more: boolean;
+      total_is_exact: boolean;
+      cancelled: boolean;
+    };
+    if (response.cancelled) {
+      notice.value = "Search cancelled.";
+      return;
+    }
+    results.value = response.items;
+    total.value = response.total;
+    hasMore.value = response.has_more;
+    totalIsExact.value = response.total_is_exact;
+    page.value = target;
+    selected.value = [];
+    detail.value = null;
+    detailNotice.value = "";
+    threadView.value = null;
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
+onMounted(() => {
+  void loadCollections();
+  void nextTick(() => queryInput.value?.focus());
+});
+
+function toggle(id: string) {
+  const i = selected.value.indexOf(id);
+  if (i >= 0) selected.value.splice(i, 1);
+  else selected.value.push(id);
+}
+
+async function openMessage(id: string) {
+  detailNotice.value = "";
+  try {
+    detail.value = await invoke("message", { hash: id });
+    threadView.value = null;
+    await nextTick();
+    detailPanel.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
+async function openRecord(id: string) {
+  detailNotice.value = "";
+  try {
+    detail.value = await invoke("record", { recordId: id });
+    threadView.value = null;
+    await nextTick();
+    detailPanel.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
+async function openThread(id: string) {
+  detailNotice.value = "";
+  try {
+    const response = (await invoke("thread", { hash: id })) as { messages: any[] };
+    threadView.value = response.messages;
+    detail.value = null;
+    await nextTick();
+    threadPanel.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
+async function tagSelected() {
+  notice.value = "";
+  const hashes = selected.value.filter((id) =>
+    results.value.some((r) => r.id === id && r.source === "email"),
+  );
+  if (!hashes.length) {
+    notice.value = "Select at least one email message to tag.";
+    return;
+  }
+  const tag = tagName.value.trim();
+  if (!tag) {
+    notice.value = "Enter a tag name.";
+    return;
+  }
+  try {
+    await invoke("research_tag", { hashes, tag });
+    notice.value = `Tagged ${hashes.length} message(s) as “${tag}”.`;
+    props.onChanged();
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+
+async function exportSelected() {
+  notice.value = "";
+  const hashes = selected.value;
+  if (!hashes.length) {
+    notice.value = "Select one or more messages to export.";
+    return;
+  }
+  try {
+    const parent = await open({
+      directory: true,
+      multiple: false,
+      title: "Choose a parent folder for the evidence package",
+    });
+    if (!parent || Array.isArray(parent)) return;
+    const stamp = new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15) + "Z";
+    const destination = `${parent}/evidence-${stamp}`;
+    const response = (await invoke("export_evidence", { hashes, destination })) as {
+      messages: number;
+    };
+    notice.value = `Exported ${response.messages} message(s) to ${destination}`;
+    props.onChanged();
+  } catch (e) {
+    props.onError(String(e));
+  }
+}
+</script>
+
+<template>
+  <section>
+    <form class="row" @submit.prevent="runSearch(1)">
+      <input
+        ref="queryInput"
+        class="grow"
+        v-model="query"
+        placeholder="Search archived email and Facebook records"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <label class="range">
+        From
+        <input v-model="fromDate" type="date" />
+      </label>
+      <label class="range">
+        To
+        <input v-model="toDate" type="date" />
+      </label>
+      <button type="submit" :disabled="busy">{{ busy ? "Searching…" : "Search" }}</button>
+      <button v-if="busy" type="button" @click="searchJob.cancel()">Cancel</button>
+    </form>
+
+    <div class="row filters">
+      <label class="check"><input v-model="sourceEmail" type="checkbox" /> Email</label>
+      <label class="check"><input v-model="sourceFacebook" type="checkbox" /> Facebook</label>
+      <label class="check"><input v-model="sourceDocument" type="checkbox" /> Documents</label>
+      <label class="range">
+        Sender/actor
+        <input v-model="sendersText" placeholder="exact, comma-separated" />
+      </label>
+      <label class="range">
+        Kind
+        <select v-model="kind">
+          <option value="">Any kind</option>
+          <option value="message">Message</option>
+          <option value="post">Post</option>
+          <option value="comment">Comment</option>
+          <option value="event">Event</option>
+          <option value="media">Media</option>
+          <option value="reaction">Reaction</option>
+        </select>
+      </label>
+      <label class="range">
+        Tags
+        <input v-model="tagsText" placeholder="any of, comma-separated" />
+      </label>
+    </div>
+
+    <p class="query-summary">{{ humanQuery }}</p>
+    <p v-if="validationError" class="error" role="alert">{{ validationError }}</p>
+    <details class="syntax">
+      <summary>Query syntax</summary>
+      <ul>
+        <li>Quotes match an exact phrase: <code>"silver invoice"</code>.</li>
+        <li>A trailing asterisk matches a prefix: <code>invoice*</code>.</li>
+        <li>Uppercase <code>AND</code>, <code>OR</code> and <code>NOT</code> combine terms.</li>
+        <li>Parentheses group expressions; <code>NEAR(a b, 5)</code> finds nearby terms.</li>
+        <li>Filters above are applied in addition to the text expression.</li>
+      </ul>
+    </details>
+
+    <p v-if="total !== null && query" class="count">
+      {{ total }} results<span v-if="!totalIsExact"> (at least)</span> · page {{ page }} ·
+      {{ selected.length }} selected
+    </p>
+    <div v-if="query && (page > 1 || hasMore)" class="row">
+      <button :disabled="busy || page <= 1" @click="runSearch(page - 1)">Previous</button>
+      <button :disabled="busy || !hasMore" @click="runSearch(page + 1)">Next</button>
+    </div>
+    <p v-if="notice" class="notice">{{ notice }}</p>
+
+    <div v-if="results.length" class="row">
+      <input v-model="tagName" placeholder="Tag name" />
+      <button @click="tagSelected">Tag selected</button>
+      <button @click="exportSelected">Export selected</button>
+    </div>
+    <p v-if="results.length" class="export-warning">Exported evidence is plaintext.</p>
+
+    <div v-if="results.length" class="row">
+      <select v-model="collectionId">
+        <option :value="null">Choose collection…</option>
+        <option v-for="collection in collections" :key="collection.id" :value="collection.id">
+          {{ collection.workspace }} / {{ collection.name }}
+        </option>
+      </select>
+      <input v-model="collectionNote" placeholder="Collection note (optional)" maxlength="2000" />
+      <button :disabled="!collectionId || !selected.length" @click="addSelectedToCollection">
+        Add selected to collection
+      </button>
+    </div>
+
+    <ul class="results">
+      <li v-for="item in results" :key="item.source + item.id">
+        <input type="checkbox" :checked="selected.includes(item.id)" @change="toggle(item.id)" />
+        <span class="badge">{{ item.source }}</span>
+        <strong>{{ item.title || item.kind }}</strong>
+        <span class="meta">{{ item.actor }} {{ item.date }}</span>
+        <p class="snippet">{{ item.snippet }}</p>
+        <p class="row-actions">
+          <button v-if="item.source === 'email'" @click="openMessage(item.id)">Open</button>
+          <button v-if="item.source === 'email'" @click="openThread(item.id)">Thread</button>
+          <button v-else @click="openRecord(item.id)">Open</button>
+        </p>
+      </li>
+    </ul>
+
+    <section v-if="detail" ref="detailPanel" class="detail">
+      <h2>{{ detail.subject || detail.source_key }}</h2>
+      <p class="meta">{{ detail.sender || detail.actor }} {{ detail.date || detail.occurred_at }}</p>
+      <p v-if="detail.updated_at" class="meta">
+        Updated {{ detail.updated_at }}
+        <span v-if="detail.revision_kind"> · {{ detail.revision_kind }}</span>
+        <span v-if="detail.revision_index"> · version {{ detail.revision_index }}</span>
+      </p>
+      <div class="row">
+        <select v-model="collectionId">
+          <option :value="null">Choose collection…</option>
+          <option v-for="collection in collections" :key="collection.id" :value="collection.id">
+            {{ collection.workspace }} / {{ collection.name }}
+          </option>
+        </select>
+        <input v-model="collectionNote" placeholder="Collection note (optional)" maxlength="2000" />
+        <button :disabled="!collectionId" @click="addDetailToCollection">
+          Add this item to collection
+        </button>
+      </div>
+      <p v-if="detailNotice" class="notice">{{ detailNotice }}</p>
+      <div v-if="detail.attachments?.length" class="attachments">
+        <h3>{{ detail.source_type === "document" ? "Page references" : "Attachments (stored metadata)" }}</h3>
+        <ul>
+          <li v-for="(a, i) in detail.attachments" :key="i">
+            <span class="attachment-kind">{{ a.kind || a.mime || "file" }}</span>
+            {{ a.filename || a.name || a.title || a.uri || a.url || a.link }}
+            <span v-if="a.page"> · page {{ a.page }}</span>
+            <span v-if="a.mime"> · {{ a.mime }}</span>
+            <span v-if="a.characters"> · {{ a.characters }} indexed characters</span>
+            <span v-if="a.created_at"> · {{ a.created_at }}</span>
+          </li>
+        </ul>
+      </div>
+      <pre class="body">{{ detail.body }}</pre>
+      <div v-if="detail.revisions?.length > 1" class="revisions">
+        <h3>Stored versions ({{ detail.revisions.length }})</h3>
+        <ul>
+          <li v-for="v in detail.revisions" :key="v.record_id">
+            <button
+              v-if="!v.current"
+              type="button"
+              class="version-link"
+              @click="openRecord(v.record_id)"
+            >
+              Version {{ v.revision_index ?? "?" }}
+            </button>
+            <span v-else class="current-version">Current · version {{ v.revision_index ?? "?" }}</span>
+            <span class="version-meta">
+              {{ v.updated_at || v.occurred_at || "undated" }}
+              <template v-if="v.actor"> · {{ v.actor }}</template>
+            </span>
+            <p class="version-body">{{ v.body }}</p>
+          </li>
+        </ul>
+      </div>
+      <details v-if="detail.original_json">
+        <summary>Original record JSON</summary>
+        <pre class="json">{{ detail.original_json }}</pre>
+      </details>
+    </section>
+
+    <section v-if="threadView" ref="threadPanel" class="detail">
+      <h2>Conversation</h2>
+      <div v-for="m in threadView" :key="m.hash" class="thread-message">
+        <p class="meta">{{ m.sender }} {{ m.date }}</p>
+        <p class="title">{{ m.subject }}</p>
+        <pre class="body">{{ m.body }}</pre>
+      </div>
+    </section>
+  </section>
+</template>
+
+<style scoped>
+.row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+.grow {
+  flex: 1;
+}
+.range {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--hb-text-secondary);
+}
+.range input,
+.range select {
+  padding: 4px 6px;
+  border: 1px solid var(--hb-border);
+  background: var(--hb-workspace);
+  border-radius: var(--hb-radius);
+}
+.filters {
+  align-items: center;
+  gap: 14px;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--hb-text-secondary);
+}
+.query-summary {
+  font-size: 12px;
+  color: var(--hb-text-secondary);
+  margin: 0 0 8px;
+}
+.error {
+  color: var(--hb-error-text);
+  font-size: 12px;
+  margin: 0 0 8px;
+}
+.syntax {
+  font-size: 12px;
+  color: var(--hb-text-secondary);
+  margin-bottom: 8px;
+}
+.syntax summary {
+  cursor: pointer;
+}
+.syntax ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.syntax code {
+  font-family: var(--hb-font-mono);
+}
+input {
+  padding: 8px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+input:not([type="checkbox"]) {
+  width: 100%;
+}
+button {
+  padding: 8px 16px;
+}
+.count,
+.export-warning {
+  color: var(--hb-warning-text);
+  font-size: 13px;
+}
+.notice {
+  color: var(--hb-text-secondary);
+}
+.results {
+  list-style: none;
+  padding: 0;
+}
+.results li {
+  border-top: 1px solid var(--hb-border);
+  padding: 12px 0;
+}
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  margin: 0 8px;
+  border-radius: 999px;
+  background: var(--hb-selection);
+  font-size: 12px;
+}
+.meta {
+  color: var(--hb-text-secondary);
+  margin-left: 8px;
+  font-size: 12px;
+}
+.snippet {
+  margin: 6px 0 0;
+  color: var(--hb-text);
+  white-space: pre-wrap;
+}
+.row-actions {
+  margin: 6px 0 0;
+}
+.detail {
+  border-top: 2px solid var(--hb-border-strong);
+  margin-top: 20px;
+  padding-top: 12px;
+}
+.attachments {
+  margin-bottom: 12px;
+}
+.attachments ul {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+.revisions {
+  margin: 12px 0;
+}
+.revisions h3 {
+  font-size: 13px;
+  margin: 0 0 6px;
+}
+.revisions ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.revisions li {
+  border-top: 1px solid var(--hb-border);
+  padding: 6px 0;
+}
+.version-link {
+  padding: 2px 8px;
+  border: 1px solid var(--hb-border-strong);
+  border-radius: var(--hb-radius);
+  background: var(--hb-toolbar);
+  color: var(--hb-text);
+  cursor: pointer;
+  margin-right: 6px;
+}
+.current-version {
+  font-weight: 600;
+  margin-right: 6px;
+}
+.version-meta {
+  font-size: 11px;
+  color: var(--hb-text-secondary);
+}
+.version-body {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--hb-text-secondary);
+  white-space: pre-wrap;
+}
+.attachment-kind {
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--hb-text-secondary);
+  margin-right: 4px;
+}
+.body {
+  white-space: pre-wrap;
+  font-family: system-ui, sans-serif;
+  color: var(--hb-text);
+  background: var(--hb-panel-alt);
+  padding: 12px;
+  border-radius: 4px;
+}
+.json {
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+.thread-message {
+  border-top: 1px solid var(--hb-border);
+  padding: 10px 0;
+}
+.title {
+  font-weight: 600;
+}
+</style>

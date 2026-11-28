@@ -1,10 +1,10 @@
-# HB Dispatch: Take ownership of your email history
+# HB Continuum: Take ownership of your email history
 
 ## 1. Why an archive is different from an inbox
 
 Imagine changing internet providers, retiring an old domain, reaching a mailbox quota, or needing to find an agreement from five years ago. Your mail provider may be excellent at delivering today's messages, yet your historical correspondence remains dependent on that provider.
 
-HB Dispatch separates **communication** from **record keeping**. Continue using your favorite mail client to send and receive. Use Dispatch to build a searchable, independent collection of original messages on storage you control.
+HB Continuum separates **communication** from **record keeping**. Continue using your favorite mail client to send and receive. Use Dispatch to build a searchable, independent collection of original messages on storage you control.
 
 A useful mental model:
 
@@ -13,7 +13,7 @@ Mail providers and exported EML files
              |
        read-only retrieval / import
              |
-    HB Dispatch local archive
+    HB Continuum local archive
        |                 |
     original EML      SQLite search index
        |
@@ -24,18 +24,18 @@ This is not a replacement mail client, cloud backup service, or automated mailbo
 
 ## 2. Start with a disposable practice archive
 
-Install Python 3.12 or newer with SQLite FTS5 support. Tkinter is optional for desktop browsing; some Linux distributions package it separately. From a terminal:
+Install Python 3.12 or newer with SQLite FTS5 support. The native Tauri desktop shell is the primary interface, with macOS Apple Silicon as the qualified desktop target. Tkinter is only used by the legacy workstation; some Linux distributions package it separately. From a terminal:
 
 ```sh
-git clone https://github.com/James-HoneyBadger/HB_Dispatch.git
-cd HB_Dispatch
+git clone https://github.com/James-HoneyBadger/HB_Continuum.git
+cd HB_Continuum
 python3 --version
 python3 -c "import sqlite3; c=sqlite3.connect(':memory:'); c.execute('CREATE VIRTUAL TABLE t USING fts5(body)'); print('FTS5 available')"
 python3 dispatch.py --version
 python3 -m unittest discover -s tests -v
 ```
 
-Examples below use a POSIX shell (Linux/macOS); on Windows use your Python launcher and equivalent paths. Main is the public beta and the source of the [v0.3.0 release](https://github.com/James-HoneyBadger/HB_Dispatch/releases/tag/v0.3.0); anything on a public development branch beyond that tag is an alpha experiment that is not part of it.
+Examples below use a POSIX shell (Linux/macOS). On Windows use your Python launcher and equivalent paths; packaged desktop builds for Windows and Linux are not qualified. Published releases are listed on GitHub. Development branches beyond a published tag are alpha work and are not part of that release.
 
 Create a synthetic email outside the repository using a plain-text editor, saving it as `~/dispatch-practice.eml` (not .txt):
 
@@ -64,6 +64,19 @@ The import prints a 64-character SHA-256 hash. Search returns JSON rows containi
 
 The archive directory contains `raw/<hash>.eml` and `archive.sqlite3`. The original message is retained as received or imported, including headers and MIME attachments. The search index is a derived representation, not a substitute for the original. Imported files do not automatically acquire IMAP account/folder provenance.
 
+## 2.1 Open the desktop application
+
+The desktop application does not silently create a hidden archive. On first launch it asks you to choose a folder:
+
+1. Choose an empty folder and select **Create archive here**, or choose an existing HB Continuum archive.
+2. If the archive is encrypted, the unlock panel appears. Enter the archive password; it stays in memory for that session and can be cleared with **Lock**.
+3. Use **Open folder…** to browse with the native folder picker, or type a path and press Return.
+4. Import EML files or folders from the **Import** workspace. Folder imports search subfolders recursively; Document, Facebook and EML imports are separate, clearly labelled actions.
+
+New desktop-created archives are standard unencrypted archives. To create an encrypted archive, run `python3 dispatch.py --archive PATH init-encrypted` before opening the folder in the desktop application.
+
+To build the desktop shell from source on macOS, follow [Packaging](PACKAGING.md). No signed or notarized installer is currently provided.
+
 ## 3. Find things without opening a webmail account
 
 ```sh
@@ -75,7 +88,7 @@ python3 dispatch.py --archive ~/dispatch-practice search 'sender:accounts'
 python3 dispatch.py --archive ~/dispatch-practice gui
 ```
 
-Search uses SQLite FTS5 over subject, sender and plain-text body. Search returns up to 100 matches; it is not an exhaustive report. HTML-only messages may lack searchable body text; attachment contents and all headers are not indexed. The GUI lets you import EML files, search and select messages to read their plain-text content. It does not execute HTML or open attachments.
+Search uses SQLite FTS5 over subject, sender, the body and attachment metadata. Search returns up to 100 matches; it is not an exhaustive report. HTML bodies are reduced to offline text and attachment names, MIME types and text payloads are indexed; PDF, Office and image contents are not converted, and headers other than subject and sender are not indexed. The GUI lets you import EML files, search and select messages to read their plain-text content. It does not execute HTML or open attachments.
 
 ## 4. Connect a real mailbox, cautiously
 
@@ -111,7 +124,7 @@ python3 dispatch.py --archive ~/MailArchive search 'renewal OR cancellation'
 
 These are fictional settings. Each run prompts for that account's credentials. Origins retain host/user, folder, UIDVALIDITY and UID; identical raw message bytes share one hash and can have multiple origins. Forwarding, added headers or message changes may produce a different hash even when the human-visible text is identical. Do not mistake byte-level deduplication for semantic deduplication.
 
-This manual workflow is available now. Saved account profiles, automatic scheduling, OAuth, credential vault integration and unified account/folder management are future goals. Use separate archives for different people or security boundaries; a unified archive is not access-controlled per mailbox.
+This manual workflow is available now. Saved account profiles, automatic scheduling and platform credential stores are implemented for the portable engine; see [Scheduled synchronization](SCHEDULED_SYNC.md). OAuth and unified account/folder discovery remain future work. Use separate archives for different people or security boundaries; a unified archive is not access-controlled per mailbox.
 
 ## 6. Real-world research: reconstruct a disputed invoice
 
