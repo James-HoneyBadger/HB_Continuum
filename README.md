@@ -4,6 +4,14 @@
 
 HB Continuum is in active real-world use. It has moved beyond a proof of concept: live mailbox retrieval, searchable local preservation and source-backed historical research have been demonstrated with more than 31,000 unique archived messages across two mail providers. Development continues, but the core archival workflow is working software today.
 
+> **Current milestone: [v0.4.0-beta](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.4.0-beta)** — source-only beta. [Release history](https://github.com/James-HoneyBadger/HB_Continuum/releases) · [Development source](https://github.com/James-HoneyBadger/HB_Continuum/tree/develop/continuum-integration) · [Qualification and known limitations](docs/engineering/IMPLEMENTATION_STATUS.md)
+
+## At a glance
+
+Continuum has grown from an email preservation utility into a private historical research workstation. The v0.4 beta supports email and exported Facebook records, unified and advanced Boolean search, historical timelines, evidence collections, a revision-tracked journal, relationship exploration, reports, and verified archival recovery. Local Ollama message and conversation summarization is optional.
+
+**Next milestone — v0.5, the Intelligence Update (planned):** scalable search beyond the current candidate ceiling, evidence-grounded conversational research with inspectable source references, additional document ingestion, and optional Honey Badger application interchange. These are development objectives, not released capabilities.
+
 ## Independent and interoperable
 
 **Independent by design. Interoperable by choice. Intelligent when desired.**
@@ -16,13 +24,13 @@ Each application works independently; optional integrations remain under user co
 
 Part of the Honey Badger Universe, HB Continuum is designed around a broader vision than email archiving: preserve and explore historical information across otherwise disconnected sources, on infrastructure you control.
 
-The email ingestion engine retains the name **Dispatch**. Email and user-obtained Facebook JSON exports are implemented sources today: the source-independent catalog stores Facebook posts, comments, messages, events, media and reactions with provenance, revision history and searchable attachment metadata, and unified search spans email and catalog records. Future adapters may add documents, photographs, journals, software development histories and other structured or unstructured records.
+The email ingestion engine retains the name **Dispatch**. Email and user-obtained Facebook JSON exports are implemented sources today: the source-independent catalog stores Facebook posts, comments, messages, events, media and reactions with provenance, revision history and searchable attachment metadata, and unified search spans email and catalog records. Future adapters may add external documents, photographs, imported journals, software development histories and other structured or unstructured records.
 
-The architecture preserves original source material and provenance, with source-specific ingestion and a unified searchable index. Cross-source timelines, genealogy, personal and organizational archives and broader evidence organization remain development goals rather than implemented capabilities.
+The architecture preserves original source material and provenance, with source-specific ingestion and a unified searchable index. Cross-source timelines, evidence collections and research workflows are implemented; broader genealogy, organizational archives and additional source adapters remain development goals.
 
 ### Second Me
 
-An optional historical knowledge interface could help people rediscover their documented past using their own records and words. The goal is retrieval and evidence-backed reconstruction, not impersonation or invention. AI is optional and interchangeable; local models may enable offline analysis, while external AI services may receive selected records when explicitly authorized.
+An optional historical knowledge interface could help people rediscover their documented past using their own records and words. The goal is retrieval and evidence-backed reconstruction, not impersonation or invention. AI is optional and interchangeable; local Ollama summarization is implemented. Broader evidence-grounded conversational research remains planned; external analysis, if chosen by the user, is separate from the built-in local inference service.
 
 Local-first storage, open formats, user control, no mandatory cloud services, no telemetry, and no subscriptions remain foundational principles.
 
@@ -176,8 +184,9 @@ python3 dispatch.py summarize run --all --type thread
 **Unified search** — search archived email and imported records together;
 snippets are excerpts of the stored text, never generated. The desktop search
 adds source, exact sender/actor, record-kind, tag and date-range filters.
-Totals are exact counts unless a tag filter is applied, and a listing limit is
-reported explicitly rather than disguised as a total. Malformed query
+Totals are exact counts unless a tag filter is applied. In the v0.4 beta,
+unified search pages over at most 5,000 fused candidates per query; the
+interface reports truncation rather than presenting this cap as the total. Malformed query
 expressions are rejected with an explanation and syntax help instead of
 silently returning no matches. The Advanced workspace builds nested boolean
 groups over text, sender/actor, record kind, source, date and tag rules. Each
@@ -204,7 +213,7 @@ Research; Collections, including adding the open message from the Timeline or
 the open record from the Search reader; Journal with revision history; archive
 Reports; Relationships; synchronization; Health with resumable repair jobs;
 Backup with schema status and validated backup, verification and restore; and
-Preferences. From a checkout:
+Preferences. From a checkout of the development branch or v0.4.0-beta tag:
 
 ```sh
 cd frontend && npm install
