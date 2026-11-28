@@ -18,7 +18,8 @@ extractors as standalone documents. Their text is added to the message search
 index without copying the attachment. If the optional package is absent or the
 file cannot be read, the message still imports and the attachment's name and
 MIME type remain searchable. Run `dispatch reindex` after installing an
-optional extractor to retry messages imported by an earlier build.
+optional extractor: reindex retries PDF/DOCX attachments that still have no
+indexed text and were stored by an earlier build.
 
 ## Supported formats
 
@@ -55,7 +56,7 @@ implemented.
 - **Search:** documents participate in unified search (`document` source),
   the Intelligence workspace, collections, citations and the catalog
   source-independent search. The advanced Boolean builder's catalog scope
-  includes documents.
+  includes documents and offers a documents-only source scope.
 - **Source management:** the `document` catalog source can be verified,
   disabled or removed through the existing Sources workflow. Removal deletes
   catalog records and source references, never the original files.
@@ -77,7 +78,9 @@ preview and cancellable background import, with per-file progress.
 - Document pages are searchable as one record; the UI does not yet jump to a
   PDF page.
 - Layout, images, formatting and embedded objects are not preserved.
-- PDF/DOCX extraction was not exercised against a live optional package in the
-  automated suite; only the unavailable/invalid-file paths are covered.
-- Documents are not yet shown in the email-only Timeline view.
+- PDF/DOCX extraction is mocked in the automated suite. A qualification run
+  against `pypdf` 7.2.0 and `python-docx` 1.2.0 exercised live document and
+  email-attachment extraction; those packages are not required by CI.
+- The merged Timeline is limited to the first 5,000 entries; sender filters
+  remain email-only.
 - Exact-byte deduplication does not merge semantically similar documents.

@@ -958,9 +958,10 @@ and broader catalog source registration.
   duplicate skipping, revisions, extraction failures, import history,
   document-aware unified and advanced search, grounded retrieval, and missing
   paths.
-- Verified: 319 tests, 317 passed, 2 skipped, zero failures on Python 3.12.0
-  and 3.13.7; `mypy==2.4.1` clean on 25 files; frontend type-check and
-  production build pass; `cargo check` and `cargo test` pass.
+- At that milestone: 319 tests, 317 passed, 2 skipped, zero failures on
+  Python 3.12.0 and 3.13.7; `mypy==2.4.1` clean on 25 files; frontend
+  type-check and production build passed; `cargo check` and `cargo test`
+  passed.
 
 ## v0.5 Intelligence Update — Phase IV: email attachment text (2026-11-28)
 
@@ -994,3 +995,40 @@ and was not exercised against a live package in automated tests; OCR, page
 navigation, layout/image preservation and semantic deduplication remain
 unimplemented. Next: source-registration interfaces and Honey Badger
 interchange (Phase V).
+
+
+## Release qualification: v0.5.0-beta candidate (2026-11-28)
+
+- Current manifests, the engine CLI and the packaged sidecar report
+  `0.5.0-beta`. No v0.5 release or tag was created during qualification.
+- Verified: scalable unified search (including pages beyond the former
+  5,000-candidate ceiling), grounded research retrieval and conversation
+  storage, document ingestion, PDF/DOCX email-attachment text, and merged
+  document/email timelines.
+- Defects corrected during qualification: the revision list now marks the
+  latest stored version as current rather than the version being viewed;
+  document preview no longer calls a file supported when its optional
+  extractor is unavailable; advanced search accepts document-only scopes;
+  document import closes its databases on early failure; reindex retries
+  PDF/DOCX attachments after an optional extractor is installed; Ollama HTTP
+  error responses are closed; document page references are labelled as pages
+  instead of attachments.
+- Verification results: 326 tests, 324 passed, 2 skipped, zero failures on
+  Python 3.12.0 and 3.13.7; `mypy==2.4.1` clean on 25 files; Vue type-check
+  and production build pass; `cargo check` and `cargo test` pass; packaged
+  PyInstaller engine smoke passes and reports `0.5.0-beta`. Synthetic archive
+  workflows exercised email, Facebook, document, unified search, advanced
+  document-only search, document-aware timeline rows, grounded answers with
+  citations, and conversation persistence.
+- Live optional-extractor check: `pypdf` 7.2.0 and `python-docx` 1.2.0 were
+  installed only in a temporary qualification environment. PDF and DOCX
+  documents and email attachments produced searchable text there; CI does not
+  install these packages.
+- Remaining limitations: retrieval is keyword/FTS5 rather than semantic;
+  OCR and PDF page navigation are absent; the merged timeline is capped at
+  5,000 entries; optional extractors are not part of CI; no live Ollama model,
+  interactive desktop acceptance run or exhaustive 1,000,000-record benchmark
+  is claimed.
+- Recommendation: **GO** for a source-only v0.5.0-beta publication by the
+  owner, subject to those documented limitations. This is not a security
+  certification or a claim of comprehensive platform support.

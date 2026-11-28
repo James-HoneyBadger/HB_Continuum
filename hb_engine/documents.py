@@ -69,6 +69,11 @@ def _expand(paths):
     return list(dict.fromkeys(files)), warnings
 
 
+def binary_extractors_available():
+    return (importlib.util.find_spec('pypdf') is not None
+            or importlib.util.find_spec('docx') is not None)
+
+
 def extractor_name(extension):
     extension = extension.lower()
     if extension in BUILTIN:
@@ -168,13 +173,11 @@ def extract_attachment_text(filename, raw, mime_type=None):
     return text[:MAX_TEXT_CHARS]
 
 
-def extract_document(path):
-    """Extract text and page references; never executes document content."""
-    path = Path(path)
-    extension = path.suffix.lower()
+def extract_bytes(extension, raw):
+    """Extract text from bytes already read and hashed by the caller."""
+    extension = extension.lower()
     if extension not in SUPPORTED:
         raise DocumentError(f'unsupported document type {extension or "(none)"}')
-    raw = path.read_bytes()
     if len(raw) > MAX_FILE_BYTES:
         raise DocumentError(
             f'file is larger than the {MAX_FILE_BYTES // (1024 * 1024)} MiB limit')
@@ -194,6 +197,12 @@ def extract_document(path):
             'truncated': truncated, 'raw': raw}
 
 
+def extract_document(path):
+    """Extract text and page references; never executes document content."""
+    path = Path(path)
+    return extract_bytes(path.suffix.lower(), path.read_bytes())
+
+
 def preview(paths):
     files, warnings = _expand(paths)
     result = {'files_discovered': len(files), 'files': [],
@@ -201,9 +210,20 @@ def preview(paths):
               'warnings': warnings, 'extractor_warnings': []}
     for path, label in files:
         extension = path.suffix.lower()
-        size = path.stat().st_size
-        supported = extension in SUPPORTED and size <= MAX_FILE_BYTES
         extractor = extractor_name(extension) if extension in SUPPORTED else None
+        try:
+            size = path.stat().st_size
+        except OSError as exc:
+            reason = exc.strerror or type(exc).__name__
+            result['files'].append({
+                'path': str(path), 'label': label, 'extension': extension,
+                'size': 0, 'supported': False, 'extractor': extractor,
+            })
+            result['unsupported_files'] += 1
+            result['warnings'].append(f'{path}: cannot be read ({reason})')
+            continue
+        supported = (extension in SUPPORTED and extractor is not None
+                     and size <= MAX_FILE_BYTES)
         result['files'].append({
             'path': str(path), 'label': label, 'extension': extension,
             'size': size, 'supported': supported, 'extractor': extractor,
@@ -238,83 +258,88 @@ def import_files(paths, root, progress=None, cancel_event=None):
     from .dispatch import Archive
     files, warnings = _expand(paths)
     catalog = Catalog(root)
-    archive = Archive(root)
+    archive = None
     counts = {
         'files_discovered': len(files), 'files_imported': 0, 'files_skipped': 0,
         'files_unsupported': 0, 'records_imported': 0, 'records_duplicate': 0,
         'extraction_failures': 0, 'characters_indexed': 0, 'pages_indexed': 0,
         'cancelled': False, 'warnings': warnings, 'errors': [],
     }
-    run = archive.begin_import_run('document', ', '.join(str(p) for p in paths)[:200])
     status = 'ok'
     total = len(files)
     try:
-        for done, (path, label) in enumerate(files, 1):
-            if cancel_event is not None and cancel_event.is_set():
-                counts['cancelled'] = True
-                status = 'cancelled'
-                break
-            extension = path.suffix.lower()
-            if extension not in SUPPORTED:
-                counts['files_unsupported'] += 1
-                counts['warnings'].append(f'{path}: unsupported document type')
-                if progress is not None:
-                    progress(done, total, str(path), 'unsupported')
-                continue
-            try:
-                size = path.stat().st_size
-                if size > MAX_FILE_BYTES:
-                    raise DocumentError(
-                        f'file is larger than the {MAX_FILE_BYTES // (1024 * 1024)} MiB limit')
-                raw = path.read_bytes()
-                digest = hashlib.sha256(raw).hexdigest()
-                if catalog.has_file(digest):
-                    counts['files_skipped'] += 1
+        archive = Archive(root)
+        run = archive.begin_import_run('document', ', '.join(str(p) for p in paths)[:200])
+        try:
+            for done, (path, label) in enumerate(files, 1):
+                if cancel_event is not None and cancel_event.is_set():
+                    counts['cancelled'] = True
+                    status = 'cancelled'
+                    break
+                extension = path.suffix.lower()
+                if extension not in SUPPORTED:
+                    counts['files_unsupported'] += 1
+                    counts['warnings'].append(f'{path}: unsupported document type')
                     if progress is not None:
-                        progress(done, total, str(path), 'skipped')
+                        progress(done, total, str(path), 'unsupported')
                     continue
-                extracted = extract_document(path)
-                occurred, precision = _iso_from_mtime(path)
-                metadata = _document_metadata(path, label, extension, size, digest,
-                                              extracted, occurred, precision)
-                attachments = extracted['pages'][:MAX_PAGES]
-                with catalog.db:
-                    catalog.add_file(digest, 'document', label, str(path), size, _utcnow())
-                    revision_key = f'document|{label}'
-                    revision_index = catalog.db.execute(
-                        'SELECT count(*) FROM records WHERE revision_key=?',
-                        (revision_key,)).fetchone()[0] + 1
-                    inserted = catalog.add_record(
-                        digest, 'document', label, 'document', None,
-                        occurred, precision, extracted['text'],
-                        json.dumps(metadata, ensure_ascii=False), digest, _utcnow(),
-                        revision_key=revision_key, revision_index=revision_index,
-                        attachments_json=json.dumps(attachments, ensure_ascii=False))
-                if inserted:
-                    counts['records_imported'] += 1
-                    counts['characters_indexed'] += len(extracted['text'])
-                    counts['pages_indexed'] += len(attachments)
-                else:
-                    counts['records_duplicate'] += 1
-                counts['files_imported'] += 1
-                if progress is not None:
-                    progress(done, total, str(path), 'imported')
-            except (DocumentError, OSError, ValueError) as exc:
-                counts['extraction_failures'] += 1
-                counts['errors'].append({'path': str(path),
-                                         'error': type(exc).__name__ + ': ' + str(exc)})
-                if progress is not None:
-                    progress(done, total, str(path), 'error')
-    except Exception as exc:
-        status = 'error'
-        counts['errors'].append({'path': '', 'error': type(exc).__name__ + ': ' + str(exc)})
-        raise
+                try:
+                    raw = path.read_bytes()
+                    size = len(raw)
+                    if size > MAX_FILE_BYTES:
+                        raise DocumentError(
+                            f'file is larger than the {MAX_FILE_BYTES // (1024 * 1024)} MiB limit')
+                    digest = hashlib.sha256(raw).hexdigest()
+                    if catalog.has_file(digest):
+                        counts['files_skipped'] += 1
+                        if progress is not None:
+                            progress(done, total, str(path), 'skipped')
+                        continue
+                    extracted = extract_bytes(extension, raw)
+                    occurred, precision = _iso_from_mtime(path)
+                    metadata = _document_metadata(path, label, extension, size, digest,
+                                                  extracted, occurred, precision)
+                    attachments = extracted['pages'][:MAX_PAGES]
+                    with catalog.db:
+                        catalog.add_file(digest, 'document', label, str(path), size, _utcnow())
+                        revision_key = f'document|{label}'
+                        revision_index = catalog.db.execute(
+                            'SELECT count(*) FROM records WHERE revision_key=?',
+                            (revision_key,)).fetchone()[0] + 1
+                        inserted = catalog.add_record(
+                            digest, 'document', label, 'document', None,
+                            occurred, precision, extracted['text'],
+                            json.dumps(metadata, ensure_ascii=False), digest, _utcnow(),
+                            revision_key=revision_key, revision_index=revision_index,
+                            attachments_json=json.dumps(attachments, ensure_ascii=False))
+                    if inserted:
+                        counts['records_imported'] += 1
+                        counts['characters_indexed'] += len(extracted['text'])
+                        counts['pages_indexed'] += len(attachments)
+                    else:
+                        counts['records_duplicate'] += 1
+                    counts['files_imported'] += 1
+                    if progress is not None:
+                        progress(done, total, str(path), 'imported')
+                except (DocumentError, OSError, ValueError) as exc:
+                    counts['extraction_failures'] += 1
+                    counts['errors'].append({'path': str(path),
+                                             'error': type(exc).__name__ + ': ' + str(exc)})
+                    if progress is not None:
+                        progress(done, total, str(path), 'error')
+        except Exception as exc:
+            status = 'error'
+            counts['errors'].append(
+                {'path': '', 'error': type(exc).__name__ + ': ' + str(exc)})
+            raise
+        finally:
+            archive.finish_import_run(
+                run, status, len(files), counts['files_imported'],
+                counts['records_imported'], counts['files_skipped'],
+                counts['extraction_failures'])
+        counts['run_id'] = run
+        return counts
     finally:
         catalog.close()
-        archive.finish_import_run(
-            run, status, len(files), counts['files_imported'],
-            counts['records_imported'], counts['files_skipped'],
-            counts['extraction_failures'])
-        archive.db.close()
-    counts['run_id'] = run
-    return counts
+        if archive is not None:
+            archive.db.close()

@@ -68,6 +68,24 @@ class IPCServerTests(unittest.TestCase):
             'search_advanced',query=tree,sources=['other']))['error']['code'],'INVALID_PARAMS')
         self.assertEqual(self.server.handle(request('search_advanced'))['error']['code'],
                          'INVALID_PARAMS')
+        from catalog import Catalog
+        catalog=Catalog(self.root)
+        try:
+            with catalog.db:
+                catalog.add_file('doc-hash','document','note.txt','/tmp/note.txt',4,'2026-11-28')
+                catalog.add_record('doc1','document','note.txt','document',None,
+                                   '2026-11-28T00:00:00+00:00','second','bullion document',
+                                   '{}','doc-hash','2026-11-28')
+        finally:
+            catalog.close()
+        documents=self.server.handle(request(
+            'search_advanced',
+            query={'type':'group','op':'and','children':[
+                {'type':'rule','kind':'text','value':'bullion'}]},
+            sources=['document']))['result']
+        self.assertEqual(documents['total'],1)
+        self.assertEqual(documents['items'][0]['source'],'document')
+        self.assertEqual(documents['items'][0]['id'],'doc1')
 
     def test_search_validate(self):
         self.assertTrue(self.server.handle(request(
@@ -253,8 +271,8 @@ class IPCServerTests(unittest.TestCase):
         result=self.server.handle(request('record',record_id=rid))['result']
         self.assertEqual(len(result['revisions']),2)
         self.assertEqual([item['revision_index'] for item in result['revisions']],[1,2])
-        self.assertTrue(result['revisions'][0]['current'])
-        self.assertFalse(result['revisions'][1]['current'])
+        self.assertFalse(result['revisions'][0]['current'])
+        self.assertTrue(result['revisions'][1]['current'])
         self.assertEqual(result['revisions'][0]['body'],'First version')
 
     def test_verify(self):

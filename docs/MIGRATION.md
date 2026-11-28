@@ -64,7 +64,9 @@ Messages stored by an older build keep their previous body text until they
 are re-extracted. `dispatch reindex` performs that upgrade from the preserved
 raw originals, verifying each SHA-256 and committing per message, so it can
 be interrupted and resumed. It also repairs search rows that are missing or
-duplicated. See `docs/ARCHIVE_HARDENING.md`.
+duplicated. Extraction version 3 adds text from PDF and DOCX attachments; when
+an optional extractor becomes available, reindex retries attachments that
+were stored without indexed text. See `docs/ARCHIVE_HARDENING.md`.
 
 ## Archive version 3: normalized chronology
 

@@ -142,14 +142,16 @@ def _record(root, record_id):
             try:
                 keys = ('record_id', 'revision_index', 'revision_kind', 'occurred_at',
                         'updated_at', 'actor', 'body')
-                for values in conn.execute(
-                        'SELECT record_id,revision_index,revision_kind,occurred_at,'
-                        'updated_at,actor,substr(body,1,200) FROM records '
-                        'WHERE revision_key=? ORDER BY revision_index IS NULL, '
-                        'revision_index, COALESCE(updated_at,occurred_at,\'\') LIMIT 100',
-                        (row[11],)):
+                revision_rows = conn.execute(
+                    'SELECT record_id,revision_index,revision_kind,occurred_at,'
+                    'updated_at,actor,substr(body,1,200) FROM records '
+                    'WHERE revision_key=? ORDER BY revision_index IS NULL, '
+                    'revision_index, COALESCE(updated_at,occurred_at,\'\') LIMIT 100',
+                    (row[11],)).fetchall()
+                latest_id = revision_rows[-1][0] if revision_rows else None
+                for values in revision_rows:
                     item = dict(zip(keys, values))
-                    item['current'] = item['record_id'] == record_id
+                    item['current'] = item['record_id'] == latest_id
                     revisions.append(item)
             except sqlite3.OperationalError:
                 revisions = []
@@ -750,10 +752,10 @@ def _string_list(value, name, max_items, limit=200):
 def _advanced_query_sources(value):
     sources = _string_list(value, 'sources', 3, 20)
     sources = sources or ['email', 'facebook']
-    sources = ['facebook' if source == 'document' else source for source in sources]
     sources = list(dict.fromkeys(sources))
-    if any(source not in ('email', 'facebook') for source in sources):
-        raise IPCError('INVALID_PARAMS', 'sources must be email and/or catalog')
+    if any(source not in ('email', 'facebook', 'document') for source in sources):
+        raise IPCError('INVALID_PARAMS',
+                       'sources must be email, facebook and/or document')
     return sources
 
 def _advanced_queries_list(root, workspace=None):
@@ -1334,10 +1336,9 @@ class IPCServer:
         if isinstance(sources, str):
             sources = tuple(x.strip() for x in sources.split(',') if x.strip())
         sources = tuple(sources) or ('email', 'facebook')
-        sources = tuple('facebook' if source == 'document' else source
-                        for source in sources)
-        if not all(source in ('email', 'facebook') for source in sources):
-            raise IPCError('INVALID_PARAMS', 'sources must be email and/or catalog')
+        if not all(source in ('email', 'facebook', 'document') for source in sources):
+            raise IPCError('INVALID_PARAMS',
+                           'sources must be email, facebook and/or document')
         limit = params.get('limit', 100)
         offset = params.get('offset', 0)
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 5000:

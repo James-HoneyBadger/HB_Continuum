@@ -421,11 +421,12 @@ async function exportSelected() {
       </div>
       <p v-if="detailNotice" class="notice">{{ detailNotice }}</p>
       <div v-if="detail.attachments?.length" class="attachments">
-        <h3>Attachments (stored metadata)</h3>
+        <h3>{{ detail.source_type === "document" ? "Page references" : "Attachments (stored metadata)" }}</h3>
         <ul>
           <li v-for="(a, i) in detail.attachments" :key="i">
             <span class="attachment-kind">{{ a.kind || a.mime || "file" }}</span>
             {{ a.filename || a.name || a.title || a.uri || a.url || a.link }}
+            <span v-if="a.page"> · page {{ a.page }}</span>
             <span v-if="a.mime"> · {{ a.mime }}</span>
             <span v-if="a.characters"> · {{ a.characters }} indexed characters</span>
             <span v-if="a.created_at"> · {{ a.created_at }}</span>

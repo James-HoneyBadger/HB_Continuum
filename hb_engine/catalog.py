@@ -199,10 +199,11 @@ class Catalog:
             "COALESCE(updated_at,occurred_at,'') LIMIT ?", (row[0], limit)).fetchall()
         keys = ('record_id', 'revision_index', 'revision_kind', 'occurred_at',
                 'updated_at', 'actor', 'body')
+        latest_id = rows[-1][0] if rows else None
         result = []
         for values in rows:
             item = dict(zip(keys, values))
-            item['current'] = item['record_id'] == record_id
+            item['current'] = item['record_id'] == latest_id
             result.append(item)
         return result
 

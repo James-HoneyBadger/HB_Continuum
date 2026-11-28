@@ -6,7 +6,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
-__version__ = '0.4.0-beta'
+__version__ = '0.5.0-beta'
 
 def valid_hash(value):
     return isinstance(value,str) and len(value)==64 and all(c in '0123456789abcdef' for c in value)
@@ -697,16 +697,26 @@ class Archive:
         message is verified against its raw original and re-indexed in its own
         transaction, so an interrupted or cancelled run keeps its progress.
         """
+        from .documents import binary_extractors_available
         from .mime_index import EXTRACTION_VERSION, extract, index_text
         from .sync_lock import sync_lock
         count=0
         with sync_lock(self.root):
-            pending=self.db.execute(
+            pending_sql=(
                 'SELECT hash,subject,sender,date FROM messages '
                 'WHERE hash NOT IN (SELECT hash FROM extraction_versions WHERE version=?) '
                 'OR hash NOT IN (SELECT hash FROM search) '
-                'OR hash IN (SELECT hash FROM search GROUP BY hash HAVING count(*)>1)',
-                (EXTRACTION_VERSION,)).fetchall()
+                'OR hash IN (SELECT hash FROM search GROUP BY hash HAVING count(*)>1)')
+            pending_params=[EXTRACTION_VERSION]
+            if binary_extractors_available():
+                pending_sql += (
+                    " OR hash IN (SELECT hash FROM attachment_index WHERE content='' "
+                    "AND (lower(mime)=? OR lower(mime)=? OR lower(filename) LIKE '%.pdf' "
+                    "OR lower(filename) LIKE '%.docx'))")
+                pending_params.extend([
+                    'application/pdf',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'])
+            pending=self.db.execute(pending_sql,pending_params).fetchall()
             total=len(pending)
             rowids={}
             for rowid,h in self.db.execute('SELECT rowid,hash FROM search'):

@@ -60,7 +60,7 @@ function rootQuery(): Group {
 }
 
 const tree = ref<Group>(rootQuery());
-const sourceScope = ref<"both" | "email" | "facebook">("both");
+const sourceScope = ref<"both" | "email" | "facebook" | "document">("both");
 const limit = ref(100);
 const offset = ref(0);
 const result = ref<Result | null>(null);
@@ -210,7 +210,15 @@ async function loadSelected() {
     tree.value = saved.tree;
     const hasEmail = saved.sources.includes("email");
     const hasCatalog = saved.sources.includes("facebook");
-    sourceScope.value = hasEmail && hasCatalog ? "both" : hasCatalog ? "facebook" : "email";
+    const hasDocuments = saved.sources.includes("document");
+    sourceScope.value =
+      hasEmail && (hasCatalog || hasDocuments)
+        ? "both"
+        : hasCatalog
+          ? "facebook"
+          : hasDocuments
+            ? "document"
+            : "email";
     saveForm.value = { name: saved.name, description: saved.description };
     result.value = null;
     queryError.value = "";
@@ -295,6 +303,7 @@ onMounted(loadSaved);
             <option value="both">email + catalog</option>
             <option value="email">email only</option>
             <option value="facebook">catalog only</option>
+            <option value="document">documents only</option>
           </select>
         </label>
         <label>

@@ -186,6 +186,14 @@ function setBefore(rule: Rule, event: Event) {
             />
             catalog
           </label>
+          <label class="check">
+            <input
+              type="checkbox"
+              :checked="hasValue(child, 'document')"
+              @change="toggleFromEvent(child, 'document', $event)"
+            />
+            documents
+          </label>
         </template>
 
         <template v-else-if="child.kind === 'date'">

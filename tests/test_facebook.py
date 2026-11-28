@@ -318,7 +318,7 @@ class FacebookImportTests(unittest.TestCase):
                 'SELECT record_id FROM records WHERE revision_index=1').fetchone()[0]
             revisions=catalog.record_revisions(first_id)
             self.assertEqual(len(revisions),2)
-            self.assertEqual([item['current'] for item in revisions],[True,False])
+            self.assertEqual([item['current'] for item in revisions],[False,True])
             self.assertEqual([item['revision_index'] for item in revisions],[1,2])
         finally:
             catalog.close()

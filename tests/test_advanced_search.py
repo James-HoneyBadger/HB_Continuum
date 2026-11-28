@@ -89,6 +89,26 @@ class AdvancedSearchTests(unittest.TestCase):
             ('email', self.gold), ('email', self.silver),
             ('email', self.memo), ('email', self.undated), ('catalog', 'r2')})
 
+    def test_document_source_scope_is_specific(self):
+        catalog = Catalog(self.root)
+        try:
+            with catalog.db:
+                catalog.add_file('doc-hash', 'document', 'notes.txt',
+                                 '/tmp/notes.txt', 10, '2024-01-02T00:00:00+00:00')
+                catalog.add_record('doc1', 'document', 'notes.txt', 'document', None,
+                                   '2024-01-15T10:00:00+00:00', 'second',
+                                   'gold document body', '{}', 'doc-hash',
+                                   '2024-01-02T00:00:00+00:00')
+        finally:
+            catalog.close()
+        documents = search_advanced(self.root, text('gold'), sources=('document',))
+        self.assertEqual(self.ids(documents), {('document', 'doc1')})
+        self.assertEqual(documents['total'], 1)
+        rule = search_advanced(self.root, {'type': 'rule', 'kind': 'source',
+                                           'values': ['document']},
+                               sources=('email', 'facebook', 'document'))
+        self.assertEqual(self.ids(rule), {('document', 'doc1')})
+
     def test_source_kind_and_date_rules(self):
         result = search_advanced(self.root, group(
             'and', {'type': 'rule', 'kind': 'source', 'values': ['facebook']},
@@ -146,7 +166,7 @@ class AdvancedSearchTests(unittest.TestCase):
             (text(''), 'non-empty expression'),
             ({'type': 'rule', 'kind': 'kind', 'values': ['bogus']}, 'unsupported'),
             ({'type': 'rule', 'kind': 'date'}, 'needs after'),
-            ({'type': 'rule', 'kind': 'source', 'values': ['other']}, 'email or facebook'),
+            ({'type': 'rule', 'kind': 'source', 'values': ['other']}, 'email, facebook or document'),
             ({'type': 'rule', 'kind': 'tag', 'values': ['x'], 'mode': 'some'}, 'any or all'),
             ('text', 'must be an object'),
         ]

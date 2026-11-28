@@ -526,7 +526,9 @@ class OllamaClient:
             return self._opener.open(
                 request, timeout=timeout or self.prefs['ai_timeout'])
         except urllib.error.HTTPError as exc:
-            raise OllamaError(f'Ollama HTTP {exc.code}: {exc.reason}') from None
+            code, reason = exc.code, exc.reason
+            exc.close()
+            raise OllamaError(f'Ollama HTTP {code}: {reason}') from None
         except urllib.error.URLError as exc:
             raise OllamaError(f'cannot reach Ollama at {self.prefs["ai_endpoint"]}: '
                               f'{exc.reason}') from None

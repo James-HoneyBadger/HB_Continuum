@@ -60,6 +60,17 @@ class HardeningTests(unittest.TestCase):
         self.assertEqual(self.a.find('scan')[0][0],h)
         self.assertEqual(self.a.verify(),[])
 
+    def test_reindex_retries_attachments_after_optional_extractor_install(self):
+        m=EmailMessage(); m['Subject']='Scanned'; m.set_content('body')
+        m.add_attachment(b'%PDF fake',maintype='application',subtype='pdf',filename='scan.pdf')
+        with patch('documents._extract_pdf',side_effect=ExtractionUnavailable('missing pypdf')):
+            h=self.a.ingest(m.as_bytes())
+        self.assertEqual(self.a.find('laterextract'),[])
+        with patch('documents.binary_extractors_available',return_value=True), \
+             patch('documents._extract_pdf',return_value=('laterextract',[],'pypdf')):
+            self.assertEqual(self.a.reindex(),1)
+        self.assertEqual(self.a.find('laterextract')[0][0],h)
+
     def test_reindex_retries_older_binary_attachment_extraction(self):
         m=EmailMessage(); m['Subject']='Invoice'; m.set_content('body')
         m.add_attachment(b'%PDF fake',maintype='application',subtype='pdf',filename='invoice.pdf')

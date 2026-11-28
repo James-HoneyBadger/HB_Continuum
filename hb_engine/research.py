@@ -146,10 +146,10 @@ class Research:
         if isinstance(sources,str):
             sources=[part.strip() for part in sources.split(',') if part.strip()]
         if not isinstance(sources,(list,tuple)) or not sources:
-            raise ValueError('Sources must be email and/or facebook')
+            raise ValueError('Sources must be email, facebook and/or document')
         values=list(dict.fromkeys(sources))
-        if any(value not in ('email','facebook') for value in values):
-            raise ValueError('Sources must be email and/or facebook')
+        if any(value not in ('email','facebook','document') for value in values):
+            raise ValueError('Sources must be email, facebook and/or document')
         return ','.join(values)
     @staticmethod
     def _advanced_id(query_id):

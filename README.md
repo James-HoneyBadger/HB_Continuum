@@ -1,55 +1,31 @@
 # HB Continuum
 
-**Open-source, local-first personal knowledge archive and historical research workstation.**
+**A local-first personal archive and historical research application.**
 
-HB Continuum is in active real-world use. It has moved beyond a proof of concept: live mailbox retrieval, searchable local preservation and source-backed historical research have been demonstrated with more than 31,000 unique archived messages across two mail providers. Development continues, but the core archival workflow is working software today.
+HB Continuum is an independent, open-source hobby project developed as part of the Honey Badger Universe.
 
-> **Current milestone: [v0.4.0-beta](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.4.0-beta)** — source-only beta. [Release history](https://github.com/James-HoneyBadger/HB_Continuum/releases) · [Development source](https://github.com/James-HoneyBadger/HB_Continuum/tree/develop/continuum-integration) · [Qualification and known limitations](docs/engineering/IMPLEMENTATION_STATUS.md)
+Originally developed to preserve email correspondence, Continuum has gradually expanded to support other historical records, searchable documents, research tools and optional local artificial intelligence.
 
-## At a glance
+Its purpose is straightforward: help individuals preserve and explore their own documented history without depending entirely upon external service providers.
 
-Continuum has grown from an email preservation utility into a private historical research workstation. The v0.4 beta supports email and exported Facebook records, unified and advanced Boolean search, historical timelines, evidence collections, a revision-tracked journal, relationship exploration, reports, and verified archival recovery. Local Ollama message and conversation summarization is optional.
+Development is iterative and driven by practical use. New features are introduced when they can be implemented, tested and maintained responsibly.
 
-**Next milestone — v0.5, the Intelligence Update (in development):** scalable paged search, evidence-grounded research with validated source references, and local document ingestion are implemented on the intelligence development branch. Semantic retrieval, photograph ingestion and optional Honey Badger application interchange remain development objectives, not released capabilities.
+## Development priorities
 
-## Independent and interoperable
+- Reliable preservation and recovery of original information.
+- Privacy and protection of sensitive archival records.
+- Useful, dependable search and research capabilities.
+- Optional local AI through Ollama.
+- A straightforward desktop experience.
+- Open formats and user-controlled information.
 
-**Independent by design. Interoperable by choice. Intelligent when desired.**
+Continuum is maintained primarily by one developer as a personal FOSS undertaking. Development plans are flexible, and there are no commitments concerning delivery dates, comprehensive platform support or commercial service levels.
 
-Each application works independently; optional integrations remain under user control. AI is never mandatory. See the [integration tutorial](docs/PRIVATE_INTELLIGENCE_WORKSTATION.md).
+The longer-term idea of exploring one's documented past through local artificial intelligence remains an inspiration rather than a promise of future functionality.
 
-## Beyond email: a source-independent continuum
+Contributions, constructive feedback and independent development are welcome.
 
-*Time is linear. Knowledge need not be.*
-
-Part of the Honey Badger Universe, HB Continuum is designed around a broader vision than email archiving: preserve and explore historical information across otherwise disconnected sources, on infrastructure you control.
-
-The email ingestion engine retains the name **Dispatch**. Email, user-obtained Facebook JSON exports and local documents are implemented sources today: the source-independent catalog stores Facebook posts, comments, messages, events, media and reactions, plus text, Markdown, CSV, JSON, PDF and DOCX documents, with provenance, revision history and searchable metadata. Unified search spans email and catalog records. Future adapters may add photographs, imported journals, software development histories and other structured or unstructured records.
-
-The architecture preserves original source material and provenance, with source-specific ingestion and a unified searchable index. Cross-source timelines, evidence collections and research workflows are implemented; broader genealogy, organizational archives and additional source adapters remain development goals.
-
-### Second Me
-
-An optional historical knowledge interface could help people rediscover their documented past using their own records and words. The goal is retrieval and evidence-backed reconstruction, not impersonation or invention. AI is optional and interchangeable; local Ollama summarization is implemented. Broader evidence-grounded conversational research remains planned; external analysis, if chosen by the user, is separate from the built-in local inference service.
-
-Local-first storage, open formats, user control, no mandatory cloud services, no telemetry, and no subscriptions remain foundational principles.
-
-**The intelligence is replaceable. The memories are yours.**
-
-## Demonstrated in real-world use
-
-As of November 26, 2026, a live deployment had archived 31,441 unique messages across Gmail and IONOS, with matching SQLite message, origin, full-text index and original EML counts. SQLite quick integrity checks passed. A third provider, Apple iCloud Mail, subsequently began importing successfully. These checks do not establish complete mailbox coverage or content-level verification.
-
-Practical investigations have included:
-
-- Reconstructing consumer billing disputes, cancellation notices and correspondence timelines.
-- Cross-referencing transaction confirmations against independently obtained financial records.
-- Rebuilding a precious-metals purchase ledger from orders, shipment notices and cancellations.
-- Exploring historical correspondence, recurring topics and account activity across providers.
-
-These are actual research outcomes, not hypothetical feature claims. Some investigations used authorized external analysis of the local archive; HB Continuum itself supplies the searchable evidence foundation, not an automated financial or legal adviser. Private correspondence and underlying records are not published.
-
-**Status:** the archival core is operational and published as the [v0.4.0-beta release](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.4.0-beta), which builds on the [v0.3.0 release](https://github.com/James-HoneyBadger/HB_Continuum/releases/tag/v0.3.0) with a source-independent record catalog for exported social archives, unified and nested boolean search across email and catalog records, a relationship explorer, collections, journal and report workflows, a Tauri 2 + Vue desktop shell, and verified backup and restore across all three databases. The earlier v0.4.0-alpha tag remains available as a prerelease. The current tag is a beta milestone, not a claim of comprehensive security certification. Verified test counts, build matrix and known limitations are recorded in [Implementation status](docs/engineering/IMPLEMENTATION_STATUS.md).
+*The intelligence is replaceable. The memories are yours.*
 
 ## Your mail. Your archive. Your choice.
 
@@ -182,7 +158,7 @@ python3 dispatch.py facebook search "receipt"
 python3 dispatch.py facebook list --kind event
 ```
 
-**Document import** — import local text, Markdown, CSV, JSON, PDF and DOCX files into the source-independent catalog. Originals are hashed and referenced by path, never copied, uploaded or modified. Text and page metadata are searchable; duplicate files are skipped, changed files keep revisions, extraction failures are explicit, and import history is recorded. PDF and DOCX text extraction use optional local packages; scanned PDFs without a text layer are reported rather than OCRed. See [Documents](docs/DOCUMENTS.md).
+**Document import** — import local text, Markdown, CSV, JSON, PDF and DOCX files into the source-independent catalog. Originals are hashed and referenced by path, never copied, uploaded or modified. Text is searchable and page counts are retained; duplicate files are skipped, changed files keep revisions, extraction failures are explicit, and import history is recorded. PDF and DOCX text extraction use optional local packages; scanned PDFs without a text layer are reported rather than OCRed. See [Documents](docs/DOCUMENTS.md).
 
 ```sh
 python3 dispatch.py documents preview ~/documents

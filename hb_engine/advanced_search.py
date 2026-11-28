@@ -29,6 +29,19 @@ CATALOG_KINDS = ('post', 'comment', 'message', 'event', 'media', 'reaction',
 CATALOG_SOURCES = ('facebook', 'document')
 
 
+def _catalog_sources(sources):
+    """Catalog source types selected by a source scope.
+
+    `facebook` remains the legacy name for the whole catalog, so it includes
+    documents as well. `document` alone selects documents only.
+    """
+    if 'facebook' in sources:
+        return CATALOG_SOURCES
+    if 'document' in sources:
+        return ('document',)
+    return ()
+
+
 def _strings(value, field):
     if isinstance(value, str):
         value = [part.strip() for part in value.split(',') if part.strip()]
@@ -107,9 +120,9 @@ def normalize_query(tree):
             return {'type': 'rule', 'kind': 'text', 'value': value.strip()}
         if kind in ('actor', 'source'):
             values = _strings(raw.get('values'), f'{kind} rule')
-            allowed = {'email', 'facebook'} if kind == 'source' else None
+            allowed = {'email', 'facebook', 'document'} if kind == 'source' else None
             if allowed is not None and any(value not in allowed for value in values):
-                raise ValueError('source values must be email or facebook')
+                raise ValueError('source values must be email, facebook or document')
             return {'type': 'rule', 'kind': kind, 'values': values}
         if kind == 'kind':
             values = _strings(raw.get('values'), 'kind rule')
@@ -155,15 +168,16 @@ def _all_email_ids(root):
         conn.close()
 
 
-def _all_catalog_ids(root):
+def _all_catalog_ids(root, sources=CATALOG_SOURCES):
     path = Path(root) / 'catalog.sqlite3'
-    if not path.is_file():
+    if not path.is_file() or not sources:
         return set()
+    placeholders = ','.join('?' for _ in sources)
     conn = _connect(path)
     try:
         return {row[0] for row in conn.execute(
-            'SELECT record_id FROM records WHERE source_type IN (?,?)',
-            CATALOG_SOURCES)}
+            f'SELECT record_id FROM records WHERE source_type IN ({placeholders})',
+            sources)}
     finally:
         conn.close()
 
@@ -178,8 +192,9 @@ def _universe(root, sources):
     keys = set()
     if 'email' in sources:
         keys.update(('email', value) for value in _all_email_ids(root))
-    if 'facebook' in sources:
-        keys.update(('catalog', value) for value in _all_catalog_ids(root))
+    catalog_sources = _catalog_sources(sources)
+    if catalog_sources:
+        keys.update(('catalog', value) for value in _all_catalog_ids(root, catalog_sources))
     return keys
 
 
@@ -206,17 +221,19 @@ def _text_rule(root, value, sources):
                 key = ('email', digest)
                 matches.add(key)
                 scores[key] = 1.0 / (RRF_K + rank + 1)
-    if 'facebook' in sources:
+    catalog_sources = _catalog_sources(sources)
+    if catalog_sources:
         path = Path(root) / 'catalog.sqlite3'
         if path.is_file():
+            placeholders = ','.join('?' for _ in catalog_sources)
             conn = _connect(path)
             try:
                 rows = conn.execute(
                     'SELECT r.record_id FROM records r JOIN record_search '
                     'ON record_search.rowid = r.rowid '
-                    'WHERE r.source_type IN (?,?) AND record_search MATCH ? '
+                    f'WHERE r.source_type IN ({placeholders}) AND record_search MATCH ? '
                     'ORDER BY bm25(record_search) LIMIT ?',
-                    (*CATALOG_SOURCES, value, MAX_LEAF_MATCHES + 1)).fetchall()
+                    (*catalog_sources, value, MAX_LEAF_MATCHES + 1)).fetchall()
             except sqlite3.OperationalError as exc:
                 raise ValueError(
                     f'Catalog index rejected the text rule: {exc}. {syntax}') from None
@@ -243,14 +260,17 @@ def _actor_rule(root, values, sources):
                     f'SELECT hash FROM messages WHERE sender IN ({placeholders})', values))
             finally:
                 conn.close()
-    if 'facebook' in sources:
+    catalog_sources = _catalog_sources(sources)
+    if catalog_sources:
         path = Path(root) / 'catalog.sqlite3'
         if path.is_file():
+            source_placeholders = ','.join('?' for _ in catalog_sources)
             conn = _connect(path)
             try:
                 matches.update(('catalog', row[0]) for row in conn.execute(
-                    'SELECT record_id FROM records WHERE source_type IN (?,?) '
-                    f'AND actor IN ({placeholders})', (*CATALOG_SOURCES, *values)))
+                    f'SELECT record_id FROM records WHERE source_type IN ('
+                    f'{source_placeholders}) AND actor IN ({placeholders})',
+                    (*catalog_sources, *values)))
             finally:
                 conn.close()
     return matches
@@ -261,16 +281,18 @@ def _kind_rule(root, values, sources):
     if 'email' in sources and 'message' in values:
         matches.update(('email', value) for value in _all_email_ids(root))
     catalog_kinds = [value for value in values if value in CATALOG_KINDS]
-    if 'facebook' in sources and catalog_kinds:
+    catalog_sources = _catalog_sources(sources)
+    if catalog_sources and catalog_kinds:
         path = Path(root) / 'catalog.sqlite3'
         if path.is_file():
             placeholders = ','.join('?' for _ in catalog_kinds)
+            source_placeholders = ','.join('?' for _ in catalog_sources)
             conn = _connect(path)
             try:
                 matches.update(('catalog', row[0]) for row in conn.execute(
-                    'SELECT record_id FROM records WHERE source_type IN (?,?) '
-                    f'AND record_kind IN ({placeholders})',
-                    (*CATALOG_SOURCES, *catalog_kinds)))
+                    f'SELECT record_id FROM records WHERE source_type IN ('
+                    f'{source_placeholders}) AND record_kind IN ({placeholders})',
+                    (*catalog_sources, *catalog_kinds)))
             finally:
                 conn.close()
     return matches
@@ -307,14 +329,16 @@ def _date_rule(root, after, before, sources):
                         matches.add(('email', digest))
             finally:
                 conn.close()
-    if 'facebook' in sources:
+    catalog_sources = _catalog_sources(sources)
+    if catalog_sources:
         path = Path(root) / 'catalog.sqlite3'
         if path.is_file():
+            placeholders = ','.join('?' for _ in catalog_sources)
             conn = _connect(path)
             try:
                 for record_id, value in conn.execute(
                         'SELECT record_id,occurred_at FROM records '
-                        'WHERE source_type IN (?,?)', CATALOG_SOURCES):
+                        f'WHERE source_type IN ({placeholders})', catalog_sources):
                     stamp = _epoch(value)
                     if stamp is None:
                         continue
@@ -375,8 +399,13 @@ def _evaluate(node, root, sources, universe):
         matches = set()
         if 'email' in node['values'] and 'email' in sources:
             matches.update(('email', value) for value in _all_email_ids(root))
-        if 'facebook' in node['values'] and 'facebook' in sources:
-            matches.update(('catalog', value) for value in _all_catalog_ids(root))
+        catalog_sources = _catalog_sources(sources)
+        if 'facebook' in node['values'] and catalog_sources:
+            matches.update(('catalog', value) for value in
+                           _all_catalog_ids(root, catalog_sources))
+        if 'document' in node['values'] and 'document' in catalog_sources:
+            matches.update(('catalog', value) for value in
+                           _all_catalog_ids(root, ('document',)))
         return matches, {}
     if kind == 'date':
         return _date_rule(root, node['after'], node['before'], sources), {}
@@ -445,8 +474,9 @@ def search_advanced(root, tree, limit=100, offset=0, sources=('email', 'facebook
     if isinstance(sources, str):
         sources = [part.strip() for part in sources.split(',') if part.strip()]
     sources = tuple(dict.fromkeys(sources))
-    if not sources or any(source not in ('email', 'facebook') for source in sources):
-        raise ValueError('sources must contain email and/or facebook')
+    if not sources or any(source not in ('email', 'facebook', 'document')
+                          for source in sources):
+        raise ValueError('sources must contain email, facebook and/or document')
     universe = _universe(root, sources) if _has_not(nodes) else set()
     matched, scores = _evaluate(nodes, root, sources, universe)
     keys = sorted(matched)

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (c) 2026 Honey Badger Universe
 import json, tempfile, unittest
+from unittest import mock
 from pathlib import Path
 
 from dispatch import Archive
@@ -35,10 +36,15 @@ class DocumentImportTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_preview_reports_supported_and_optional_extractors(self):
-        result = preview([str(self.sources)])
+        with mock.patch('documents.extractor_name',
+                        side_effect=lambda extension: None if extension == '.pdf' else 'builtin'):
+            result = preview([str(self.sources)])
         self.assertEqual(result['files_discovered'], 7)
         self.assertGreaterEqual(result['unsupported_files'], 1)
         self.assertTrue(any('fake.pdf' in warning for warning in result['extractor_warnings']))
+        pdf = next(item for item in result['files'] if item['label'] == 'fake.pdf')
+        self.assertFalse(pdf['supported'])
+        self.assertIsNone(pdf['extractor'])
         labels = {item['label'] for item in result['files']}
         self.assertIn('notes.txt', labels)
         self.assertIn('unsupported.bin', labels)
@@ -99,6 +105,14 @@ class DocumentImportTests(unittest.TestCase):
         evidence = result['evidence'][0]
         self.assertEqual(evidence['source'], 'document')
         self.assertTrue(evidence['source_location'].startswith('catalog.sqlite3#records/'))
+
+    def test_import_closes_catalog_if_archive_cannot_open(self):
+        with mock.patch('catalog.Catalog') as catalog_cls, \
+             mock.patch('dispatch.Archive', side_effect=OSError('locked')):
+            catalog_cls.return_value = mock.Mock()
+            with self.assertRaises(OSError):
+                import_files([], self.root)
+            catalog_cls.return_value.close.assert_called_once()
 
     def test_missing_paths_and_unsupported_are_reported(self):
         result = import_files([str(self.sources / 'missing.txt')], self.root)
