@@ -46,6 +46,8 @@ the release was qualified, not what it contains.
 | Cross-process archive locking with stale-lock recovery | `archive-locking` | Implemented | `tests/test_concurrency.py` |
 | First-run archive discovery and creation over IPC | `first-run-archive` | Implemented | `tests/test_ipc.py` |
 | Engine sidecar packaging check | `engine-packaging` | Implemented | `tests/test_build_engine.py` |
+| Encryption boundary notice in the desktop with logged acknowledgement | `boundary-notice` | Implemented | `tests/test_ipc.py` |
+| Credential fallback refused unless explicitly opted into | `credential-fail-closed` | Implemented | `tests/test_schedulers.py` |
 | Legacy Tk workstation | `legacy-tk-workstation` | Experimental (flag-gated) | Separate entry point `dispatch.py gui`; no automated UI coverage |
 | PDF and DOCX text extraction | `pdf-docx-extraction` | Experimental (flag-gated) | Requires optional `pypdf` / `python-docx`; `tests/test_documents.py` skips without them |
 | OS credential store for scheduler passwords | `keyring-credentials` | Experimental (flag-gated) | Requires optional `keyring`; `tests/test_schedulers.py`; otherwise an encrypted-file store is used |
@@ -68,8 +70,9 @@ the release was qualified, not what it contains.
 - `encrypted-migration` never deletes the original archive and never migrates
   automatically.
 - `keyring-credentials` prefers the OS store. Where no backend is available the
-  scheduler uses an encrypted file; the trade-off is recorded in the
-  [security model](../SECURITY_MODEL.md).
+  scheduler refuses to store a password unless
+  `--allow-insecure-credential-fallback` is passed; the trade-off is recorded in
+  [SECURITY.md](../../SECURITY.md).
 - `document-ingestion` indexes what the optional extractors can read. Image-only
   PDFs produce no text (`ocr` above).
 
