@@ -67,6 +67,36 @@ def launch(archive,parent,selected_hashes):
     tab('Tags',[('tag','Manual tag','',())],[('Tag selected',tag),('Remove manual tag',lambda v:tag(v,True)),('Inspect selected',inspect)])
     tab('Custom fields',[('field','Field name','',()),('kind','Field type','text',TYPES),('choices','Choice values (semicolon separated)','',()),('value','Value for selected messages','',())],[('Define field',lambda v:(r.define_field(v['field'],v['kind'],[x.strip() for x in v['choices'].split(';') if x.strip()]),list_table('fields'))),('Set value',set_fields),('Inspect selected',inspect),('List fields',lambda v:list_table('fields'))])
     tab('Reports',[('name','Report name','',()),('workspace','Workspace','General',()),('search','Saved search name','',()),('columns','Columns (semicolon separated)','subject;sender;date;hash',()),('group','Group by (optional)','',('',)+GROUPS)],[('Save report',lambda v:(r.save_report(v['name'],v['workspace'],v['search'],[x.strip() for x in v['columns'].split(';') if x.strip()],v['group']),list_table('reports'))),('Preview',report),('Export CSV',export_report),('List reports',lambda v:list_table('reports'))])
+    # Explicit selected-message research; never writes AI output into evidence.
+    ai = ttk.Frame(tabs,padding=12);tabs.add(ai,text='Local AI')
+    ttk.Label(ai,text='Ollama / Qwen — selected email only; AI output is not evidence.').pack(anchor='w')
+    model=tk.StringVar(value='qwen3.5:9b')
+    ttk.Entry(ai,textvariable=model).pack(fill='x',pady=4)
+    question=tk.Text(ai,height=4,wrap='word');question.pack(fill='x',pady=4)
+    question.insert('1.0','Summarize these messages, identify key facts and cite message hashes.')
+    def ask_ai():
+        from local_ai import analyze
+        from threading import Thread
+        from queue import Queue, Empty
+        hashes=selected()
+        messages=[]
+        for h in hashes:
+            row=archive.db.execute('SELECT hash,subject,sender,date,body FROM messages WHERE hash=?',(h,)).fetchone()
+            if row:messages.append(dict(zip(('hash','subject','sender','date','body'),row)))
+        prompt=question.get('1.0','end').strip();chosen=model.get().strip()
+        if not messagebox.askyesno('Local AI',f'Analyze {len(messages)} selected messages with local Ollama?',parent=w):return
+        ask_button.configure(state='disabled');show('Running local analysis…')
+        q=Queue()
+        def worker():
+            try:q.put((True,analyze(prompt,messages,chosen)))
+            except Exception as e:q.put((False,str(e)))
+        def poll():
+            try:ok,value=q.get_nowait()
+            except Empty:w.after(200,poll);return
+            ask_button.configure(state='normal')
+            show(('AI-generated analysis — verify against originals.\n\n' if ok else 'Local AI error: ')+value)
+        Thread(target=worker,daemon=True).start();w.after(200,poll)
+    ask_button=ttk.Button(ai,text='Analyze selected messages',command=lambda:run(ask_ai));ask_button.pack(anchor='w',pady=6)
     def close():
         r.close();w.destroy()
     w.protocol('WM_DELETE_WINDOW',close)
