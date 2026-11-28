@@ -5,7 +5,10 @@ import { invoke } from "@tauri-apps/api/core";
 const props = defineProps<{ onError: (message: string) => void; onChanged: () => void }>();
 
 interface TimelineRow {
-  hash: string;
+  source: "email" | "document";
+  hash: string | null;
+  record_id: string | null;
+  kind: string;
   subject: string;
   sender: string;
   date: string;
@@ -34,6 +37,7 @@ const loading = ref(false);
 const pageSize = 100;
 const offset = ref(0);
 const order = ref<"asc" | "desc">("asc");
+const includeDocuments = ref(true);
 const fromDate = ref("");
 const toDate = ref("");
 const canPrev = computed(() => offset.value > 0);
@@ -58,6 +62,8 @@ async function refresh() {
         order: order.value,
         after,
         before,
+        sources:
+          includeDocuments.value && !selectedSender.value ? ["email", "document"] : ["email"],
       }) as Promise<TimelineRow[]>,
     ]);
     senders.value = senderList;
@@ -104,10 +110,19 @@ function setOrder(next: "asc" | "desc") {
 async function open(row: TimelineRow) {
   collectionNotice.value = "";
   try {
-    detail.value = await invoke("message", { hash: row.hash });
+    detail.value =
+      row.source === "document"
+        ? await invoke("record", { recordId: row.record_id })
+        : await invoke("message", { hash: row.hash });
   } catch (e) {
     props.onError(String(e));
   }
+}
+
+function toggleDocuments() {
+  offset.value = 0;
+  detail.value = null;
+  void refresh();
 }
 
 async function loadCollections() {
@@ -125,18 +140,19 @@ async function addDetailToCollection() {
     collectionNotice.value = "Choose a collection first.";
     return;
   }
-  if (!detail.value?.hash) {
-    collectionNotice.value = "Open a message first.";
+  const isDocument = Boolean(detail.value?.record_id);
+  if (!detail.value?.hash && !isDocument) {
+    collectionNotice.value = "Open a message or document first.";
     return;
   }
   try {
     await invoke("collection_add", {
       collectionId: collectionId.value,
-      itemType: "email",
-      itemId: detail.value.hash,
+      itemType: isDocument ? "catalog" : "email",
+      itemId: isDocument ? detail.value.record_id : detail.value.hash,
       note: collectionNote.value || null,
     });
-    collectionNotice.value = "Added this message to the selected collection.";
+    collectionNotice.value = `Added this ${isDocument ? "document" : "message"} to the selected collection.`;
     collectionNote.value = "";
     props.onChanged();
   } catch (e) {
@@ -168,12 +184,21 @@ onMounted(() => {
         <input v-model="toDate" type="date" @change="applyRange" />
       </label>
       <button v-if="fromDate || toDate" @click="clearRange">Clear range</button>
+      <label class="documents-toggle">
+        <input
+          v-model="includeDocuments"
+          type="checkbox"
+          :disabled="Boolean(selectedSender)"
+          @change="toggleDocuments"
+        />
+        Include documents
+      </label>
       <span v-if="selectedSender" class="meta">
         Filtered to {{ selectedSender }}
         <button class="link" @click="filter(null)">Show all</button>
       </span>
       <span v-else class="meta">
-        {{ rows.length }} messages from position {{ offset + 1 }},
+        {{ rows.length }} entries from position {{ offset + 1 }},
         {{ fromDate || toDate ? "filtered by date" : "undated last" }}
       </span>
     </div>
@@ -201,21 +226,22 @@ onMounted(() => {
       <div class="timeline">
         <h3>Timeline</h3>
         <ul>
-          <li v-for="r in rows" :key="r.hash">
+          <li v-for="r in rows" :key="r.source + (r.record_id || r.hash)">
             <button class="entry" @click="open(r)">
+              <span class="badge">{{ r.source }}</span>
               <span class="date">{{ r.date || "undated" }}</span>
-              <span class="subject">{{ r.subject || "(no subject)" }}</span>
+              <span class="subject">{{ r.subject || (r.source === "document" ? "(unnamed document)" : "(no subject)") }}</span>
               <span class="sender">{{ r.sender }}</span>
             </button>
           </li>
         </ul>
-        <p v-if="!rows.length && !loading" class="meta">No messages in this archive.</p>
+        <p v-if="!rows.length && !loading" class="meta">No entries in this archive.</p>
       </div>
     </div>
 
     <section v-if="detail" class="detail">
-      <h3>{{ detail.subject || "(no subject)" }}</h3>
-      <p class="meta">{{ detail.sender }} {{ detail.date }}</p>
+      <h3>{{ detail.subject || detail.source_key || "(no subject)" }}</h3>
+      <p class="meta">{{ detail.sender || detail.actor }} {{ detail.date || detail.occurred_at }}</p>
       <div class="row">
         <select v-model="collectionId">
           <option :value="null">Choose collection…</option>
@@ -225,7 +251,7 @@ onMounted(() => {
         </select>
         <input v-model="collectionNote" placeholder="Collection note (optional)" maxlength="2000" />
         <button :disabled="!collectionId" @click="addDetailToCollection">
-          Add this message to collection
+          Add this item to collection
         </button>
       </div>
       <p v-if="collectionNotice" class="notice">{{ collectionNotice }}</p>
@@ -241,6 +267,21 @@ onMounted(() => {
   gap: 8px;
   margin-bottom: 12px;
   align-items: center;
+}
+.documents-toggle {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--hb-text-secondary);
+  font-size: 13px;
+}
+.badge {
+  border: 1px solid var(--hb-border);
+  border-radius: 4px;
+  padding: 0 4px;
+  color: var(--hb-text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
 }
 .range {
   display: flex;

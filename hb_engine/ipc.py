@@ -216,8 +216,59 @@ def _health(root):
     finally:
         conn.close()
 
-def _timeline(root, sender=None, limit=100, offset=0, order='asc', after=None, before=None):
+def _timeline_sources(value):
+    if value is None:
+        return ['email']
+    if isinstance(value, str):
+        value = [part.strip() for part in value.split(',') if part.strip()]
+    if not isinstance(value, (list, tuple)) or not all(
+            isinstance(source, str) for source in value):
+        raise IPCError('INVALID_PARAMS', 'sources must be a list of source names')
+    sources = list(dict.fromkeys(value))
+    if not sources:
+        raise IPCError('INVALID_PARAMS', 'sources must not be empty')
+    if any(source not in ('email', 'document') for source in sources):
+        raise IPCError('INVALID_PARAMS', 'sources must be email and/or document')
+    return sources
+
+
+def _document_timeline(root, limit, order, after, before, exclude_disabled):
+    from .unified import _disabled_sources
+    path = Path(root) / 'catalog.sqlite3'
+    if not path.is_file():
+        return []
+    if exclude_disabled and 'document' in _disabled_sources(root)[1]:
+        return []
+    clauses = ["source_type='document'"]
+    params = []
+    if after is not None:
+        clauses.append("CAST(strftime('%s', occurred_at) AS INTEGER)>=?")
+        params.append(after)
+    if before is not None:
+        clauses.append("CAST(strftime('%s', occurred_at) AS INTEGER)<?")
+        params.append(before)
+    direction = 'DESC' if order == 'desc' else 'ASC'
+    sql = ('SELECT record_id,source_key,record_kind,actor,occurred_at FROM records WHERE '
+           + ' AND '.join(clauses) +
+           " ORDER BY (strftime('%s', occurred_at) IS NULL), "
+           f"CAST(strftime('%s', occurred_at) AS INTEGER) {direction}, record_id ASC LIMIT ?")
+    conn = _ro_connect(path)
+    try:
+        rows = conn.execute(sql, (*params, limit)).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    finally:
+        conn.close()
+    return [{'source': 'document', 'hash': None, 'record_id': record_id,
+             'kind': kind or 'document', 'subject': source_key or '',
+             'sender': actor or '', 'date': occurred or ''}
+            for record_id, source_key, kind, actor, occurred in rows]
+
+
+def _timeline(root, sender=None, limit=100, offset=0, order='asc', after=None, before=None,
+              sources=None):
     from .dispatch import timeline_rows
+    from .timestamps import parse_timestamp
     base = Path(root)
     path = base / 'archive.sqlite3'
     if not path.is_file():
@@ -233,14 +284,46 @@ def _timeline(root, sender=None, limit=100, offset=0, order='asc', after=None, b
     for name, value in (('after', after), ('before', before)):
         if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
             raise IPCError('INVALID_PARAMS', f'{name} must be a UTC epoch integer')
-    conn = _ro_connect(path)
-    try:
-        rows = timeline_rows(conn, sender, limit, offset, order, after, before,
-                             exclude_disabled=_hide_disabled_sources(base))
-    finally:
-        conn.close()
-    return [{'hash': h, 'subject': s or '', 'sender': f or '', 'date': d or ''}
-            for h, s, f, d in rows]
+    selected = _timeline_sources(sources)
+    if 'document' in selected and offset + limit > 5000:
+        raise IPCError('INVALID_PARAMS',
+                       'merged timeline pages are limited to 5000 entries')
+    exclude_disabled = _hide_disabled_sources(base)
+    entries = []
+    if 'email' in selected:
+        conn = _ro_connect(path)
+        try:
+            email = timeline_rows(
+                conn, sender, limit if 'document' not in selected else limit + offset,
+                0 if 'document' in selected else offset, order, after, before,
+                exclude_disabled=exclude_disabled)
+        finally:
+            conn.close()
+        entries = [{'source': 'email', 'hash': h, 'record_id': None, 'kind': 'message',
+                    'subject': s or '', 'sender': f or '', 'date': d or ''}
+                   for h, s, f, d in email]
+    if 'document' in selected and sender is None:
+        entries.extend(_document_timeline(base, limit + offset, order, after, before,
+                                          exclude_disabled))
+    if 'document' in selected:
+        known = []
+        unknown = []
+        for entry in entries:
+            epoch, _ = parse_timestamp(entry['date'])
+            order_id = entry['record_id'] or entry['hash'] or ''
+            key = (epoch, entry['source'], order_id)
+            if epoch is None:
+                unknown.append(((entry['source'], order_id), entry))
+            else:
+                known.append((key, entry))
+        if order == 'desc':
+            known.sort(key=lambda item: (-item[0][0], item[0][1], item[0][2]))
+        else:
+            known.sort()
+        unknown.sort()
+        entries = [entry for _, entry in known] + [entry for _, entry in unknown]
+        entries = entries[offset:offset + limit]
+    return entries
 
 def _dashboard(root):
     """Operational and historical summary. Every figure has one definition.
@@ -1634,7 +1717,7 @@ class IPCServer:
                 return _result(request_id, _timeline(
                     self.root, params.get('sender'), params.get('limit', 100),
                     params.get('offset', 0), params.get('order', 'asc'),
-                    params.get('after'), params.get('before')))
+                    params.get('after'), params.get('before'), params.get('sources')))
             if method == 'dashboard':
                 return _result(request_id, _dashboard(self.root))
             if method == 'correspondents':

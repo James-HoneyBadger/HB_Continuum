@@ -802,6 +802,40 @@ class IPCServerTests(unittest.TestCase):
         self.assertEqual(self.server.handle(request('relationships',after='yesterday'))['error']['code'],
                          'INVALID_PARAMS')
 
+    def test_timeline_can_merge_documents(self):
+        from datetime import datetime, timezone
+        from documents import import_files
+        document=self.root/'timeline-note.txt'
+        document.write_text('Cobalt timeline note',encoding='utf-8')
+        stamp=datetime(2026,11,26,10,0,tzinfo=timezone.utc).timestamp()
+        os.utime(document,(stamp,stamp))
+        import_files([str(document)],self.root)
+        self.a.ingest(b'From: a@example.invalid\r\nSubject: Later\r\n'
+                      b'Date: Thu, 26 Nov 2026 12:00:00 +0000\r\n\r\nLater message')
+        default=self.server.handle(request('timeline'))['result']
+        self.assertEqual({row['source'] for row in default},{'email'})
+        self.assertEqual(len(default),2)
+        merged=self.server.handle(request('timeline',sources=['email','document']))['result']
+        self.assertEqual([row['subject'] for row in merged],
+                         ['timeline-note.txt','Later','Silver invoice'])
+        reverse=self.server.handle(request('timeline',sources=['email','document'],
+                                           order='desc'))['result']
+        self.assertEqual([row['subject'] for row in reverse],
+                         ['Later','timeline-note.txt','Silver invoice'])
+        row=merged[0]
+        self.assertIsNone(row['hash'])
+        self.assertEqual(row['subject'],'timeline-note.txt')
+        self.assertEqual(row['date'],'2026-11-26T10:00:00+00:00')
+        documents=self.server.handle(request('timeline',sources=['document']))['result']
+        self.assertEqual([item['record_id'] for item in documents],[row['record_id']])
+        self.assertEqual(self.server.handle(request('timeline',sources=['document'],
+                                                   sender='a@example.invalid'))['result'],[])
+        self.assertEqual(self.server.handle(request('timeline',sources=[]))['error']['code'],
+                         'INVALID_PARAMS')
+        self.assertEqual(self.server.handle(request('timeline',sources=['email','document'],
+                                                   offset=5000))['error']['code'],
+                         'INVALID_PARAMS')
+
     def test_timeline_pagination_and_reverse_order(self):
         for hour in range(1,5):
             self.a.ingest(f'From: t@example.invalid\r\nSubject: H{hour}\r\n'

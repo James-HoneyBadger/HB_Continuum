@@ -222,8 +222,8 @@ python3 dispatch.py search-all "bullion" --sources facebook
 **Desktop application** — a Tauri 2 shell with a Vue 3 interface drives the
 Python engine over the versioned IPC protocol. Workspaces include an Overview
 dashboard (unique records, mailbox origins, undated counts, coverage, storage,
-records by year); a paged timeline with oldest/newest ordering, sender filter
-and date range; unified search with deep paging, date range and cancellation;
+records by year); a paged timeline with oldest/newest ordering, sender filter,
+date range and optional document inclusion; unified search with deep paging, date range and cancellation;
 grounded research in the Intelligence workspace;
 a nested boolean
 query builder; Sources; a

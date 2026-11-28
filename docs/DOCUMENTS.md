@@ -2,7 +2,9 @@
 
 HB Continuum imports local historical documents into the same
 source-independent catalog as email and Facebook records. Documents are
-searchable, citeable and available to the Intelligence workspace.
+searchable, citeable and available to the Intelligence workspace. Imported
+documents can also appear in the Timeline alongside email when **Include
+documents** is enabled.
 
 Originals are **not copied, uploaded or modified**. The catalog stores the
 file's SHA-256, path, size, modification time and extracted text. Verification

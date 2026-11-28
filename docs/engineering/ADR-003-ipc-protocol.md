@@ -52,8 +52,11 @@ spawned as `python3 dispatch.py --archive <root> serve`.
   a cancellable background job that hashes and indexes extracted text into the
   catalog, records import history and never copies or modifies originals.
 - `timeline` returns messages ordered by their declared Date header with
-  unparseable dates last, optionally filtered by sender; `correspondents`
-  counts messages per sender. Both are read-only and cap `limit` at 5000.
+  unparseable dates last, optionally filtered by sender. Passing
+  `sources=["email","document"]` merges imported documents by their recorded
+  date; sender filters remain email-only. `correspondents` counts messages
+  per sender. These are read-only and cap `limit` at 5000; merged pages are
+  additionally limited to the first 5000 entries.
 - `search` and `search_job` return one page of fused email and catalog
   results. Each source index is streamed in rank order and merged lazily, so
   pages continue beyond the former 5000-candidate ceiling without

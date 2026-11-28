@@ -977,8 +977,20 @@ and broader catalog source registration.
 - Tests cover PDF/DOCX text plumbing with mocked extractors, graceful
   unavailability, and reindex upgrade of an older extraction version.
 
+## v0.5 Intelligence Update — Phase IV: document timeline (2026-11-28)
+
+- The Timeline workspace can merge catalogued documents with email by
+  recorded date. Rows carry their source and a record id, open in the catalog
+  reader, and can be added to a collection like any other record.
+- Documents remain omitted by default at the protocol level for compatibility;
+  the desktop enables the merged view with **Include documents**. Sender
+  filtering stays email-only, and the merged view is bounded to the first
+  5000 entries so it cannot materialize an unbounded archive.
+- Tests cover merged ordering, document-only pages, default compatibility and
+  source validation.
+
 Remaining limitations: PDF/DOCX extraction depends on optional local packages
 and was not exercised against a live package in automated tests; OCR, page
-navigation, document timeline inclusion, layout/image preservation and
-semantic deduplication remain unimplemented. Next: source-registration
-interfaces and Honey Badger interchange (Phase V).
+navigation, layout/image preservation and semantic deduplication remain
+unimplemented. Next: source-registration interfaces and Honey Badger
+interchange (Phase V).

@@ -419,6 +419,7 @@ fn timeline(
     order: Option<String>,
     after: Option<i64>,
     before: Option<i64>,
+    sources: Option<Vec<String>>,
 ) -> Result<Value, String> {
     call(
         &state,
@@ -430,6 +431,7 @@ fn timeline(
             "order": order.unwrap_or_else(|| "asc".into()),
             "after": after,
             "before": before,
+            "sources": sources,
         }),
     )
 }
